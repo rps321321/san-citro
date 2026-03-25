@@ -1,15 +1,38 @@
+import math
 import sqlite3
 import os
+from dataclasses import dataclass, field
 from typing import Optional, List, Tuple, Dict, Any, Set
 import requests
 from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.panel import Panel
-from logger import get_logger
+from .logger import get_logger
 
 logger = get_logger()
 console = Console()
+
+
+@dataclass
+class SearchResult:
+    """Container for paginated search results."""
+    results: List[Tuple] = field(default_factory=list)
+    total_count: int = 0
+    page: int = 1
+    per_page: int = 10
+
+    @property
+    def total_pages(self) -> int:
+        return max(1, math.ceil(self.total_count / self.per_page))
+
+    @property
+    def has_next(self) -> bool:
+        return self.page < self.total_pages
+
+    @property
+    def has_prev(self) -> bool:
+        return self.page > 1
 
 
 def get_external_metadata(isbn: str) -> Optional[Dict[str, Any]]:
@@ -50,71 +73,131 @@ def search_db(
     lang: Optional[str] = None,
     after: Optional[int] = None,
     download_dir: str = "downloads",
-) -> List[Tuple]:
-    """Searches the local database with advanced filters and returns results."""
+    page: int = 1,
+    per_page: Optional[int] = None,
+) -> SearchResult:
+    """Searches the local database with advanced filters and pagination.
+
+    Args:
+        db_path: Path to the SQLite database.
+        query: Search query string.
+        limit: Maximum results (used as per_page default when per_page is None).
+        ext: Filter by file extension.
+        lang: Filter by language code.
+        after: Filter by minimum year.
+        download_dir: Path to download directory for ownership checks.
+        page: Page number (1-indexed).
+        per_page: Results per page. Falls back to ``limit`` when not provided.
+
+    Returns:
+        SearchResult with paginated rows, total count, and page metadata.
+    """
+    effective_per_page = per_page if per_page is not None else limit
+    page = max(1, page)
+    offset = (page - 1) * effective_per_page
+
     if not db_path or not os.path.exists(db_path):
         logger.error(f"Database not found: {db_path}")
-        return []
+        return SearchResult(page=page, per_page=effective_per_page)
 
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
 
-        sql = """
-            SELECT
-                r.title, r.author, r.year, r.extension, r.md5, r.language,
-                r.filesize_bytes, r.publisher, r.isbn13
-            FROM records r
-            JOIN records_fts f ON r.md5 = f.md5
-            WHERE records_fts MATCH ?
-        """
+        # --- Build WHERE clause shared by count and data queries ---
+        where_clause = "WHERE records_fts MATCH ?"
         params: List[Any] = [_sanitize_fts_query(query)]
+        filter_clauses: List[str] = []
+        filter_params: List[Any] = []
 
         if ext:
-            sql += " AND r.extension = ?"
-            params.append(ext.lower())
+            filter_clauses.append("r.extension = ?")
+            filter_params.append(ext.lower())
         if lang:
-            sql += " AND r.language = ?"
-            params.append(lang.lower())
+            filter_clauses.append("r.language = ?")
+            filter_params.append(lang.lower())
         if after:
-            sql += " AND r.year >= ?"
-            params.append(str(after))
+            filter_clauses.append("r.year >= ?")
+            filter_params.append(str(after))
 
-        sql += " ORDER BY rank LIMIT ?"
-        params.append(limit)
+        extra_where = ""
+        if filter_clauses:
+            extra_where = " AND " + " AND ".join(filter_clauses)
+
+        # --- Count query ---
+        count_sql = (
+            "SELECT COUNT(*) FROM records r "
+            "JOIN records_fts f ON r.md5 = f.md5 "
+            f"{where_clause}{extra_where}"
+        )
+        count_params = params + filter_params
+
+        # --- Data query ---
+        data_sql = (
+            "SELECT r.title, r.author, r.year, r.extension, r.md5, r.language, "
+            "r.filesize_bytes, r.publisher, r.isbn13 "
+            "FROM records r "
+            "JOIN records_fts f ON r.md5 = f.md5 "
+            f"{where_clause}{extra_where} "
+            "ORDER BY rank LIMIT ? OFFSET ?"
+        )
+        data_params = params + filter_params + [effective_per_page, offset]
 
         try:
-            cursor.execute(sql, params)
+            cursor.execute(count_sql, count_params)
+            total_count = cursor.fetchone()[0]
+
+            cursor.execute(data_sql, data_params)
             results = cursor.fetchall()
         except sqlite3.OperationalError as e:
             logger.warning(f"FTS5 search failed, falling back to LIKE: {e}")
             search_term = f"%{query}%"
-            sql_fallback = (
-                "SELECT title, author, year, extension, md5, language, "
-                "filesize_bytes, publisher, isbn13 FROM records "
-                "WHERE (title LIKE ? OR author LIKE ?)"
-            )
-            fallback_params: List[Any] = [search_term, search_term]
+
+            fb_where = "WHERE (title LIKE ? OR author LIKE ?)"
+            fb_params: List[Any] = [search_term, search_term]
+            fb_filter = ""
+            fb_filter_params: List[Any] = []
             if ext:
-                sql_fallback += " AND extension = ?"
-                fallback_params.append(ext.lower())
+                fb_filter += " AND extension = ?"
+                fb_filter_params.append(ext.lower())
             if lang:
-                sql_fallback += " AND language = ?"
-                fallback_params.append(lang.lower())
-            sql_fallback += " LIMIT ?"
-            fallback_params.append(limit)
-            cursor.execute(sql_fallback, fallback_params)
+                fb_filter += " AND language = ?"
+                fb_filter_params.append(lang.lower())
+
+            count_fb_sql = f"SELECT COUNT(*) FROM records {fb_where}{fb_filter}"
+            cursor.execute(count_fb_sql, fb_params + fb_filter_params)
+            total_count = cursor.fetchone()[0]
+
+            data_fb_sql = (
+                "SELECT title, author, year, extension, md5, language, "
+                f"filesize_bytes, publisher, isbn13 FROM records {fb_where}{fb_filter} "
+                "LIMIT ? OFFSET ?"
+            )
+            cursor.execute(data_fb_sql, fb_params + fb_filter_params + [effective_per_page, offset])
             results = cursor.fetchall()
 
-    return results
+    return SearchResult(
+        results=results,
+        total_count=total_count,
+        page=page,
+        per_page=effective_per_page,
+    )
 
 
 def print_results(
-    results: List[Tuple],
+    search_result: SearchResult,
     download_dir: str = "downloads",
     enrich: bool = False,
 ) -> None:
-    """Utility to display results in a professional Rich table."""
-    if not results:
+    """Display results in a professional Rich table with pagination info.
+
+    Accepts either a ``SearchResult`` instance (preferred) or a plain list
+    of tuples for backward compatibility.
+    """
+    # Backward compatibility: accept a bare list
+    if isinstance(search_result, list):
+        search_result = SearchResult(results=search_result, total_count=len(search_result))
+
+    if not search_result.results:
         console.print("\n[yellow]No results found.[/yellow]")
         return
 
@@ -122,6 +205,9 @@ def print_results(
     owned_files: Set[str] = set()
     if os.path.exists(download_dir):
         owned_files = set(os.listdir(download_dir))
+
+    # Row numbering accounts for page offset
+    start_num = (search_result.page - 1) * search_result.per_page
 
     table = Table(
         title="Archive Search Results",
@@ -140,7 +226,7 @@ def print_results(
     table.add_column("Pages", justify="center", style="dim")
     table.add_column("Status", justify="center")
 
-    for idx, row in enumerate(results, 1):
+    for idx, row in enumerate(search_result.results, start_num + 1):
         title, author, year, ext, md5, lang, size, pub, isbn = row
 
         # Enrichment logic
@@ -176,3 +262,10 @@ def print_results(
         )
 
     console.print(table)
+
+    # Pagination footer
+    if search_result.total_count > 0:
+        console.print(
+            f"\n[bold]Page {search_result.page} of {search_result.total_pages} "
+            f"({search_result.total_count} total)[/bold]"
+        )

@@ -27,6 +27,14 @@ downloads_*/
 *.log
 *.log.*
 
+# Linter / type checker caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+coverage.xml
+.coverage
+
 # IDE
 .idea/
 .vscode/

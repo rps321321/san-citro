@@ -1,6 +1,4 @@
 """Shared fixtures for the Anna's Archive test suite."""
-import sys
-import os
 import json
 import sqlite3
 import tempfile
@@ -10,10 +8,7 @@ from typing import Generator
 import pytest
 import zstandard as zstd
 
-# Ensure src/ is importable
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from mock_data_generator import MOCK_RECORDS
+from src.mock_data_generator import MOCK_RECORDS
 
 
 @pytest.fixture
@@ -56,7 +51,7 @@ def mock_zst_with_bad_lines(tmp_path: Path) -> Path:
 @pytest.fixture
 def test_db(tmp_path: Path, mock_zst_file: Path) -> Path:
     """Creates and populates a test database."""
-    from ingest_db import ingest_file
+    from src.ingest_db import ingest_file
 
     db_path = tmp_path / "test.db"
     ingest_file(str(db_path), str(mock_zst_file))
@@ -66,7 +61,7 @@ def test_db(tmp_path: Path, mock_zst_file: Path) -> Path:
 @pytest.fixture
 def empty_db(tmp_path: Path) -> Path:
     """Creates an empty database with schema only."""
-    from ingest_db import init_db
+    from src.ingest_db import init_db
 
     db_path = tmp_path / "empty.db"
     conn = init_db(str(db_path))

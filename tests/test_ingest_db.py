@@ -1,13 +1,10 @@
 """Tests for ingest_db.py."""
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from ingest_db import init_db, ingest_file, optimize_db
-from mock_data_generator import MOCK_RECORDS
+from src.ingest_db import init_db, ingest_file, optimize_db
+from src.mock_data_generator import MOCK_RECORDS
 
 
 class TestInitDb:
@@ -22,6 +19,10 @@ class TestInitDb:
 
         # FTS table exists
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='records_fts'")
+        assert cursor.fetchone() is not None
+
+        # Ingest metadata table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ingest_metadata'")
         assert cursor.fetchone() is not None
 
         # Secondary indexes exist
@@ -87,6 +88,17 @@ class TestIngestFile:
     def test_exits_on_missing_file(self, tmp_path):
         with pytest.raises(SystemExit):
             ingest_file(str(tmp_path / "test.db"), "/nonexistent/file.jsonl.zst")
+
+    def test_incremental_skip(self, tmp_path, mock_zst_file):
+        """Already-ingested files should be skipped unless force=True."""
+        db_path = str(tmp_path / "inc.db")
+        ingest_file(db_path, str(mock_zst_file))
+        # Second call should be a no-op (skip)
+        ingest_file(db_path, str(mock_zst_file))
+
+        with sqlite3.connect(db_path) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+        assert count == len(MOCK_RECORDS)
 
 
 class TestOptimizeDb:

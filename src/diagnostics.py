@@ -6,7 +6,7 @@ import socket
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from logger import get_logger
+from .logger import get_logger
 
 logger = get_logger()
 console = Console()

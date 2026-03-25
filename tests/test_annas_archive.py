@@ -1,13 +1,9 @@
-"""Tests for annas_archive_tool.py — all network calls mocked."""
-import sys
-import os
-from pathlib import Path
+"""Tests for annas_archive_tool.py -- all network calls mocked."""
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-from annas_archive_tool import AnnasArchiveTool, MD5_PATTERN
+from src.annas_archive_tool import AnnasArchiveTool, MD5_PATTERN
 
 
 class TestAnnasArchiveToolInit:
