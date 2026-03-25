@@ -1,0 +1,6 @@
+{
+    "db_path": null,
+    "out_dir": "downloads",
+    "concurrency": 2,
+    "proxies": []
+}

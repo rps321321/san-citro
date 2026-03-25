@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Environment
+.env
+.venv/
+venv/
+
+# Config with secrets (use annas_config.example.json as template)
+src/annas_config.json
+
+# Databases (local data, not tracked)
+*.db
+*.db-wal
+*.db-shm
+
+# Downloads
+downloads/
+downloads_*/
+
+# Logs
+*.log
+*.log.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compressed data (too large for git)
+data/*.jsonl.zst

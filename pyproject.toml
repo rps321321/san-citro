@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "annas-archive-toolkit"
+version = "0.1.0"
+description = "A toolkit for searching and downloading from Anna's Archive using bulk metadata dumps."
+requires-python = ">=3.11"
+dependencies = [
+    "requests~=2.31.0",
+    "beautifulsoup4~=4.12.0",
+    "zstandard~=0.21.0",
+    "rich~=13.0.0",
+    "tqdm~=4.65.0",
+]
+
+[project.optional-dependencies]
+download = ["undetected-chromedriver~=3.5.0"]
+dev = [
+    "pytest~=7.4.0",
+    "pytest-mock~=3.12.0",
+    "undetected-chromedriver~=3.5.0",
+]
+
+[project.scripts]
+annas-archive = "src.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
