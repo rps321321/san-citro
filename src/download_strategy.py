@@ -139,7 +139,35 @@ class ChromeStrategy(DownloadStrategy):
         try:
             options = uc.ChromeOptions()
             options.add_argument("--disable-blink-features=AutomationControlled")
-            driver = uc.Chrome(options=options)
+            # Detect installed Chrome major version to avoid chromedriver mismatch
+            ver_major = None
+            try:
+                chrome_exe = uc.find_chrome_executable()
+                if chrome_exe:
+                    import subprocess, platform
+                    if platform.system() == "Windows":
+                        result = subprocess.run(
+                            ["powershell", "-Command",
+                             f"(Get-Item '{chrome_exe}').VersionInfo.FileVersion"],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        if result.returncode == 0 and result.stdout.strip():
+                            ver_major = int(result.stdout.strip().split(".")[0])
+                    else:
+                        result = subprocess.run(
+                            [chrome_exe, "--version"],
+                            capture_output=True, text=True, timeout=5,
+                        )
+                        if result.returncode == 0:
+                            import re as _re
+                            m = _re.search(r"(\d+)\.", result.stdout)
+                            if m:
+                                ver_major = int(m.group(1))
+            except Exception:
+                pass
+            if ver_major:
+                logger.debug(f"Detected Chrome version: {ver_major}")
+            driver = uc.Chrome(options=options, version_main=ver_major)
             driver.get(slow_download_url)
 
             download_url = None

@@ -34,38 +34,75 @@ MAGIC_BYTES = {
 }
 
 
-def _detect_extension(file_path: str, content_disposition: str = "", download_url: str = "") -> str:
-    """Detect the correct file extension from headers, URL, or file magic bytes."""
+def _detect_filename(md5: str, file_path: str, content_disposition: str = "", download_url: str = "") -> str:
+    """Detect the real filename from Content-Disposition header, download URL, or file magic bytes.
+
+    Returns a human-readable filename like 'The Art of War - Sun Tzu.epub'
+    or falls back to 'md5.ext' if no name can be determined.
+    """
     import re as _re
     from urllib.parse import urlparse, unquote
 
-    # 1. Try Content-Disposition header: filename="book.epub"
+    # 1. Try Content-Disposition header: filename="The Art of War.epub"
     if content_disposition:
         match = _re.search(r'filename[*]?=["\']?([^"\';\r\n]+)', content_disposition)
         if match:
             name = unquote(match.group(1).strip().strip('"').strip("'"))
-            ext = os.path.splitext(name)[1].lower()
-            if ext:
-                return ext
+            # Clean up URL-encoded names
+            name = name.replace("+", " ").replace("%20", " ")
+            if name and os.path.splitext(name)[1]:
+                return _sanitize_filename(name)
 
-    # 2. Try download URL path
+    # 2. Try download URL path — CDN URLs often contain the real filename
+    #    e.g. .../Chapman%E2%80%99s+Homer%3A+The+Iliad+...+Anna%E2%80%99s+Archive.epub
     if download_url:
         parsed_path = unquote(urlparse(download_url).path)
-        ext = os.path.splitext(parsed_path)[1].lower()
-        if ext and len(ext) <= 6:  # reasonable extension length
-            return ext
+        url_basename = os.path.basename(parsed_path)
+        if url_basename:
+            url_basename = url_basename.replace("+", " ").replace("%20", " ")
+            name, ext = os.path.splitext(url_basename)
+            if ext and len(ext) <= 6:
+                # Strip "Anna's Archive" suffix (various separator styles)
+                name = _re.sub(r'\s*[-–—]+\s*Anna.s?\s*Archive\s*$', '', name, flags=_re.IGNORECASE)
+                # Strip MD5 hash (with various separators: --, —, spaces)
+                name = _re.sub(r'\s*[-–—]+\s*[a-f0-9]{32}\s*[-–—]*\s*$', '', name, flags=_re.IGNORECASE)
+                # Strip trailing dashes/spaces
+                name = name.rstrip(' -–—')
+                # Clean up double-dash separators: "Title -- Author -- Year" -> "Title - Author - Year"
+                name = _re.sub(r'\s*--\s*', ' - ', name)
+                # Strip publisher/source suffixes like "Feedbooks", "Project Gutenberg"
+                name = _re.sub(r'\s*-\s*(?:Feedbooks|Project Gutenberg|Gutenberg|Internet Archive)\s*$',
+                               '', name, flags=_re.IGNORECASE)
+                if name.strip():
+                    return _sanitize_filename(name.strip() + ext)
 
-    # 3. Try file magic bytes
+    # 3. Try file magic bytes for extension only
+    ext = ".file"
     try:
         with open(file_path, "rb") as f:
             header = f.read(8)
-        for magic, ext in MAGIC_BYTES.items():
+        for magic, magic_ext in MAGIC_BYTES.items():
             if header[:len(magic)] == magic:
-                return ext
+                ext = magic_ext
+                break
     except (OSError, IOError):
         pass
 
-    return ".file"  # fallback
+    return f"{md5}{ext}"
+
+
+def _sanitize_filename(name: str) -> str:
+    """Remove or replace characters that are invalid in filenames."""
+    import re as _re
+    # Replace invalid filename characters
+    name = _re.sub(r'[<>:"/\\|?*]', '_', name)
+    # Collapse multiple spaces/underscores
+    name = _re.sub(r'[_ ]{2,}', ' ', name)
+    # Trim to reasonable length
+    if len(name) > 200:
+        base, ext = os.path.splitext(name)
+        name = base[:200 - len(ext)] + ext
+    return name.strip()
 
 # Retry / polling constants
 DOWNLOAD_MAX_RETRIES = 3
@@ -443,13 +480,13 @@ class AnnasArchiveTool:
             for chunk in iter(lambda: f.read(4096), b""):
                 h.update(chunk)
         if h.hexdigest().lower() == md5.lower():
-            # Detect correct extension if filename is generic
-            if filename.endswith(".file"):
+            # Detect real filename if we're using the generic md5.file name
+            if filename.endswith(".file") or filename == f"{md5}.file":
                 content_disp = res.headers.get("Content-Disposition", "")
-                ext = _detect_extension(part_path, content_disp, meta.download_url)
-                if ext != ".file":
-                    final_path = final_path.rsplit(".file", 1)[0] + ext
-                    filename = os.path.basename(final_path)
+                real_name = _detect_filename(md5, part_path, content_disp, meta.download_url)
+                if real_name != filename:
+                    final_path = os.path.join(os.path.dirname(final_path), real_name)
+                    filename = real_name
             os.rename(part_path, final_path)
             logger.info(f"[{md5[:6]}] Completed: {filename}")
             return final_path
