@@ -23,11 +23,11 @@ import src.shutdown as shutdown_mod
 def reset_shutdown_state():
     """Reset global shutdown state before each test."""
     _cancel_event.clear()
-    shutdown_mod._shutdown_requested = False
+    shutdown_mod._shutdown_requested.clear()
     shutdown_mod._active_driver = None
     yield
     _cancel_event.clear()
-    shutdown_mod._shutdown_requested = False
+    shutdown_mod._shutdown_requested.clear()
     shutdown_mod._active_driver = None
 
 
@@ -44,7 +44,7 @@ class TestSignalHandler:
     def test_should_set_cancel_event_on_first_signal(self):
         _signal_handler(signal.SIGINT, None)
         assert is_cancelled() is True
-        assert shutdown_mod._shutdown_requested is True
+        assert shutdown_mod._shutdown_requested.is_set() is True
 
     def test_should_force_exit_on_second_signal(self):
         # First signal

@@ -1,0 +1,1 @@
+(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,52683,e=>{"use strict";var t=e.i(932),u=e.i(18566),c=e.i(71645);e.s(["default",0,function(){let e,r,i=(0,t.c)(3),l=(0,u.useRouter)();return i[0]!==l?(e=()=>{l.replace("/search")},r=[l],i[0]=l,i[1]=e,i[2]=r):(e=i[1],r=i[2]),(0,c.useEffect)(e,r),null}])}]);

@@ -14,18 +14,17 @@ class TestGetConfig:
         with patch.object(config_manager, "get_config_path", return_value=fake_path), \
              patch.object(config_manager, "_migrate_legacy_config"):
             cfg = config_manager.get_config()
-        assert cfg["db_path"] is None
+        assert "db_path" not in cfg
         assert cfg["out_dir"] == "downloads"
         assert cfg["concurrency"] == 2
         assert cfg["proxies"] == []
 
     def test_loads_existing_config(self, tmp_path):
         cfg_file = tmp_path / "config.json"
-        cfg_file.write_text(json.dumps({"db_path": "/my/db.db", "concurrency": 4}))
+        cfg_file.write_text(json.dumps({"concurrency": 4}))
         with patch.object(config_manager, "get_config_path", return_value=cfg_file), \
              patch.object(config_manager, "_migrate_legacy_config"):
             cfg = config_manager.get_config()
-        assert cfg["db_path"] == "/my/db.db"
         assert cfg["concurrency"] == 4
         assert cfg["out_dir"] == "downloads"  # default merged
 
@@ -35,7 +34,7 @@ class TestGetConfig:
         with patch.object(config_manager, "get_config_path", return_value=cfg_file), \
              patch.object(config_manager, "_migrate_legacy_config"):
             cfg = config_manager.get_config()
-        assert cfg["db_path"] is None  # defaults returned
+        assert "db_path" not in cfg  # defaults returned
 
 
 class TestSaveConfig:
@@ -43,38 +42,26 @@ class TestSaveConfig:
         cfg_file = tmp_path / "config.json"
         with patch.object(config_manager, "get_config_path", return_value=cfg_file), \
              patch.object(config_manager, "_migrate_legacy_config"):
-            config_manager.save_config(db_path="/new/path.db")
+            config_manager.save_config(out_dir="/new/downloads")
             cfg = config_manager.get_config()
-        assert cfg["db_path"] is not None
-        assert "path.db" in cfg["db_path"]  # abspath applied (path varies by OS)
+        assert cfg["out_dir"] == "/new/downloads"
 
     def test_none_values_dont_overwrite(self, tmp_path):
         cfg_file = tmp_path / "config.json"
-        cfg_file.write_text(json.dumps({"db_path": "/orig.db", "out_dir": "out", "concurrency": 2, "proxies": []}))
+        cfg_file.write_text(json.dumps({"out_dir": "out", "concurrency": 2, "proxies": []}))
         with patch.object(config_manager, "get_config_path", return_value=cfg_file), \
              patch.object(config_manager, "_migrate_legacy_config"):
             config_manager.save_config(concurrency=8)
             cfg = config_manager.get_config()
-        assert cfg["db_path"] == "/orig.db"
+        assert cfg["out_dir"] == "out"
         assert cfg["concurrency"] == 8
 
     def test_zero_concurrency_is_saved(self, tmp_path):
         """Regression: old code used truthiness check, blocking concurrency=0."""
         cfg_file = tmp_path / "config.json"
-        cfg_file.write_text(json.dumps({"db_path": None, "out_dir": "out", "concurrency": 4, "proxies": []}))
+        cfg_file.write_text(json.dumps({"out_dir": "out", "concurrency": 4, "proxies": []}))
         with patch.object(config_manager, "get_config_path", return_value=cfg_file), \
              patch.object(config_manager, "_migrate_legacy_config"):
             config_manager.save_config(concurrency=0)
             cfg = config_manager.get_config()
         assert cfg["concurrency"] == 0
-
-    def test_empty_string_db_path_is_saved(self, tmp_path):
-        """Regression: old code used truthiness check, blocking db_path=''."""
-        cfg_file = tmp_path / "config.json"
-        cfg_file.write_text(json.dumps({"db_path": "/old.db", "out_dir": "out", "concurrency": 2, "proxies": []}))
-        with patch.object(config_manager, "get_config_path", return_value=cfg_file), \
-             patch.object(config_manager, "_migrate_legacy_config"):
-            config_manager.save_config(db_path="")
-            cfg = config_manager.get_config()
-        # Should be saved (abspath of empty string is CWD, but it's saved)
-        assert cfg["db_path"] is not None

@@ -1,0 +1,35 @@
+appId: com.sancitro.desktop
+productName: San Citro
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - resources/**/*
+
+extraResources:
+  - from: python-dist/bridge/
+    to: python/
+  - from: renderer/
+    to: renderer/
+
+win:
+  target: nsis
+  icon: resources/icon.ico
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  deleteAppDataOnUninstall: false
+
+mac:
+  target: dmg
+  icon: resources/icon.icns
+
+linux:
+  target: AppImage
+  icon: resources/icon.png

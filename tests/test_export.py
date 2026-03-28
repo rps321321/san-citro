@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from src.export import export_table, export_json, export_csv, _format_size, _is_owned
+from src.export import export_table, export_json, export_csv, _is_owned
+from src.utils import format_filesize
 from src.mock_data_generator import MOCK_RECORDS
 
 
@@ -32,21 +33,21 @@ def empty_results():
 
 
 # ---------------------------------------------------------------------------
-# _format_size
+# format_filesize
 # ---------------------------------------------------------------------------
 
 class TestFormatSize:
     def test_should_return_mb_when_over_1mb(self):
-        assert _format_size(2_500_000) == "2.4 MB"
+        assert format_filesize(2_500_000) == "2.4 MB"
 
     def test_should_return_kb_when_under_1mb(self):
-        assert _format_size(512_000) == "500.0 KB"
+        assert format_filesize(512_000) == "500.0 KB"
 
     def test_should_return_na_when_none(self):
-        assert _format_size(None) == "N/A"
+        assert format_filesize(None) == "N/A"
 
     def test_should_return_na_when_zero(self):
-        assert _format_size(0) == "N/A"
+        assert format_filesize(0) == "N/A"
 
 
 # ---------------------------------------------------------------------------

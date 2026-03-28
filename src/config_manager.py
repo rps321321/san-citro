@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, List, Any, Dict
 
-APP_NAME = "annas-archive"
+APP_NAME = "san-citro"
 
 # Legacy config path (the old location inside src/)
 _LEGACY_CONFIG_PATH = Path(__file__).parent / "annas_config.json"
@@ -18,10 +18,16 @@ _config_path_override: Optional[Path] = None
 def _get_platform_config_dir() -> Path:
     """Return the platform-appropriate config directory using only stdlib.
 
-    - Linux:  $XDG_CONFIG_HOME/annas-archive  (defaults to ~/.config/annas-archive)
-    - macOS:  ~/Library/Application Support/annas-archive
-    - Windows: %APPDATA%/annas-archive
+    If the APPDATA_OVERRIDE env var is set, use that path directly.
+
+    - Linux:  $XDG_CONFIG_HOME/san-citro  (defaults to ~/.config/san-citro)
+    - macOS:  ~/Library/Application Support/san-citro
+    - Windows: %APPDATA%/san-citro
     """
+    override = os.environ.get("APPDATA_OVERRIDE")
+    if override:
+        return Path(override)
+
     system = platform.system()
 
     if system == "Windows":
@@ -102,10 +108,10 @@ def get_config() -> Dict[str, Any]:
     On first call, attempts migration from the legacy location.
     """
     defaults: Dict[str, Any] = {
-        "db_path": None,
         "out_dir": "downloads",
         "concurrency": 2,
         "proxies": [],
+        "base_url": None,  # None = auto-detect via get_working_domain()
     }
 
     # Attempt migration from legacy location
@@ -114,7 +120,7 @@ def get_config() -> Dict[str, Any]:
     config_path = get_config_path()
     if config_path.exists():
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
             return {**defaults, **config}
         except (json.JSONDecodeError, OSError) as e:
@@ -126,24 +132,46 @@ def get_config() -> Dict[str, Any]:
 
 
 def save_config(
-    db_path: Optional[str] = None,
     out_dir: Optional[str] = None,
     concurrency: Optional[int] = None,
     proxies: Optional[List[str]] = None,
+    base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Save current settings to the config file."""
+    """Save current settings to the config file.
+
+    Args:
+        base_url: Anna's Archive base URL override. Pass an empty string or
+                  ``None`` to keep the current value. Set to a URL like
+                  ``"https://annas-archive.gl"`` to pin a specific domain,
+                  or leave as ``None`` in config to use auto-detection.
+    """
     config = get_config()
-    if db_path is not None:
-        config["db_path"] = os.path.abspath(db_path)
     if out_dir is not None:
         config["out_dir"] = out_dir
     if concurrency is not None:
         config["concurrency"] = concurrency
     if proxies is not None:
         config["proxies"] = proxies
+    if base_url is not None:
+        config["base_url"] = base_url or None  # empty string -> None (auto-detect)
 
     config_path = get_config_path()
     _ensure_config_dir(config_path)
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=4)
+    # Atomic write: write to temp file first, then replace to prevent corruption
+    # if the process is killed mid-write.
+    import tempfile
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(config_path), suffix=".tmp"
+    )
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            json.dump(config, f, indent=4)
+        os.replace(tmp_path, config_path)
+    except BaseException:
+        # Clean up temp file on failure
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
     return config

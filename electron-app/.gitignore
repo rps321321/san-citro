@@ -1,0 +1,15 @@
+# Compiled output
+dist/
+
+# Electron-builder output
+release/
+
+# Next.js static export (copied during build)
+renderer/
+
+# PyInstaller output
+python-dist/
+python-build/
+
+# Dependencies
+node_modules/

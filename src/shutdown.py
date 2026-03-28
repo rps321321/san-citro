@@ -19,12 +19,17 @@ logger = get_logger()
 # Global cancellation event — checked by long-running loops
 _cancel_event = threading.Event()
 
-# Track whether we already received a shutdown signal
-_shutdown_requested = False
+# Track whether we already received a shutdown signal (thread-safe)
+_shutdown_requested = threading.Event()
 
 # Track the active Chrome driver so atexit can clean it up
 _active_driver: Optional[object] = None
 _driver_lock = threading.Lock()
+
+
+def is_shutdown_requested() -> bool:
+    """Return True if a shutdown signal has already been received."""
+    return _shutdown_requested.is_set()
 
 
 def is_cancelled() -> bool:
@@ -70,15 +75,13 @@ def _signal_handler(signum: int, frame: object) -> None:
     First call: set cancellation flag, print message, let loops exit cleanly.
     Second call: force-exit immediately.
     """
-    global _shutdown_requested
-
-    if _shutdown_requested:
+    if _shutdown_requested.is_set():
         # Second signal — force exit
         print("\nForce quitting...", file=sys.stderr, flush=True)
         _quit_driver_safe()
         os._exit(1)
 
-    _shutdown_requested = True
+    _shutdown_requested.set()
     _cancel_event.set()
     print("\nShutting down gracefully... (press Ctrl+C again to force quit)", file=sys.stderr, flush=True)
     logger.info("Shutdown requested by signal")

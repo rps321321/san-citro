@@ -223,40 +223,6 @@ class TestConcurrencyCliFlag:
     @patch("src.cli.AnnasArchiveTool")
     @patch("src.cli._run_concurrent_downloads", return_value=[])
     @patch("src.cli._print_summary_table")
-    @patch("src.cli.search_db", return_value=[])
-    def test_concurrency_flag_used_for_batch(self, mock_search, mock_table, mock_run, mock_tool_cls):
-        """For batch-snatch, concurrency from CLI flag should be passed through."""
-        import tempfile, os
-        mock_tool_cls.return_value = MagicMock()
-
-        # Create a temp wishlist file with one query
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-            f.write("some book\n")
-            wishlist_path = f.name
-
-        try:
-            from src.search_local import SearchResult
-            mock_search.return_value = SearchResult(
-                results=[(None, None, None, None, "aa" * 16)],
-                total_count=1, page=1, per_page=10,
-            )
-
-            with patch("src.cli.get_config", return_value={
-                "db_path": None, "out_dir": "downloads", "concurrency": 2, "proxies": [],
-            }):
-                with patch("sys.argv", ["prog", "--concurrency", "4", "batch-snatch", wishlist_path]):
-                    from src.cli import main
-                    main()
-
-            mock_run.assert_called_once()
-            call_args = mock_run.call_args
-            assert call_args[0][5] == 4  # concurrency should be 4 from CLI flag (6th positional)
-        finally:
-            os.unlink(wishlist_path)
-
-    @patch("src.cli.AnnasArchiveTool")
-    @patch("src.cli._run_concurrent_downloads", return_value=[])
-    @patch("src.cli._print_summary_table")
     def test_config_concurrency_used_when_no_flag(self, mock_table, mock_run, mock_tool_cls):
         mock_tool_cls.return_value = MagicMock()
 

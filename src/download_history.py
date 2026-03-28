@@ -1,6 +1,7 @@
 """Download history tracking backed by a local SQLite database."""
 
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -12,33 +13,76 @@ logger = get_logger()
 # Default database location: sibling to the src/ directory
 _DEFAULT_DB_PATH = str(Path(__file__).parent.parent / "download_history.db")
 
+# Lazy-init flag per db_path to avoid redundant CREATE TABLE on every call
+_initialized_dbs: set[str] = set()
+_init_lock = threading.Lock()
+
 
 def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
-    """Open a connection with WAL mode for safe concurrent reads."""
+    """Open a connection with WAL mode and busy timeout for safe concurrent access."""
     resolved = db_path or _DEFAULT_DB_PATH
-    conn = sqlite3.connect(resolved)
+    conn = sqlite3.connect(resolved, timeout=30)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
     conn.row_factory = sqlite3.Row
     return conn
 
 
+def _ensure_table(db_path: Optional[str] = None) -> None:
+    """Create the downloads table once per db_path, guarded by a lock."""
+    resolved = db_path or _DEFAULT_DB_PATH
+    if resolved in _initialized_dbs:
+        return
+    with _init_lock:
+        # Double-check after acquiring the lock
+        if resolved in _initialized_dbs:
+            return
+        with _connect(db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS downloads (
+                    md5             TEXT PRIMARY KEY,
+                    title           TEXT,
+                    filename        TEXT,
+                    status          TEXT,
+                    started_at      TIMESTAMP,
+                    completed_at    TIMESTAMP,
+                    filesize_bytes  INTEGER,
+                    error           TEXT
+                )
+            """)
+            conn.commit()
+        _initialized_dbs.add(resolved)
+
+
 def init_downloads_table(db_path: Optional[str] = None) -> None:
-    """Create the downloads table if it does not already exist."""
+    """Public entry point kept for backwards compatibility."""
+    _ensure_table(db_path)
+
+
+def cleanup_orphaned_downloads(db_path: Optional[str] = None) -> int:
+    """Mark any 'downloading'/'started'/'queued' entries as 'interrupted'.
+
+    Called on app startup to handle downloads that were abandoned when the
+    previous session was killed (e.g., Task Manager, power loss). Returns
+    the number of rows updated.
+    """
+    _ensure_table(db_path)
+    now = datetime.now(timezone.utc).isoformat()
     with _connect(db_path) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS downloads (
-                md5             TEXT PRIMARY KEY,
-                title           TEXT,
-                filename        TEXT,
-                status          TEXT,
-                started_at      TIMESTAMP,
-                completed_at    TIMESTAMP,
-                filesize_bytes  INTEGER,
-                error           TEXT
-            )
-        """)
+        cursor = conn.execute(
+            """
+            UPDATE downloads
+            SET status = 'interrupted', error = 'App closed during download', completed_at = ?
+            WHERE status IN ('downloading', 'started', 'queued')
+            """,
+            (now,),
+        )
         conn.commit()
+        count = cursor.rowcount
+        if count > 0:
+            logger.info("Cleaned up %d orphaned download(s) from previous session", count)
+        return count
 
 
 def record_download_start(
@@ -51,7 +95,7 @@ def record_download_start(
         logger.warning("record_download_start called without an md5 — skipping")
         return
 
-    init_downloads_table(db_path)
+    _ensure_table(db_path)
     now = datetime.now(timezone.utc).isoformat()
 
     with _connect(db_path) as conn:
@@ -85,7 +129,7 @@ def record_download_complete(
         logger.warning("record_download_complete called without an md5 — skipping")
         return
 
-    init_downloads_table(db_path)
+    _ensure_table(db_path)
     now = datetime.now(timezone.utc).isoformat()
 
     with _connect(db_path) as conn:
@@ -114,7 +158,7 @@ def record_download_failed(
         logger.warning("record_download_failed called without an md5 — skipping")
         return
 
-    init_downloads_table(db_path)
+    _ensure_table(db_path)
     now = datetime.now(timezone.utc).isoformat()
 
     with _connect(db_path) as conn:
@@ -132,12 +176,38 @@ def record_download_failed(
     logger.debug(f"Recorded download failure for {md5[:8]}")
 
 
+def record_download_cancelled(
+    db_path: Optional[str] = None,
+    md5: str = "",
+) -> None:
+    """Mark an existing download as cancelled."""
+    if not md5:
+        logger.warning("record_download_cancelled called without an md5 — skipping")
+        return
+
+    _ensure_table(db_path)
+    now = datetime.now(timezone.utc).isoformat()
+
+    with _connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE downloads
+            SET status       = 'cancelled',
+                completed_at = ?
+            WHERE md5 = ?
+            """,
+            (now, md5),
+        )
+        conn.commit()
+    logger.debug(f"Recorded download cancelled for {md5[:8]}")
+
+
 def get_download_history(
     db_path: Optional[str] = None,
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
     """Return the most recent downloads, newest first."""
-    init_downloads_table(db_path)
+    _ensure_table(db_path)
 
     with _connect(db_path) as conn:
         cursor = conn.execute(
@@ -153,12 +223,34 @@ def get_download_history(
         return [dict(row) for row in cursor.fetchall()]
 
 
+def get_completed_download(
+    db_path: Optional[str] = None, md5: str = ""
+) -> Optional[Dict[str, Any]]:
+    """Return the completed download record for an md5, or None."""
+    if not md5:
+        return None
+    _ensure_table(db_path)
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            SELECT md5, title, filename, status, started_at,
+                   completed_at, filesize_bytes, error
+            FROM downloads
+            WHERE md5 = ? AND status = 'completed'
+            LIMIT 1
+            """,
+            (md5,),
+        )
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
 def is_downloaded(db_path: Optional[str] = None, md5: str = "") -> bool:
     """Return True if the given md5 has a completed download record."""
     if not md5:
         return False
 
-    init_downloads_table(db_path)
+    _ensure_table(db_path)
 
     with _connect(db_path) as conn:
         cursor = conn.execute(

@@ -45,9 +45,10 @@ def setup_logging(verbose: bool = False, log_file: str = "") -> logging.Logger:
         )
         file_handler.setFormatter(file_formatter)
         logger.addHandler(file_handler)
-    except OSError:
-        # If log file can't be created (e.g., permissions), continue with console only
-        pass
+    except OSError as e:
+        # If log file can't be created (e.g., permissions), warn and continue with console only
+        import sys
+        print(f"WARNING: Could not create log file {resolved_log_file}: {e}", file=sys.stderr)
 
     logger.addHandler(console_handler)
 

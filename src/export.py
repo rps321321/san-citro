@@ -7,12 +7,13 @@ import csv
 import io
 import json
 import os
-import sys
 from typing import List, Tuple, Optional, Set, TextIO
 
 from rich.console import Console
 from rich.table import Table
 from rich import box
+
+from .utils import format_filesize
 
 
 # Column definitions matching the tuple layout from search_db:
@@ -30,15 +31,6 @@ FIELD_NAMES = [
 ]
 
 
-def _format_size(size: Optional[int]) -> str:
-    """Convert byte count to human-readable string."""
-    if size and size > 1024 * 1024:
-        return f"{size / (1024 * 1024):.1f} MB"
-    if size:
-        return f"{size / 1024:.1f} KB"
-    return "N/A"
-
-
 def _build_owned_set(download_dir: str) -> Set[str]:
     """Build a set of filenames in the download directory for ownership checks."""
     if download_dir and os.path.exists(download_dir):
@@ -46,8 +38,10 @@ def _build_owned_set(download_dir: str) -> Set[str]:
     return set()
 
 
-def _is_owned(md5: str, owned_files: Set[str]) -> bool:
+def _is_owned(md5: Optional[str], owned_files: Set[str]) -> bool:
     """Check whether any file in the download dir contains this MD5."""
+    if not md5:
+        return False
     return any(md5 in fname for fname in owned_files)
 
 
@@ -95,15 +89,14 @@ def export_table(
             author or "Unknown",
             str(year) if year else "N/A",
             ext.upper() if ext else "N/A",
-            _format_size(size),
+            format_filesize(size),
             status,
         )
 
     if file:
-        plain_console = Console(file=open(file, "w", encoding="utf-8"), force_terminal=False)
-        plain_console.print(table)
-        # flush and close the underlying file handle
-        plain_console.file.close()
+        with open(file, "w", encoding="utf-8") as fh:
+            plain_console = Console(file=fh, force_terminal=False)
+            plain_console.print(table)
     else:
         Console().print(table)
 
@@ -129,7 +122,7 @@ def export_json(
             "md5": md5,
             "language": lang,
             "filesize_bytes": size,
-            "size_human": _format_size(size),
+            "size_human": format_filesize(size),
             "publisher": pub,
             "isbn13": isbn,
             "owned": _is_owned(md5, owned_files),
@@ -184,7 +177,7 @@ def export_csv(
             md5,
             lang,
             size or "",
-            _format_size(size),
+            format_filesize(size),
             pub or "",
             isbn or "",
             _is_owned(md5, owned_files),

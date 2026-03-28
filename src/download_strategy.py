@@ -7,20 +7,21 @@ Implements a strategy pattern with two concrete strategies:
 
 from __future__ import annotations
 
+import random
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
 from .logger import get_logger
+from .shutdown import register_driver, unregister_driver
+from .utils import TRUSTED_DOMAINS, get_browser_headers
 
 logger = get_logger()
-
-TRUSTED_DOMAINS = {"annas-archive.gl", "annas-archive.org", "annas-archive.se"}
 
 # Domains that appear on the download page but are NOT actual file hosts
 BLACKLISTED_DOMAINS = {
@@ -116,6 +117,9 @@ class DownloadStrategy(ABC):
 class ChromeStrategy(DownloadStrategy):
     """Uses undetected_chromedriver to wait for JS countdown and extract the download link."""
 
+    def __init__(self, proxies: Optional[List[str]] = None) -> None:
+        self.proxies = proxies or []
+
     def get_download_url(
         self,
         slow_download_url: str,
@@ -139,6 +143,9 @@ class ChromeStrategy(DownloadStrategy):
         try:
             options = uc.ChromeOptions()
             options.add_argument("--disable-blink-features=AutomationControlled")
+            if self.proxies:
+                proxy = random.choice(self.proxies)
+                options.add_argument(f'--proxy-server={proxy}')
             # Detect installed Chrome major version to avoid chromedriver mismatch
             ver_major = None
             try:
@@ -159,8 +166,7 @@ class ChromeStrategy(DownloadStrategy):
                             capture_output=True, text=True, timeout=5,
                         )
                         if result.returncode == 0:
-                            import re as _re
-                            m = _re.search(r"(\d+)\.", result.stdout)
+                            m = re.search(r"(\d+)\.", result.stdout)
                             if m:
                                 ver_major = int(m.group(1))
             except Exception:
@@ -168,6 +174,7 @@ class ChromeStrategy(DownloadStrategy):
             if ver_major:
                 logger.debug(f"Detected Chrome version: {ver_major}")
             driver = uc.Chrome(options=options, version_main=ver_major)
+            register_driver(driver)
             driver.get(slow_download_url)
 
             download_url = None
@@ -217,6 +224,7 @@ class ChromeStrategy(DownloadStrategy):
             logger.error(f"[{short}] Browser automation failed: {e}")
             return None
         finally:
+            unregister_driver()
             if driver:
                 try:
                     driver.quit()
@@ -234,11 +242,8 @@ class DirectHTTPStrategy(DownloadStrategy):
     4. Re-fetches or follows the redirect to get the final download URL
     """
 
-    USER_AGENT = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    )
+    def __init__(self, proxies: Optional[List[str]] = None) -> None:
+        self.proxies = proxies or []
 
     def get_download_url(
         self,
@@ -250,12 +255,12 @@ class DirectHTTPStrategy(DownloadStrategy):
         short = md5[:6]
         logger.info(f"[{short}] DirectHTTPStrategy: fetching slow_download page")
 
-        headers = {
-            "User-Agent": self.USER_AGENT,
-            "Referer": f"{base_url}/md5/{md5}",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
+        # Apply proxy to session if configured and not already set
+        if self.proxies and not session.proxies:
+            proxy_url = random.choice(self.proxies)
+            session.proxies = {"http": proxy_url, "https": proxy_url}
+
+        headers = get_browser_headers(referer=f"{base_url}/md5/{md5}")
 
         try:
             resp = session.get(
@@ -305,7 +310,7 @@ class DirectHTTPStrategy(DownloadStrategy):
             return None
 
         logger.info(f"[{short}] DirectHTTPStrategy: resolved download URL")
-        response_headers = {"User-Agent": self.USER_AGENT, "Referer": slow_download_url}
+        response_headers = get_browser_headers(referer=slow_download_url)
         cookies = dict(resp.cookies) if resp.cookies else {}
         return download_url, cookies, response_headers
 
@@ -407,50 +412,15 @@ class DirectHTTPStrategy(DownloadStrategy):
 
         return None
 
-    def _is_trusted_or_external_download(self, url: str) -> bool:
-        """Validate that the URL is either from a trusted domain or a plausible CDN."""
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
 
-        # Accept trusted Anna's Archive domains
-        if hostname in TRUSTED_DOMAINS:
-            return True
-
-        # Accept common CDN/storage patterns (these host the actual files)
-        cdn_patterns = [
-            r"\.cloudfront\.net$",
-            r"\.amazonaws\.com$",
-            r"\.b-cdn\.net$",
-            r"\.bunnycdn\.net$",
-            r"\.fastly\.net$",
-            r"\.ipfs\.",
-            r"\.pinata\.cloud$",
-            r"libgen\.",
-            r"library\.lol$",
-        ]
-        for pattern in cdn_patterns:
-            if re.search(pattern, hostname, re.IGNORECASE):
-                return True
-
-        # Accept any URL that looks like a file download (has a file extension in path)
-        path = parsed.path.lower()
-        file_extensions = (
-            ".pdf", ".epub", ".mobi", ".azw3", ".djvu", ".cbr", ".cbz",
-            ".fb2", ".txt", ".doc", ".docx", ".rtf", ".zip", ".rar",
-        )
-        if any(path.endswith(ext) for ext in file_extensions):
-            return True
-
-        # Reject truly suspicious domains, but be lenient for unknown CDNs
-        logger.debug(f"Allowing external download URL from: {hostname}")
-        return True
-
-
-def create_strategy(name: str) -> DownloadStrategy:
+def create_strategy(
+    name: str, proxies: Optional[List[str]] = None
+) -> DownloadStrategy:
     """Factory function to create a download strategy by name.
 
     Args:
         name: Strategy name -- 'chrome' or 'direct'.
+        proxies: Optional list of proxy URLs to route requests through.
 
     Returns:
         A DownloadStrategy instance.
@@ -465,4 +435,4 @@ def create_strategy(name: str) -> DownloadStrategy:
     if name not in strategies:
         valid = ", ".join(sorted(strategies.keys()))
         raise ValueError(f"Unknown strategy {name!r}. Valid options: {valid}")
-    return strategies[name]()
+    return strategies[name](proxies=proxies)

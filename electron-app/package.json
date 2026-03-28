@@ -1,0 +1,21 @@
+{
+  "name": "san-citro",
+  "version": "1.0.0",
+  "description": "San Citro - Desktop Book Library",
+  "author": "San Citro Contributors",
+  "license": "MIT",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsc && electron .",
+    "build": "tsc && electron-builder --win",
+    "build:python": "powershell ./scripts/build-python.ps1",
+    "build:web": "powershell ./scripts/build-web.ps1",
+    "build:all": "powershell ./scripts/build-all.ps1"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.0.0",
+    "@types/node": "^22.0.0"
+  }
+}

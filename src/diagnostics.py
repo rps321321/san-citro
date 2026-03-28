@@ -1,5 +1,3 @@
-import os
-import sqlite3
 from typing import Tuple, Optional, Dict, Any
 import requests
 import socket
@@ -7,6 +5,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from .logger import get_logger
+from .utils import get_working_domain, validate_proxy_url, test_proxy_connectivity
 
 logger = get_logger()
 console = Console()
@@ -43,22 +42,6 @@ def check_site_reachability(base_url: str) -> Tuple[bool, str]:
         return False, "Anna's Archive: [bold red]UNREACHABLE[/bold red]"
 
 
-def check_database(db_path: Optional[str]) -> Tuple[Optional[bool], str]:
-    """Verifies database health and record count."""
-    if not db_path or not os.path.exists(db_path):
-        return None, "Database: [bold yellow]NOT CONFIGURED[/bold yellow]"
-    try:
-        with sqlite3.connect(db_path) as conn:
-            res = conn.execute("PRAGMA integrity_check").fetchone()[0]
-            count = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
-        if res == "ok":
-            return True, f"Database: [bold green]HEALTHY[/bold green] ({count:,} records)"
-        else:
-            return False, "Database: [bold red]CORRUPTED[/bold red]"
-    except sqlite3.Error as e:
-        return False, f"Database: [bold red]ERROR[/bold red] ({e})"
-
-
 def check_chrome_automation() -> Tuple[bool, str]:
     """Checks if undetected_chromedriver is importable."""
     try:
@@ -68,16 +51,56 @@ def check_chrome_automation() -> Tuple[bool, str]:
         return False, "Browser Automation: [bold red]NOT READY[/bold red] (pip install undetected-chromedriver)"
 
 
+def check_proxies(proxies: list[str]) -> Tuple[Optional[bool], str]:
+    """Test each configured proxy and report the results.
+
+    Returns ``(True, ...)`` when all proxies pass, ``(None, ...)`` when none are
+    configured, or ``(False, ...)`` when at least one proxy fails.
+    """
+    if not proxies:
+        return None, "Proxies: [bold yellow]NONE CONFIGURED[/bold yellow]"
+
+    passed: list[str] = []
+    failed: list[str] = []
+    for url in proxies:
+        ok, msg = test_proxy_connectivity(url)
+        label = url.split("@")[-1]  # redact credentials
+        if ok:
+            passed.append(label)
+        else:
+            failed.append(f"{label} ({msg})")
+
+    if failed:
+        fail_list = ", ".join(failed)
+        return False, f"Proxies: [bold red]{len(failed)} FAILED[/bold red] — {fail_list}"
+    pass_list = ", ".join(passed)
+    return True, f"Proxies: [bold green]{len(passed)} OK[/bold green] — {pass_list}"
+
+
+def check_tls_fingerprint() -> Tuple[bool, str]:
+    """Check if TLS fingerprint impersonation is available via curl_cffi."""
+    try:
+        from curl_cffi import requests as _cr  # noqa: F401
+        return True, "TLS Fingerprint: [bold green]STEALTH[/bold green] (curl_cffi impersonating Chrome)"
+    except ImportError:
+        return None, "TLS Fingerprint: [bold yellow]STANDARD[/bold yellow] (pip install curl_cffi for stealth)"
+
+
 def run_diagnostics(config: Dict[str, Any]) -> None:
     """Runs a full suite of system diagnostics including IP leak test."""
     console.print("\n[bold magenta]Running System Pre-flight Check...[/bold magenta]\n")
 
+    # Use configured base_url or auto-detect the working domain
+    base_url = config.get("base_url") or get_working_domain()
+
+    proxies: list[str] = config.get("proxies") or []
     results = [
         check_internet(),
         check_ip_address(),
-        check_site_reachability("https://annas-archive.gl"),
-        check_database(config.get("db_path")),
+        check_site_reachability(base_url),
         check_chrome_automation(),
+        check_tls_fingerprint(),
+        check_proxies(proxies),
     ]
 
     table = Table(show_header=False, box=None)

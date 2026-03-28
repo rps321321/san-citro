@@ -37,7 +37,7 @@ class TestGetSlowDownloadLink:
         mock_resp = MagicMock()
         mock_resp.text = html
         mock_resp.raise_for_status = MagicMock()
-        with patch.object(tool.session, "get", return_value=mock_resp):
+        with patch.object(tool._search_session, "get", return_value=mock_resp):
             link = tool.get_slow_download_link("72a7e9cb2b7a5c9d03f6ae095745a1fa")
         assert link == "https://annas-archive.gl/slow_download/abc123/0"
 
@@ -48,7 +48,7 @@ class TestGetSlowDownloadLink:
     def test_returns_none_on_network_error(self):
         tool = AnnasArchiveTool()
         import requests
-        with patch.object(tool.session, "get", side_effect=requests.ConnectionError("timeout")):
+        with patch.object(tool._search_session, "get", side_effect=requests.ConnectionError("timeout")):
             assert tool.get_slow_download_link("72a7e9cb2b7a5c9d03f6ae095745a1fa") is None
 
     def test_rejects_untrusted_domain(self):
@@ -57,7 +57,7 @@ class TestGetSlowDownloadLink:
         mock_resp = MagicMock()
         mock_resp.text = html
         mock_resp.raise_for_status = MagicMock()
-        with patch.object(tool.session, "get", return_value=mock_resp):
+        with patch.object(tool._search_session, "get", return_value=mock_resp):
             link = tool.get_slow_download_link("72a7e9cb2b7a5c9d03f6ae095745a1fa")
         assert link is None
 

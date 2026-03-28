@@ -124,13 +124,13 @@ class TestMigrationV2:
         run_migrations(db_path)
         assert _table_exists(db_path, "downloads")
         cols = _get_columns(db_path, "downloads")
-        assert {"id", "md5", "filename", "status", "started_at", "completed_at"} <= cols
+        assert {"md5", "title", "filename", "status", "started_at", "completed_at", "filesize_bytes", "error"} <= cols
 
     def test_should_create_downloads_indexes(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "v2idx.db")
         run_migrations(db_path)
-        assert _index_exists(db_path, "idx_downloads_md5")
         assert _index_exists(db_path, "idx_downloads_status")
+        assert _index_exists(db_path, "idx_downloads_started_at")
 
 
 class TestMigrationV3:
@@ -139,7 +139,7 @@ class TestMigrationV3:
         run_migrations(db_path)
         assert _table_exists(db_path, "ingest_metadata")
         cols = _get_columns(db_path, "ingest_metadata")
-        assert {"filename", "file_size", "records_added", "completed_at", "byte_offset"} <= cols
+        assert {"filename", "file_size", "records_added", "completed_at", "byte_offset", "records_processed"} <= cols
 
 
 class TestMigrationV4:

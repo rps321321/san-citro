@@ -173,7 +173,7 @@ class TestDirectHTTPStrategyGetDownloadUrl:
         assert result is not None
         url, cookies, headers = result
         assert url == "https://cdn.example.com/d3/y/1774443509/g4/libgens/file.pdf"
-        assert headers["User-Agent"] == DirectHTTPStrategy.USER_AGENT
+        assert "User-Agent" in headers
         # Should have waited for countdown
         mock_sleep.assert_called_once_with(4)  # 3 + 1 safety margin
 

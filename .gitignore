@@ -8,6 +8,7 @@ build/
 
 # Environment
 .env
+.env*.local
 .venv/
 venv/
 
@@ -44,6 +45,17 @@ coverage.xml
 # OS
 .DS_Store
 Thumbs.db
+
+# Frontend
+node_modules/
+web/.next/
+web/out/
+
+# Electron app build artifacts
+electron-app/dist/
+electron-app/release/
+electron-app/renderer/
+electron-app/python-dist/
 
 # Compressed data (too large for git)
 data/*.jsonl.zst

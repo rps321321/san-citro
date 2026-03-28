@@ -7,6 +7,7 @@ only pending migrations inside individual transactions.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -111,41 +112,41 @@ def run_migrations(db_path: str) -> int:
     function safe to call repeatedly.
     """
     conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode = WAL")
-    cursor = conn.cursor()
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+        cursor = conn.cursor()
 
-    current = 0
-    if _has_schema_version_table(cursor):
-        cursor.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version")
-        current = cursor.fetchone()[0]
+        current = 0
+        if _has_schema_version_table(cursor):
+            cursor.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+            current = cursor.fetchone()[0]
 
-    pending = [m for m in get_registered_migrations() if m.version > current]
-    if not pending:
-        logger.info(f"Database is up to date at version {current}.")
+        pending = [m for m in get_registered_migrations() if m.version > current]
+        if not pending:
+            logger.info(f"Database is up to date at version {current}.")
+            return 0
+
+        applied = 0
+        for mig in pending:
+            logger.info(f"Applying migration v{mig.version}: {mig.description}")
+            try:
+                conn.execute("BEGIN")
+                mig.fn(cursor)
+                cursor.execute(
+                    "INSERT INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
+                    (mig.version, datetime.now(timezone.utc).isoformat(), mig.description),
+                )
+                conn.commit()
+                applied += 1
+            except Exception:
+                conn.rollback()
+                logger.error(f"Migration v{mig.version} failed — rolled back.")
+                raise
+
+        logger.info(f"Applied {applied} migration(s). Now at version {pending[-1].version}.")
+        return applied
+    finally:
         conn.close()
-        return 0
-
-    applied = 0
-    for mig in pending:
-        logger.info(f"Applying migration v{mig.version}: {mig.description}")
-        try:
-            conn.execute("BEGIN")
-            mig.fn(cursor)
-            cursor.execute(
-                "INSERT INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
-                (mig.version, datetime.now(timezone.utc).isoformat(), mig.description),
-            )
-            conn.commit()
-            applied += 1
-        except Exception:
-            conn.rollback()
-            logger.error(f"Migration v{mig.version} failed — rolled back.")
-            conn.close()
-            raise
-
-    logger.info(f"Applied {applied} migration(s). Now at version {pending[-1].version}.")
-    conn.close()
-    return applied
 
 
 # ---------------------------------------------------------------------------
@@ -167,21 +168,18 @@ def _m1(cursor: sqlite3.Cursor) -> None:
 def _m2(cursor: sqlite3.Cursor) -> None:
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS downloads (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            md5           TEXT NOT NULL,
-            filename      TEXT,
-            output_dir    TEXT,
-            file_path     TEXT,
-            filesize_bytes INTEGER,
-            started_at    TEXT NOT NULL,
-            completed_at  TEXT,
-            status        TEXT NOT NULL DEFAULT 'pending',
-            error_message TEXT,
-            UNIQUE(md5, file_path)
+            md5             TEXT PRIMARY KEY,
+            title           TEXT,
+            filename        TEXT,
+            status          TEXT,
+            started_at      TIMESTAMP,
+            completed_at    TIMESTAMP,
+            filesize_bytes  INTEGER,
+            error           TEXT
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_downloads_md5 ON downloads(md5)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_downloads_started_at ON downloads(started_at)")
 
 
 @migration(3, "Create ingest_metadata table for tracking data ingestion runs")
@@ -240,8 +238,13 @@ def _m4(cursor: sqlite3.Cursor) -> None:
         ("added_at", "TEXT"),
     ]
 
+    _VALID_COL_NAME = re.compile(r"^[a-z_]+$")
+    _VALID_COL_TYPE = re.compile(r"^[A-Z]+$")
     for col_name, col_type in expected_columns:
         if col_name not in existing_columns:
+            # Whitelist-validate to prevent DDL injection (even though values are hardcoded)
+            assert _VALID_COL_NAME.match(col_name), f"Invalid column name: {col_name}"
+            assert _VALID_COL_TYPE.match(col_type), f"Invalid column type: {col_type}"
             logger.info(f"  Adding missing column: records.{col_name} ({col_type})")
             cursor.execute(f"ALTER TABLE records ADD COLUMN {col_name} {col_type}")
 
@@ -251,3 +254,29 @@ def _m4(cursor: sqlite3.Cursor) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_year ON records(year)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_isbn13 ON records(isbn13)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_added_at ON records(added_at)")
+
+
+@migration(5, "Add records_processed column to ingest_metadata for record-count-based resume")
+def _m5(cursor: sqlite3.Cursor) -> None:
+    """Replace byte-offset resume with record-count resume.
+
+    Zstd is a streaming codec — seeking to an arbitrary compressed byte
+    offset produces garbage.  The new ``records_processed`` column tracks
+    how many records have been seen so that resume can decompress from the
+    beginning and skip the already-processed records.
+
+    The old ``byte_offset`` column is kept for backward compatibility but
+    is no longer written or used for resume logic.
+    """
+    cursor.execute("PRAGMA table_info(ingest_metadata)")
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    if "records_processed" not in existing_cols:
+        cursor.execute(
+            "ALTER TABLE ingest_metadata ADD COLUMN records_processed INTEGER DEFAULT 0"
+        )
+    # Backfill: set records_processed = records_added for incomplete runs so
+    # that an in-progress ingest can resume correctly after the upgrade.
+    cursor.execute(
+        "UPDATE ingest_metadata SET records_processed = records_added "
+        "WHERE records_processed IS NULL OR records_processed = 0"
+    )
