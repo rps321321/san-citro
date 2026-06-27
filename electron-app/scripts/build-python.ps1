@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$pythonDir = Join-Path $scriptDir ".." "python"
+$pythonDir = Join-Path (Join-Path $scriptDir "..") "python"
 $electronDir = Join-Path $scriptDir ".."
 
 Write-Host "Building Python bridge from: $pythonDir"
