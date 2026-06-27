@@ -53,7 +53,12 @@ function registerProtocol(): void {
     let filePath = request.url.replace(/^san-citro:\/\/app\/?/, '');
     filePath = decodeURIComponent(filePath);
 
-    const rendererDir = path.join(app.getAppPath(), 'renderer');
+    // In a packaged build the renderer ships as an extraResource at
+    // <resources>/renderer (a sibling of app.asar), so resolve against
+    // process.resourcesPath. In dev it sits next to the app at app.getAppPath().
+    const rendererDir = app.isPackaged
+      ? path.join(process.resourcesPath, 'renderer')
+      : path.join(app.getAppPath(), 'renderer');
     let resolvedPath = path.resolve(rendererDir, filePath);
 
     // Security: prevent directory traversal (case-insensitive on Windows)
