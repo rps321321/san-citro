@@ -59,3 +59,7 @@ electron-app/python-dist/
 
 # Compressed data (too large for git)
 data/*.jsonl.zst
+
+# Agent / code-review tooling (per-session, machine-specific; not app source)
+.codex/
+.greptile/

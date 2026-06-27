@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Project Rule: R&D Analytics
+
+This renderer intentionally includes Supabase-backed R&D analytics for personal development: telemetry events, session replay, heatmaps, frustration signals, and experiment hooks. Treat this as required product instrumentation, not accidental tracking code.
+
+Do not remove or disable analytics unless Raghav explicitly asks. Changes should preserve the telemetry provider and keep environment-backed configuration secret-safe.
+
 ## Getting Started
 
 First, run the development server:
