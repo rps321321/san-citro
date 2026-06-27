@@ -23,10 +23,20 @@ import {
 
 // ---------------------------------------------------------------------------
 // Never crash on a broken stdout/stderr pipe. When the app is launched from a
-// parent that later closes the pipe (a shell, CI, a wrapping process), the next
-// console write would otherwise emit an unhandled EPIPE and take down the whole
-// app. Logging is best-effort — a dead pipe must not be fatal.
+// parent that later closes the pipe (a shell, CI, a wrapping process), main-process
+// console writes — e.g. the Python-bridge stderr forwarder — throw EPIPE
+// *synchronously*, which a stream 'error' listener cannot catch, so it surfaces as
+// an unhandled exception that takes down the whole app. Route all console output
+// through electron-log's file transport and turn off its console transport, so
+// nothing in the main process writes to stdout/stderr. Stream-error no-ops are a
+// belt-and-suspenders guard for any remaining direct writes.
 // ---------------------------------------------------------------------------
+if (log.transports?.console) log.transports.console.level = false;
+console.log = (...args: unknown[]) => log.info(...args);
+console.info = (...args: unknown[]) => log.info(...args);
+console.warn = (...args: unknown[]) => log.warn(...args);
+console.error = (...args: unknown[]) => log.error(...args);
+console.debug = (...args: unknown[]) => log.debug(...args);
 process.stdout.on('error', () => {});
 process.stderr.on('error', () => {});
 
