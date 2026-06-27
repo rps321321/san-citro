@@ -11,9 +11,7 @@ import { getDeviceId, getSessionId } from "./telemetry";
 // Config
 // ---------------------------------------------------------------------------
 
-const SUPABASE_URL = "https://baoxanfqzxpdevjbysjc.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhb3hhbmZxenhwZGV2amJ5c2pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjYwMzksImV4cCI6MjA5MDI0MjAzOX0.LwOtCekQ3hNHH9rS-otFg6Tymh6H-tXhBZXtc5c1dGQ";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const STORAGE_KEY = "san-citro:ab-assignments";
 
@@ -62,6 +60,7 @@ const recordedThisSession = new Set<string>();
 // ---------------------------------------------------------------------------
 
 async function insertRow(table: string, row: Record<string, unknown>): Promise<void> {
+  if (!isSupabaseConfigured()) return;
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: "POST",

@@ -6,6 +6,7 @@ import {
   SaveIcon,
   LoaderIcon,
   PlayIcon,
+  RefreshCwIcon,
   CheckCircle2Icon,
   XCircleIcon,
   AlertTriangleIcon,
@@ -20,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   getSettings,
   updateSettings,
+  reloadConfig,
   getDiagnostics,
 } from "@/lib/api-client";
 import {
@@ -31,6 +33,7 @@ import type { DiagnosticResult } from "@/types";
 export default function SettingsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isReloading, setIsReloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -109,6 +112,24 @@ export default function SettingsPage() {
       setError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleReloadConfig = async () => {
+    setIsReloading(true);
+    setError(null);
+    try {
+      const updated = await reloadConfig();
+      setOutDir(updated.out_dir);
+      setConcurrency(String(updated.concurrency));
+      setProxiesText(updated.proxies.join(", "));
+      setSaveSuccess(true);
+      if (saveSuccessTimer.current) clearTimeout(saveSuccessTimer.current);
+      saveSuccessTimer.current = setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reload failed");
+    } finally {
+      setIsReloading(false);
     }
   };
 
@@ -239,14 +260,29 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          <Button onClick={handleSave} disabled={isSaving}>
-            {isSaving ? (
-              <LoaderIcon className="size-4 animate-spin" />
-            ) : (
-              <SaveIcon className="size-4" />
-            )}
-            Save Settings
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleSave} disabled={isSaving || isReloading}>
+              {isSaving ? (
+                <LoaderIcon className="size-4 animate-spin" />
+              ) : (
+                <SaveIcon className="size-4" />
+              )}
+              Save Settings
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReloadConfig}
+              disabled={isSaving || isReloading}
+              title="Apply saved config changes without restarting (e.g. concurrency updates)"
+            >
+              {isReloading ? (
+                <LoaderIcon className="size-4 animate-spin" />
+              ) : (
+                <RefreshCwIcon className="size-4" />
+              )}
+              Reload Config
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

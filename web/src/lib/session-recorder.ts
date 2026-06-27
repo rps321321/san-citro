@@ -12,16 +12,19 @@
 import { record } from "rrweb";
 import { getDeviceId, getSessionId } from "./telemetry";
 
-// rrweb event type — use a generic record since the export name varies across versions
-type RRWebEvent = Record<string, unknown>;
+// rrweb v2 alpha — typed as its documented event shape
+interface RRWebEvent {
+  type: number;
+  data: Record<string, unknown>;
+  timestamp: number;
+  delay?: number;
+}
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
 
-const SUPABASE_URL = "https://baoxanfqzxpdevjbysjc.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhb3hhbmZxenhwZGV2amJ5c2pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjYwMzksImV4cCI6MjA5MDI0MjAzOX0.LwOtCekQ3hNHH9rS-otFg6Tymh6H-tXhBZXtc5c1dGQ";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const FLUSH_INTERVAL_MS = 10_000;
 const MAX_BUFFER_SIZE = 100;
@@ -42,6 +45,7 @@ let isRecording = false;
 
 async function sendChunk(events: RRWebEvent[]): Promise<void> {
   if (events.length === 0) return;
+  if (!isSupabaseConfigured()) return;
 
   const payload = JSON.stringify(events);
   const compressedSizeBytes = new Blob([payload]).size;

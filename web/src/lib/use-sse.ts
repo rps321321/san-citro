@@ -30,6 +30,7 @@ export function useDownloadStream() {
       if (existing) clearTimeout(existing);
 
       const timer = setTimeout(() => {
+        if (cancelled) return;
         evictionTimers.current.delete(md5);
         setDownloads((prev) => {
           const next = new Map(prev);

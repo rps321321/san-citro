@@ -12,14 +12,7 @@
  */
 
 import { getDeviceId, getSessionId } from "./telemetry";
-
-// ---------------------------------------------------------------------------
-// Supabase config
-// ---------------------------------------------------------------------------
-
-const SUPABASE_URL = "https://baoxanfqzxpdevjbysjc.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhb3hhbmZxenhwZGV2amJ5c2pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjYwMzksImV4cCI6MjA5MDI0MjAzOX0.LwOtCekQ3hNHH9rS-otFg6Tymh6H-tXhBZXtc5c1dGQ";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const CLICK_FLUSH_INTERVAL_MS = 15_000;
 const MOUSE_FLUSH_INTERVAL_MS = 15_000;
@@ -87,6 +80,7 @@ async function sendToSupabase(
   table: string,
   rows: Record<string, unknown>[]
 ): Promise<void> {
+  if (!isSupabaseConfigured()) return;
   try {
     await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: "POST",
@@ -157,8 +151,7 @@ function baseRow(): Record<string, unknown> {
   return {
     device_id: getDeviceId(),
     session_id: getSessionId(),
-    page_url: typeof window !== "undefined" ? window.location.href : "",
-    timestamp: new Date().toISOString(),
+    page_path: typeof window !== "undefined" ? window.location.pathname : "",
   };
 }
 
@@ -204,10 +197,11 @@ function updateQuartileTime(): void {
   const now = Date.now();
   if (lastQuartileCheckTime > 0 && currentQuartile > 0) {
     const elapsed = now - lastQuartileCheckTime;
-    if (currentQuartile >= 1) quartileTimes.q25 += elapsed;
-    if (currentQuartile >= 2) quartileTimes.q50 += elapsed;
-    if (currentQuartile >= 3) quartileTimes.q75 += elapsed;
-    if (currentQuartile >= 4) quartileTimes.q100 += elapsed;
+    // Only accumulate time at the EXACT quartile the user is currently at
+    if (currentQuartile === 1) quartileTimes.q25 += elapsed;
+    else if (currentQuartile === 2) quartileTimes.q50 += elapsed;
+    else if (currentQuartile === 3) quartileTimes.q75 += elapsed;
+    else if (currentQuartile === 4) quartileTimes.q100 += elapsed;
   }
   lastQuartileCheckTime = now;
 }
@@ -241,11 +235,12 @@ function flushScrollDepth(): void {
   sendToSupabase("scroll_depth", [
     {
       ...baseRow(),
-      max_scroll_percent: maxScrollPercent,
-      time_at_q25_ms: Math.round(quartileTimes.q25),
-      time_at_q50_ms: Math.round(quartileTimes.q50),
-      time_at_q75_ms: Math.round(quartileTimes.q75),
-      time_at_q100_ms: Math.round(quartileTimes.q100),
+      max_depth_percent: maxScrollPercent,
+      time_at_25_ms: Math.round(quartileTimes.q25),
+      time_at_50_ms: Math.round(quartileTimes.q50),
+      time_at_75_ms: Math.round(quartileTimes.q75),
+      time_at_100_ms: Math.round(quartileTimes.q100),
+      total_scroll_events: 0,
     },
   ]);
 }

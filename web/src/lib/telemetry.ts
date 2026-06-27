@@ -19,9 +19,7 @@
 // Config
 // ---------------------------------------------------------------------------
 
-const SUPABASE_URL = "https://baoxanfqzxpdevjbysjc.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhb3hhbmZxenhwZGV2amJ5c2pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjYwMzksImV4cCI6MjA5MDI0MjAzOX0.LwOtCekQ3hNHH9rS-otFg6Tymh6H-tXhBZXtc5c1dGQ";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const DEVICE_ID_KEY = "san-citro:device-id";
 const BATCH_INTERVAL_MS = 30_000; // Flush events every 30s
@@ -64,9 +62,13 @@ let queue: QueuedInsert[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getAppVersion(): string {
-  return typeof window !== "undefined" && window.sanCitro
-    ? "1.0.0" // Will be replaced by actual version from Electron
-    : "unknown";
+  if (typeof window === "undefined") return "unknown";
+  // Read version from Electron's preload-injected API, fall back gracefully
+  const api = window.sanCitro;
+  if (api && "appVersion" in api) {
+    return (api as unknown as { appVersion: string }).appVersion;
+  }
+  return "unknown";
 }
 
 function getOsPlatform(): string {
@@ -79,6 +81,7 @@ function getOsPlatform(): string {
 }
 
 async function sendToSupabase(table: string, rows: Record<string, unknown>[]): Promise<void> {
+  if (!isSupabaseConfigured()) return;
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
       method: "POST",
@@ -138,7 +141,13 @@ function enqueue(table: string, row: Record<string, unknown>): void {
 
 // Flush on page unload
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", flush);
+  window.addEventListener("beforeunload", () => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    flush();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +205,7 @@ export function trackSearch(opts: {
   page?: number;
 }): void {
   enqueue("search_analytics", {
-    query: opts.query,
+    query: opts.query.slice(0, 500),
     extension_filter: opts.extension || null,
     language_filter: opts.language || null,
     year_min: opts.yearMin || null,

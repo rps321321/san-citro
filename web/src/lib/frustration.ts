@@ -11,9 +11,7 @@ import { getDeviceId, getSessionId } from "./telemetry";
 // Config
 // ---------------------------------------------------------------------------
 
-const SUPABASE_URL = "https://baoxanfqzxpdevjbysjc.supabase.co";
-const SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJhb3hhbmZxenhwZGV2amJ5c2pjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2NjYwMzksImV4cCI6MjA5MDI0MjAzOX0.LwOtCekQ3hNHH9rS-otFg6Tymh6H-tXhBZXtc5c1dGQ";
+import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const RAGE_CLICK_THRESHOLD = 3;
 const RAGE_CLICK_WINDOW_MS = 1_000;
@@ -113,6 +111,7 @@ async function sendSignal(
   clickCount: number,
   timeWindowMs: number
 ): Promise<void> {
+  if (!isSupabaseConfigured()) return;
   if (isDuplicate(signalType, selector)) return;
   markSent(signalType, selector);
 
@@ -158,8 +157,13 @@ function detectRageClicks(selector: string, targetText: string): void {
 }
 
 function detectDeadClick(el: Element, selector: string, targetText: string): void {
+  // Only flag dead clicks on elements that visually appear interactive (have pointer cursor)
+  // to avoid false positives on normal text selection clicks
   if (!isInteractiveElement(el)) {
-    sendSignal("dead_click", selector, targetText, 1, 0);
+    const cursor = window.getComputedStyle(el).cursor;
+    if (cursor === "pointer") {
+      sendSignal("dead_click", selector, targetText, 1, 0);
+    }
   }
 }
 
