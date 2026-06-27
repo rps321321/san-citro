@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, shell } from 'electron';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 
@@ -44,9 +44,37 @@ export function registerIpcHandlers(
     return bridge.call('update_settings', params);
   });
 
+  ipcMain.handle(IPC_CHANNELS.RELOAD_CONFIG, () => {
+    return bridge.call('reload_config');
+  });
+
   ipcMain.handle(IPC_CHANNELS.RUN_DIAGNOSTICS, () => {
     return bridge.call('run_diagnostics');
   });
+
+  // --- Shell access (owned by main process under sandboxed preload) ---
+
+  ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => {
+    // HTTP(S)-only guard (moved here from preload)
+    const protocol = new URL(url).protocol;
+    if (protocol !== 'https:' && protocol !== 'http:') {
+      throw new Error('Only HTTP(S) URLs are allowed');
+    }
+    return shell.openExternal(url);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.SHOW_ITEM_IN_FOLDER,
+    async (_event, { md5 }: { md5: string }) => {
+      // Resolve to a validated absolute path via the Python bridge, then reveal it.
+      const abs = (await bridge.call('resolve_download_path', { md5 })) as
+        | string
+        | null;
+      if (abs) {
+        shell.showItemInFolder(abs);
+      }
+    }
+  );
 
   // --- Forward push-events from bridge to renderer ---
 

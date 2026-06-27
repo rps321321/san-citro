@@ -36,6 +36,8 @@ export interface DownloadStatus {
   downloaded_bytes: number;
   error: string | null;
   filename: string | null;
+  /** Full path to the downloaded file on disk */
+  file_path: string | null;
   /** Unix timestamp (seconds) when the download worker started. */
   started_at: number | null;
 }
@@ -81,8 +83,10 @@ export interface SanCitroApi {
   getHistory(): Promise<HistoryEntry[]>;
   getSettings(): Promise<ConfigModel>;
   updateSettings(params: Partial<ConfigModel>): Promise<ConfigModel>;
+  reloadConfig(): Promise<ConfigModel>;
   runDiagnostics(): Promise<DiagnosticResult[]>;
   onDownloadProgress(callback: (data: DownloadStatus | DownloadStatus[]) => void): () => void;
+  showItemInFolder(md5: string): Promise<void>;
 }
 
 declare global {

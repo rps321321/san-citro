@@ -5,6 +5,7 @@ import platform
 import shutil
 from pathlib import Path
 from typing import Optional, List, Any, Dict
+from urllib.parse import urlsplit, urlunsplit
 
 APP_NAME = "san-citro"
 
@@ -52,6 +53,17 @@ def get_config_path() -> Path:
     if _config_path_override is not None:
         return _config_path_override
     return _get_platform_config_dir() / "config.json"
+
+
+def get_default_history_db_path() -> str:
+    """Return the platform data-dir path for the download history database.
+
+    Uses the same XDG/AppData logic as the config file and ensures the parent
+    directory exists. Resolved on use when ``history_db`` is unset in config.
+    """
+    db_path = _get_platform_config_dir() / "download_history.db"
+    _ensure_config_dir(db_path)
+    return str(db_path)
 
 
 def set_config_path(path: str) -> None:
@@ -112,6 +124,7 @@ def get_config() -> Dict[str, Any]:
         "concurrency": 2,
         "proxies": [],
         "base_url": None,  # None = auto-detect via get_working_domain()
+        "history_db": None,  # None -> resolved via get_default_history_db_path()
     }
 
     # Attempt migration from legacy location
@@ -136,6 +149,7 @@ def save_config(
     concurrency: Optional[int] = None,
     proxies: Optional[List[str]] = None,
     base_url: Optional[str] = None,
+    history_db: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Save current settings to the config file.
 
@@ -154,6 +168,8 @@ def save_config(
         config["proxies"] = proxies
     if base_url is not None:
         config["base_url"] = base_url or None  # empty string -> None (auto-detect)
+    if history_db is not None:
+        config["history_db"] = history_db
 
     config_path = get_config_path()
     _ensure_config_dir(config_path)
@@ -175,3 +191,64 @@ def save_config(
             pass
         raise
     return config
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers (consolidated here; imported by the Electron bridge + CLI)
+# ---------------------------------------------------------------------------
+
+# Concurrency bounds — single source of truth.
+CONCURRENCY_MIN: int = 1
+CONCURRENCY_MAX: int = 32
+
+
+def redact_proxy_url(url: str) -> str:
+    """Strip username/password from a proxy URL's netloc.
+
+    Returns the url unchanged if it has no credentials or cannot be parsed.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return url
+    if "@" not in parts.netloc:
+        return url
+    host = parts.netloc.rsplit("@", 1)[1]
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
+def clamp_concurrency(value: int) -> int:
+    """Clamp a concurrency value into [CONCURRENCY_MIN, CONCURRENCY_MAX]."""
+    return max(CONCURRENCY_MIN, min(CONCURRENCY_MAX, int(value)))
+
+
+def validate_concurrency(value: int) -> int:
+    """Return ``int(value)`` if within bounds, else raise ValueError."""
+    ivalue = int(value)
+    if ivalue < CONCURRENCY_MIN or ivalue > CONCURRENCY_MAX:
+        raise ValueError("concurrency must be between 1 and 32.")
+    return ivalue
+
+
+def validate_writable_dir(path: str) -> str:
+    """Resolve ``path`` to an absolute dir, create it, and verify writability.
+
+    Creates the directory (parents included) if absent, confirms it is a
+    directory, and confirms the process can write to it. Does NOT require
+    containment under the project root — user paths like ~/Downloads are fine.
+
+    Returns the resolved absolute path string. Raises PermissionError if the
+    path is not a writable directory.
+    """
+    if "\x00" in path:
+        raise PermissionError(f"out_dir is not a writable directory: {path}")
+    resolved = os.path.abspath(path)
+    try:
+        os.makedirs(resolved, exist_ok=True)
+        if not os.path.isdir(resolved):
+            raise PermissionError(f"out_dir is not a writable directory: {path}")
+        if not os.access(resolved, os.W_OK):
+            raise PermissionError(f"out_dir is not a writable directory: {path}")
+    except OSError as e:
+        raise PermissionError(f"out_dir is not a writable directory: {path}") from e
+    return resolved

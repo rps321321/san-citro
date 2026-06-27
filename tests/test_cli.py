@@ -1,195 +1,127 @@
-"""Tests for CLI argument parsing and command wiring."""
-import json
-import sqlite3
-from pathlib import Path
+"""Tests for CLI argument parsing, command wiring, and the C4 error boundary."""
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.cli import main, _handle_init, _handle_ingest, _handle_stats
+from src.cli import main
+
+
+_BASE_CONFIG = {"out_dir": "downloads", "proxies": [], "concurrency": 2, "history_db": None}
 
 
 class TestArgParser:
     """Verify that the argument parser accepts all expected commands and flags."""
 
-    def test_should_accept_init_command(self):
-        with patch("sys.argv", ["cli", "init"]), \
-             patch("src.cli._handle_init") as mock_init, \
-             patch("src.cli.get_config", return_value={"db_path": None, "out_dir": "downloads", "proxies": []}), \
-             patch("src.cli.setup_logging", return_value=MagicMock()):
-            main()
-            mock_init.assert_called_once()
-
-    def test_should_accept_stats_command(self):
-        with patch("sys.argv", ["cli", "stats"]), \
-             patch("src.cli._handle_stats") as mock_stats, \
-             patch("src.cli.get_config", return_value={"db_path": "/tmp/test.db", "out_dir": "downloads", "proxies": []}), \
-             patch("src.cli.setup_logging", return_value=MagicMock()):
-            main()
-            mock_stats.assert_called_once_with("/tmp/test.db")
-
-    def test_should_accept_ingest_with_zst_file(self):
-        with patch("sys.argv", ["cli", "ingest", "data.zst"]), \
-             patch("src.cli._handle_ingest") as mock_ingest, \
-             patch("src.cli.get_config", return_value={"db_path": None, "out_dir": "downloads", "proxies": []}), \
-             patch("src.cli.setup_logging", return_value=MagicMock()):
-            main()
-            mock_ingest.assert_called_once()
-            call_args = mock_ingest.call_args[0][0]
-            assert call_args.zst_file == "data.zst"
-            assert call_args.db_path is None
-
-    def test_should_accept_ingest_with_db_flag(self):
-        with patch("sys.argv", ["cli", "ingest", "data.zst", "--db", "/tmp/my.db"]), \
-             patch("src.cli._handle_ingest") as mock_ingest, \
-             patch("src.cli.get_config", return_value={"db_path": None, "out_dir": "downloads", "proxies": []}), \
-             patch("src.cli.setup_logging", return_value=MagicMock()):
-            main()
-            call_args = mock_ingest.call_args[0][0]
-            assert call_args.zst_file == "data.zst"
-            assert call_args.db_path == "/tmp/my.db"
-
     def test_should_accept_diagnose_command(self):
         with patch("sys.argv", ["cli", "diagnose"]), \
              patch("src.cli.run_diagnostics") as mock_diag, \
-             patch("src.cli.get_config", return_value={"db_path": None, "out_dir": "downloads", "proxies": []}), \
+             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)), \
+             patch("src.cli.init_downloads_table"), \
              patch("src.cli.setup_logging", return_value=MagicMock()):
             main()
             mock_diag.assert_called_once()
 
-    def test_should_accept_optimize_command(self):
-        with patch("sys.argv", ["cli", "optimize"]), \
-             patch("src.cli.optimize_db") as mock_opt, \
-             patch("src.cli.get_config", return_value={"db_path": "/tmp/test.db", "out_dir": "downloads", "proxies": []}), \
+    def test_should_accept_history_command(self):
+        with patch("sys.argv", ["cli", "history", "-n", "5"]), \
+             patch("src.cli.print_download_history") as mock_hist, \
+             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)), \
+             patch("src.cli.init_downloads_table"), \
              patch("src.cli.setup_logging", return_value=MagicMock()):
             main()
-            mock_opt.assert_called_once_with("/tmp/test.db")
+            mock_hist.assert_called_once()
+            assert mock_hist.call_args.kwargs["limit"] == 5
 
-    def test_should_reject_refresh_proxies_command(self):
-        """refresh-proxies was removed since there is no proxy-fetching logic."""
-        with patch("sys.argv", ["cli", "refresh-proxies"]), \
-             patch("src.cli.get_config", return_value={"db_path": None, "out_dir": "downloads", "proxies": []}), \
+    def test_should_reject_unknown_command(self):
+        with patch("sys.argv", ["cli", "bogus-command"]), \
+             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)), \
+             patch("src.cli.setup_logging", return_value=MagicMock()):
+            with pytest.raises(SystemExit):
+                main()
+
+    def test_should_require_a_subcommand(self):
+        with patch("sys.argv", ["cli"]), \
+             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)), \
              patch("src.cli.setup_logging", return_value=MagicMock()):
             with pytest.raises(SystemExit):
                 main()
 
     def test_should_accept_verbose_flag(self):
-        with patch("sys.argv", ["cli", "--verbose", "stats"]), \
-             patch("src.cli._handle_stats"), \
-             patch("src.cli.get_config", return_value={"db_path": "/tmp/t.db", "out_dir": "downloads", "proxies": []}), \
+        with patch("sys.argv", ["cli", "--verbose", "diagnose"]), \
+             patch("src.cli.run_diagnostics"), \
+             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)), \
+             patch("src.cli.init_downloads_table"), \
              patch("src.cli.setup_logging", return_value=MagicMock()) as mock_log:
             main()
             mock_log.assert_called_once_with(verbose=True)
 
 
-class TestHandleInit:
-    """Test the init wizard handler."""
+class TestErrorBoundary:
+    """C4: the try/except boundary lives inside main() so `python -m src` shares it."""
 
-    def test_should_save_user_provided_paths(self, tmp_path):
-        config = {"db_path": None, "out_dir": "downloads"}
-        with patch("src.cli.console") as mock_console, \
-             patch("src.cli.save_config") as mock_save:
-            mock_console.input = MagicMock(side_effect=["/tmp/my.db", "/tmp/out"])
-            _handle_init(config)
-            mock_save.assert_called_once_with(db_path="/tmp/my.db", out_dir="/tmp/out")
+    def test_should_exit_130_on_keyboard_interrupt(self):
+        with patch("sys.argv", ["cli", "diagnose"]), \
+             patch("src.cli._dispatch", side_effect=KeyboardInterrupt), \
+             patch("src.cli.setup_logging", return_value=MagicMock()):
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 130
 
-    def test_should_keep_defaults_when_user_presses_enter(self):
-        config = {"db_path": "/existing/db.sqlite", "out_dir": "dl"}
-        with patch("src.cli.console") as mock_console, \
-             patch("src.cli.save_config") as mock_save:
-            mock_console.input = MagicMock(side_effect=["", ""])
-            _handle_init(config)
-            mock_save.assert_called_once_with(db_path="/existing/db.sqlite", out_dir="dl")
+    def test_should_exit_1_on_scraper_runtime_error(self):
+        with patch("sys.argv", ["cli", "search", "python"]), \
+             patch("src.cli._dispatch", side_effect=RuntimeError("Failed to reach Anna's Archive")), \
+             patch("src.cli.console") as mock_console, \
+             patch("src.cli.setup_logging", return_value=MagicMock()):
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 1
+            assert "Error" in str(mock_console.print.call_args)
 
+    def test_should_exit_1_on_unexpected_exception(self):
+        with patch("sys.argv", ["cli", "diagnose"]), \
+             patch("src.cli._dispatch", side_effect=ValueError("boom")), \
+             patch("src.cli.console"), \
+             patch("src.cli.setup_logging", return_value=MagicMock()):
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 1
 
-class TestHandleIngest:
-    """Test the ingest command handler."""
-
-    def test_should_exit_when_no_db_path(self):
-        args = MagicMock()
-        args.db_path = None
-        args.zst_file = "data.zst"
-        config = {"db_path": None}
-        with pytest.raises(SystemExit):
-            _handle_ingest(args, config)
-
-    def test_should_exit_when_zst_file_missing(self, tmp_path):
-        args = MagicMock()
-        args.db_path = str(tmp_path / "test.db")
-        args.zst_file = str(tmp_path / "nonexistent.zst")
-        config = {"db_path": None}
-        with pytest.raises(SystemExit):
-            _handle_ingest(args, config)
-
-    def test_should_ingest_and_save_config(self, tmp_path, mock_zst_file):
-        db_path = str(tmp_path / "ingested.db")
-        args = MagicMock()
-        args.db_path = db_path
-        args.zst_file = str(mock_zst_file)
-        config = {"db_path": None}
-
-        with patch("src.cli.save_config") as mock_save:
-            _handle_ingest(args, config)
-            mock_save.assert_called_once_with(db_path=db_path)
-
-        # Verify records were ingested
-        with sqlite3.connect(db_path) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
-        assert count == 5
-
-    def test_should_use_config_db_path_when_no_flag(self, tmp_path, mock_zst_file):
-        db_path = str(tmp_path / "from_config.db")
-        args = MagicMock()
-        args.db_path = None
-        args.zst_file = str(mock_zst_file)
-        config = {"db_path": db_path}
-
-        with patch("src.cli.save_config"):
-            _handle_ingest(args, config)
-
-        with sqlite3.connect(db_path) as conn:
-            count = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
-        assert count == 5
+    def test_should_propagate_systemexit_unchanged(self):
+        """argparse / explicit sys.exit must NOT be swallowed by the boundary."""
+        with patch("sys.argv", ["cli", "diagnose"]), \
+             patch("src.cli._dispatch", side_effect=SystemExit(2)), \
+             patch("src.cli.setup_logging", return_value=MagicMock()):
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 2
 
 
-class TestHandleStats:
-    """Test the stats command handler."""
+class TestDownloadCommand:
+    """The download command validates the MD5 and delegates to the concurrent runner."""
 
-    def test_should_warn_when_no_db_configured(self, capsys):
-        with patch("src.cli.console") as mock_console:
-            _handle_stats(None)
-            mock_console.print.assert_called_once()
-            call_str = str(mock_console.print.call_args)
-            assert "No database configured" in call_str
+    def test_should_reject_invalid_md5(self):
+        with patch("sys.argv", ["cli", "download", "not-a-real-md5"]), \
+             patch("src.cli.AnnasArchiveTool", return_value=MagicMock()), \
+             patch("src.cli.create_strategy", return_value=MagicMock()), \
+             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)), \
+             patch("src.cli.init_downloads_table"), \
+             patch("src.cli.console"), \
+             patch("src.cli.setup_logging", return_value=MagicMock()):
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 1
 
-    def test_should_warn_when_db_file_missing(self):
-        with patch("src.cli.console") as mock_console:
-            _handle_stats("/nonexistent/path.db")
-            call_str = str(mock_console.print.call_args)
-            assert "No database configured" in call_str
-
-    def test_should_display_stats_for_populated_db(self, test_db):
-        with patch("src.cli.console") as mock_console:
-            _handle_stats(str(test_db))
-            # Should have been called multiple times (header + stats lines + tables)
-            assert mock_console.print.call_count >= 4
-            # Check the string-based calls contain expected data
-            str_calls = [
-                str(c) for c in mock_console.print.call_args_list
-                if not str(c).startswith("call(<rich.table")
-            ]
-            all_output = " ".join(str_calls)
-            assert "5" in all_output  # 5 records from mock data
-            # Tables are Rich objects; verify they were printed (2 tables: extensions + languages)
-            table_calls = [
-                c for c in mock_console.print.call_args_list
-                if "rich.table.Table" in str(c)
-            ]
-            assert len(table_calls) == 2
-
-    def test_should_display_stats_for_empty_db(self, empty_db):
-        with patch("src.cli.console") as mock_console:
-            _handle_stats(str(empty_db))
-            assert mock_console.print.call_count >= 4
-            all_output = " ".join(str(c) for c in mock_console.print.call_args_list)
-            assert "0" in all_output
+    @patch("src.cli.AnnasArchiveTool")
+    @patch("src.cli._run_concurrent_downloads", return_value=[])
+    @patch("src.cli._print_summary_table")
+    def test_should_force_concurrency_1_for_single_download(self, mock_table, mock_run, mock_tool_cls):
+        mock_tool_cls.return_value = MagicMock()
+        cfg = dict(_BASE_CONFIG, concurrency=7)
+        with patch("src.cli.get_config", return_value=cfg), \
+             patch("src.cli.init_downloads_table"), \
+             patch("src.cli.create_strategy", return_value=MagicMock()), \
+             patch("src.cli.setup_logging", return_value=MagicMock()), \
+             patch("sys.argv", ["prog", "--concurrency", "5", "download", "aa" * 16]):
+            main()
+        mock_run.assert_called_once()
+        # concurrency is the 6th positional arg; single downloads force it to 1.
+        assert mock_run.call_args[0][5] == 1

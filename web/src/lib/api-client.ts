@@ -83,6 +83,10 @@ export async function updateSettings(
   return ipc().updateSettings(config);
 }
 
+export async function reloadConfig(): Promise<ConfigModel> {
+  return ipc().reloadConfig();
+}
+
 // --------------- Diagnostics ---------------
 
 export async function getDiagnostics(): Promise<DiagnosticResult[]> {

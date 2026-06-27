@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, shell } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from './types';
 
 // The preload is a thin pass-through layer. It does NOT own domain types —
@@ -33,6 +33,9 @@ const api = {
   updateSettings: (params: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.UPDATE_SETTINGS, params),
 
+  reloadConfig: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.RELOAD_CONFIG),
+
   runDiagnostics: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.RUN_DIAGNOSTICS),
 
@@ -52,24 +55,12 @@ const api = {
 
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.GET_APP_VERSION),
 
-  openExternal: (url: string): Promise<void> => {
-    // Only allow HTTPS URLs to prevent abuse (file://, smb://, protocol handlers)
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
-        return Promise.reject(new Error('Only HTTP(S) URLs are allowed'));
-      }
-    } catch {
-      return Promise.reject(new Error('Invalid URL'));
-    }
-    return shell.openExternal(url);
-  },
+  // Shell access lives in the main process (sandboxed preload cannot import shell).
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url),
 
-  showItemInFolder: (filePath: string): void => {
-    // Basic validation — reject obviously malicious paths
-    if (!filePath || filePath.includes('\0')) return;
-    shell.showItemInFolder(filePath);
-  },
+  showItemInFolder: (md5: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHOW_ITEM_IN_FOLDER, { md5 }),
 };
 
 contextBridge.exposeInMainWorld('sanCitro', api);

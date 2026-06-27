@@ -19,14 +19,10 @@ from typing import Any, Optional
 # Format: plain integer (bytes) on a single line.
 _SIZE_SIDECAR_SUFFIX = ".size"
 
-from src.annas_archive_tool import AnnasArchiveTool
-from src.config_manager import get_config
-from src.download_history import (
-    record_download_cancelled,
-    record_download_complete,
-    record_download_failed,
-    record_download_start,
-)
+from src.config_manager import clamp_concurrency, get_config
+from src.download_job import TERMINAL_RETENTION_S, run_download
+from src.download_history import record_download_cancelled
+from src.download_strategy import create_strategy
 
 logger = logging.getLogger("bridge.download_manager")
 
@@ -56,6 +52,7 @@ class DownloadEntry:
             "downloaded_bytes": self.downloaded_bytes,
             "error": self.error,
             "filename": os.path.basename(self.file_path) if self.file_path else None,
+            "file_path": self.file_path,
             "started_at": self.started_at,
         }
 
@@ -71,9 +68,20 @@ def _get_concurrency_semaphore() -> threading.Semaphore:
     global _concurrency_sem
     if _concurrency_sem is None:
         config = get_config()
-        limit = max(1, min(32, config.get("concurrency", 2)))
+        limit = clamp_concurrency(config.get("concurrency", 2))
         _concurrency_sem = threading.Semaphore(limit)
     return _concurrency_sem
+
+
+def reset_concurrency_semaphore() -> None:
+    """Discard the cached semaphore so the next download picks up the new config value.
+
+    In-flight downloads hold the old semaphore and will complete normally.
+    New downloads queued after this call will use the updated concurrency limit.
+    """
+    global _concurrency_sem
+    with _lock:
+        _concurrency_sem = None
 
 
 def _get_send_event():
@@ -82,13 +90,13 @@ def _get_send_event():
     return send_event
 
 
-_TERMINAL_RETENTION_S = 300.0  # Auto-prune terminal entries after 5 minutes
+_TERMINAL_RETENTION_S = TERMINAL_RETENTION_S  # Auto-prune terminal entries after 5 minutes
 
 
 def _prune_terminal() -> None:
     """Remove completed/failed/cancelled entries older than retention period.
 
-    Called inside _lock from enqueue() to prevent unbounded dict growth.
+    Must be called with _lock held.
     """
     now = time.time()
     stale = [
@@ -99,6 +107,27 @@ def _prune_terminal() -> None:
     ]
     for md5 in stale:
         del _downloads[md5]
+
+
+def _background_prune_loop() -> None:
+    """Daemon thread: prune stale terminal entries every 5 minutes.
+
+    This ensures memory is reclaimed even when no new downloads are enqueued
+    (previously pruning only happened inside enqueue()).
+    """
+    while True:
+        time.sleep(_TERMINAL_RETENTION_S)
+        with _lock:
+            _prune_terminal()
+
+
+# Start the background prune daemon at module import time.
+_prune_thread = threading.Thread(
+    target=_background_prune_loop,
+    daemon=True,
+    name="dl-prune",
+)
+_prune_thread.start()
 
 
 def enqueue(md5: str, title: str) -> dict[str, Any]:
@@ -177,7 +206,13 @@ def _download_worker(md5: str) -> None:
 
 
 def _download_worker_inner(md5: str, send_event) -> None:
-    """Inner download logic, runs after concurrency slot is acquired."""
+    """Inner download logic, runs after concurrency slot is acquired.
+
+    Delegates the full tracked lifecycle (history records + terminal-state
+    guard) to ``download_job.run_download``.  The ``on_status`` sink mirrors
+    each emitted payload into the ``DownloadEntry`` (for ``get_all_statuses``)
+    and forwards it to the renderer as a ``download_progress`` event.
+    """
     with _lock:
         entry = _downloads[md5]
         # Check if cancelled while waiting in queue
@@ -194,9 +229,23 @@ def _download_worker_inner(md5: str, send_event) -> None:
     out_dir = config.get("out_dir", "downloads")
     history_db = config.get("history_db")
 
-    record_download_start(db_path=history_db, md5=md5, title=entry.title)
+    def on_status(payload: dict[str, Any]) -> None:
+        """Mirror a run_download payload into the entry and emit to renderer."""
+        with _lock:
+            entry.status = payload["status"]
+            entry.error = payload.get("error")
+            if payload.get("file_path"):
+                entry.file_path = payload["file_path"]
+            if payload.get("total_bytes"):
+                entry.total_bytes = payload["total_bytes"]
+            if payload.get("downloaded_bytes"):
+                entry.downloaded_bytes = payload["downloaded_bytes"]
+            entry.progress_percent = payload.get(
+                "progress_percent", entry.progress_percent
+            )
+        send_event("download_progress", payload)
 
-    # Start a progress-polling thread
+    # Start a progress-polling thread (transport-specific byte progress).
     poll_stop = threading.Event()
     poll_thread = threading.Thread(
         target=_poll_progress,
@@ -206,55 +255,19 @@ def _download_worker_inner(md5: str, send_event) -> None:
     )
     poll_thread.start()
 
-    result_path: Optional[str] = None
     try:
-        tool = AnnasArchiveTool(
-            proxies=config.get("proxies"),
-            strategy=None,  # use default ChromeStrategy
+        run_download(
+            md5=md5,
+            title=entry.title,
+            out_dir=out_dir,
+            history_db=history_db,
+            strategy=create_strategy("direct", proxies=config.get("proxies")),
+            on_status=on_status,
+            cancel=entry.cancel_flag,
         )
-        with tool:
-            result_path = tool.automated_slow_download(md5=md5, output_dir=out_dir)
-    except Exception as exc:
-        logger.exception("Download failed for %s", md5)
-        with _lock:
-            entry.status = "failed"
-            entry.error = str(exc)
-        record_download_failed(db_path=history_db, md5=md5, error=str(exc))
-        send_event("download_progress", entry.to_dict())
-        return
     finally:
         poll_stop.set()
         poll_thread.join(timeout=5)
-
-    if entry.cancel_flag.is_set():
-        with _lock:
-            entry.status = "cancelled"
-        send_event("download_progress", entry.to_dict())
-        return
-
-    if result_path:
-        file_size = os.path.getsize(result_path) if os.path.exists(result_path) else 0
-        with _lock:
-            entry.status = "completed"
-            entry.progress_percent = 100.0
-            entry.file_path = result_path
-            entry.downloaded_bytes = file_size
-            entry.total_bytes = file_size
-        record_download_complete(
-            db_path=history_db,
-            md5=md5,
-            filename=os.path.basename(result_path),
-            filesize_bytes=file_size,
-        )
-        # Use "download_progress" so the IPC handler forwards it to the renderer.
-        # The frontend checks dl.status === "completed" to know it's done.
-        send_event("download_progress", entry.to_dict())
-    else:
-        with _lock:
-            entry.status = "failed"
-            entry.error = "Download returned no file (strategies exhausted or MD5 mismatch)"
-        record_download_failed(db_path=history_db, md5=md5, error=entry.error or "")
-        send_event("download_progress", entry.to_dict())
 
 
 def _poll_progress(md5: str, out_dir: str, stop_event: threading.Event) -> None:
@@ -273,13 +286,13 @@ def _poll_progress(md5: str, out_dir: str, stop_event: threading.Event) -> None:
     size_path = part_path + _SIZE_SIDECAR_SUFFIX
 
     while not stop_event.is_set():
-        stop_event.wait(timeout=1)
+        stop_event.wait(timeout=0.5)
         if stop_event.is_set():
             break
 
         with _lock:
             entry = _downloads.get(md5)
-            if entry is None or entry.status not in ("downloading",):
+            if entry is None or entry.status not in ("started", "downloading"):
                 break
 
         try:

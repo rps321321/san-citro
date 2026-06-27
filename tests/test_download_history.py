@@ -10,7 +10,9 @@ from src.download_history import (
     record_download_start,
     record_download_complete,
     record_download_failed,
+    record_download_cancelled,
     get_download_history,
+    get_download_stats,
     is_downloaded,
 )
 
@@ -63,10 +65,12 @@ class TestRecordDownloadStart:
         assert row["status"] == "started"
         assert row["started_at"] is not None
 
-    def test_should_reset_status_when_md5_already_exists(self, history_db: str) -> None:
+    def test_should_preserve_prior_success_metadata_when_restarting_completed_md5(
+        self, history_db: str
+    ) -> None:
         record_download_start(history_db, md5="abc123", title="First Try")
         record_download_complete(history_db, md5="abc123", filename="f.pdf", filesize_bytes=100)
-        # Re-start the same download
+        # Re-start the same already-completed download
         record_download_start(history_db, md5="abc123", title="Second Try")
 
         with sqlite3.connect(history_db) as conn:
@@ -75,8 +79,47 @@ class TestRecordDownloadStart:
 
         assert row["status"] == "started"
         assert row["title"] == "Second Try"
-        assert row["filename"] is None
         assert row["error"] is None
+        # Preserve-on-restart: prior success metadata survives the new 'started'.
+        assert row["filename"] == "f.pdf"
+        assert row["filesize_bytes"] == 100
+        assert row["completed_at"] is not None
+
+    def test_should_not_lose_prior_success_when_retry_fails(self, history_db: str) -> None:
+        record_download_start(history_db, md5="abc123", title="First Try")
+        record_download_complete(history_db, md5="abc123", filename="f.pdf", filesize_bytes=100)
+        record_download_start(history_db, md5="abc123", title="Second Try")
+        record_download_failed(history_db, md5="abc123", error="boom")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'abc123'").fetchone()
+
+        assert row["status"] == "failed"
+        assert row["filename"] == "f.pdf"
+        assert row["filesize_bytes"] == 100
+
+    def test_should_not_overwrite_cancelled_with_completed(self, history_db: str) -> None:
+        record_download_start(history_db, md5="abc123", title="Job")
+        record_download_cancelled(history_db, md5="abc123")
+        record_download_complete(history_db, md5="abc123", filename="f.pdf", filesize_bytes=100)
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'abc123'").fetchone()
+
+        assert row["status"] == "cancelled"
+
+    def test_should_not_overwrite_cancelled_with_failed(self, history_db: str) -> None:
+        record_download_start(history_db, md5="abc123", title="Job")
+        record_download_cancelled(history_db, md5="abc123")
+        record_download_failed(history_db, md5="abc123", error="boom")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'abc123'").fetchone()
+
+        assert row["status"] == "cancelled"
 
     def test_should_skip_when_md5_is_empty(self, history_db: str) -> None:
         init_downloads_table(history_db)
@@ -176,3 +219,31 @@ class TestIsDownloaded:
 
     def test_should_return_false_when_md5_is_empty(self, history_db: str) -> None:
         assert is_downloaded(history_db, md5="") is False
+
+
+class TestGetDownloadStats:
+    def test_should_return_zeros_when_database_is_empty(self, history_db: str) -> None:
+        stats = get_download_stats(history_db)
+
+        assert stats["total_downloads"] == 0
+        assert stats["total_size_bytes"] == 0
+        assert stats["downloads_by_status"] == {}
+
+    def test_should_return_correct_counts_when_populated(self, history_db: str) -> None:
+        record_download_start(history_db, md5="ok1", title="One")
+        record_download_complete(history_db, md5="ok1", filename="one.pdf", filesize_bytes=100)
+        record_download_start(history_db, md5="ok2", title="Two")
+        record_download_complete(history_db, md5="ok2", filename="two.pdf", filesize_bytes=250)
+        record_download_start(history_db, md5="bad1", title="Bad")
+        record_download_failed(history_db, md5="bad1", error="oops")
+        record_download_start(history_db, md5="pend1", title="Pending")
+
+        stats = get_download_stats(history_db)
+
+        assert stats["total_downloads"] == 4
+        assert stats["total_size_bytes"] == 350  # completed only
+        assert stats["downloads_by_status"] == {
+            "completed": 2,
+            "failed": 1,
+            "started": 1,
+        }

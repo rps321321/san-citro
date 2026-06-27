@@ -34,49 +34,53 @@ class TestDownloadOne:
 
     def test_returns_success_when_tool_returns_path(self):
         tool = MagicMock()
-        tool.automated_slow_download.return_value = "/downloads/book.pdf"
 
-        result = _download_one(tool, "aabbccdd" * 4, "/downloads", None, None)
+        with patch("src.cli.run_download", return_value="/downloads/book.pdf") as mock_run:
+            result = _download_one(tool, "aabbccdd" * 4, "/downloads", None, None)
 
         assert result.status == "success"
         assert result.path == "/downloads/book.pdf"
         assert result.elapsed_seconds >= 0
-        tool.automated_slow_download.assert_called_once()
+        mock_run.assert_called_once()
 
     def test_returns_failed_when_tool_returns_none(self):
         tool = MagicMock()
-        tool.automated_slow_download.return_value = None
 
-        result = _download_one(tool, "aabbccdd" * 4, "/downloads", None, None)
+        with patch("src.cli.run_download", return_value=None):
+            result = _download_one(tool, "aabbccdd" * 4, "/downloads", None, None)
 
         assert result.status == "failed"
         assert result.error == "No file returned"
 
-    def test_returns_error_when_tool_raises(self):
+    def test_returns_failed_with_error_from_status(self):
         tool = MagicMock()
-        tool.automated_slow_download.side_effect = RuntimeError("browser crash")
 
-        result = _download_one(tool, "aabbccdd" * 4, "/downloads", None, None)
+        def fake_run(*args, on_status, **kwargs):
+            on_status({"error": "browser crash"})
+            return None
 
-        assert result.status == "error"
+        with patch("src.cli.run_download", side_effect=fake_run):
+            result = _download_one(tool, "aabbccdd" * 4, "/downloads", None, None)
+
+        assert result.status == "failed"
         assert "browser crash" in result.error
 
     def test_uses_filename_from_db_when_available(self):
         tool = MagicMock()
-        tool.automated_slow_download.return_value = "/downloads/Great_Gatsby.epub"
         md5 = "aabbccdd" * 4
 
-        with patch("src.cli.get_filename_from_db", return_value="Great_Gatsby.epub"):
+        with patch("src.cli.get_filename_from_db", return_value="Great_Gatsby.epub"), \
+                patch("src.cli.run_download", return_value="/downloads/Great_Gatsby.epub"):
             result = _download_one(tool, md5, "/downloads", "/some/db.sqlite", None)
 
         assert result.filename == "Great_Gatsby.epub"
 
     def test_uses_md5_fallback_filename_when_db_returns_none(self):
         tool = MagicMock()
-        tool.automated_slow_download.return_value = None
         md5 = "aabbccdd" * 4
 
-        with patch("src.cli.get_filename_from_db", return_value=None):
+        with patch("src.cli.get_filename_from_db", return_value=None), \
+                patch("src.cli.run_download", return_value=None):
             result = _download_one(tool, md5, "/downloads", None, None)
 
         assert result.filename == f"{md5}.file"

@@ -3,24 +3,26 @@
 import sqlite3
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .config_manager import get_default_history_db_path
 from .logger import get_logger
 
 logger = get_logger()
-
-# Default database location: sibling to the src/ directory
-_DEFAULT_DB_PATH = str(Path(__file__).parent.parent / "download_history.db")
 
 # Lazy-init flag per db_path to avoid redundant CREATE TABLE on every call
 _initialized_dbs: set[str] = set()
 _init_lock = threading.Lock()
 
 
+def _resolve_db_path(db_path: Optional[str]) -> str:
+    """Resolve a db path, falling back to the platform data dir."""
+    return db_path or get_default_history_db_path()
+
+
 def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
     """Open a connection with WAL mode and busy timeout for safe concurrent access."""
-    resolved = db_path or _DEFAULT_DB_PATH
+    resolved = _resolve_db_path(db_path)
     conn = sqlite3.connect(resolved, timeout=30)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
@@ -31,7 +33,7 @@ def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
 
 def _ensure_table(db_path: Optional[str] = None) -> None:
     """Create the downloads table once per db_path, guarded by a lock."""
-    resolved = db_path or _DEFAULT_DB_PATH
+    resolved = _resolve_db_path(db_path)
     if resolved in _initialized_dbs:
         return
     with _init_lock:
@@ -104,13 +106,13 @@ def record_download_start(
             INSERT INTO downloads (md5, title, status, started_at)
             VALUES (?, ?, 'started', ?)
             ON CONFLICT(md5) DO UPDATE SET
-                title       = excluded.title,
-                status      = 'started',
-                started_at  = excluded.started_at,
-                completed_at = NULL,
-                filename    = NULL,
-                filesize_bytes = NULL,
-                error       = NULL
+                title          = excluded.title,
+                status         = 'started',
+                started_at     = excluded.started_at,
+                completed_at   = CASE WHEN downloads.status = 'completed' THEN downloads.completed_at   ELSE NULL END,
+                filename       = CASE WHEN downloads.status = 'completed' THEN downloads.filename       ELSE NULL END,
+                filesize_bytes = CASE WHEN downloads.status = 'completed' THEN downloads.filesize_bytes ELSE NULL END,
+                error          = NULL
             """,
             (md5, title, now),
         )
@@ -140,7 +142,7 @@ def record_download_complete(
                 completed_at   = ?,
                 filename       = ?,
                 filesize_bytes = ?
-            WHERE md5 = ?
+            WHERE md5 = ? AND status != 'cancelled'
             """,
             (now, filename, filesize_bytes, md5),
         )
@@ -168,7 +170,7 @@ def record_download_failed(
             SET status       = 'failed',
                 completed_at = ?,
                 error        = ?
-            WHERE md5 = ?
+            WHERE md5 = ? AND status != 'cancelled'
             """,
             (now, error, md5),
         )
@@ -258,3 +260,29 @@ def is_downloaded(db_path: Optional[str] = None, md5: str = "") -> bool:
             (md5,),
         )
         return cursor.fetchone() is not None
+
+
+def get_download_stats(db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Return aggregate download stats. Never raises on an empty/new DB."""
+    _ensure_table(db_path)
+
+    with _connect(db_path) as conn:
+        counts = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM downloads GROUP BY status"
+        ).fetchall()
+        total_size = conn.execute(
+            "SELECT COALESCE(SUM(filesize_bytes), 0) FROM downloads WHERE status = 'completed'"
+        ).fetchone()[0]
+
+    downloads_by_status: Dict[str, int] = {}
+    total_downloads = 0
+    for row in counts:
+        status = row["status"] if row["status"] is not None else "unknown"
+        downloads_by_status[status] = row["n"]
+        total_downloads += row["n"]
+
+    return {
+        "total_downloads": total_downloads,
+        "total_size_bytes": int(total_size),
+        "downloads_by_status": downloads_by_status,
+    }

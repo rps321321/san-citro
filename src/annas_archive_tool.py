@@ -2,6 +2,7 @@ import random
 import json
 import os
 import re
+import threading
 import time
 import hashlib
 from dataclasses import dataclass
@@ -39,6 +40,11 @@ from urllib3.util.retry import Retry
 logger = get_logger()
 
 MD5_PATTERN = re.compile(r'^[a-f0-9]{32}$', re.IGNORECASE)
+
+
+def _is_cancelled(cancel: Optional[threading.Event]) -> bool:
+    """True if either the process-global shutdown or the per-job cancel is set."""
+    return is_cancelled() or (cancel is not None and cancel.is_set())
 
 # File magic bytes -> extension mapping
 MAGIC_BYTES = {
@@ -338,12 +344,13 @@ class AnnasArchiveTool:
         md5: str,
         output_dir: str = "downloads",
         custom_filename: Optional[str] = None,
+        cancel: Optional[threading.Event] = None,
     ) -> Optional[str]:
         if not MD5_PATTERN.match(md5):
             logger.error(f"Invalid MD5 hash: {md5!r}")
             return None
 
-        if is_cancelled():
+        if _is_cancelled(cancel):
             logger.info(f"[{md5[:6]}] Download skipped — shutdown in progress")
             return None
 
@@ -365,7 +372,7 @@ class AnnasArchiveTool:
             if self._is_cached_url_valid(cached_meta):
                 logger.info(f"[{md5[:6]}] Cached URL is still valid, skipping strategy phase")
                 result = self._download_file_with_retry(
-                    cached_meta, md5, output_dir, custom_filename
+                    cached_meta, md5, output_dir, custom_filename, cancel=cancel
                 )
                 if result:
                     _remove_meta(meta_path)
@@ -374,7 +381,7 @@ class AnnasArchiveTool:
                 logger.info(f"[{md5[:6]}] Cached URL expired or invalid, re-running strategy")
                 _remove_meta(meta_path)
 
-        if is_cancelled():
+        if _is_cancelled(cancel):
             logger.info(f"[{md5[:6]}] Download skipped — shutdown in progress")
             return None
 
@@ -413,7 +420,9 @@ class AnnasArchiveTool:
         _save_meta(meta_path, meta)
 
         # --- Download phase with retry ---
-        result = self._download_file_with_retry(meta, md5, output_dir, custom_filename)
+        result = self._download_file_with_retry(
+            meta, md5, output_dir, custom_filename, cancel=cancel
+        )
         if result:
             _remove_meta(meta_path)
         return result
@@ -462,6 +471,7 @@ class AnnasArchiveTool:
         md5: str,
         output_dir: str,
         custom_filename: Optional[str] = None,
+        cancel: Optional[threading.Event] = None,
     ) -> Optional[str]:
         """
         Download the file from *meta.download_url* into *output_dir*.
@@ -489,7 +499,7 @@ class AnnasArchiveTool:
 
         last_error: Optional[Exception] = None
         for attempt in range(1, DOWNLOAD_MAX_RETRIES + 1):
-            if is_cancelled():
+            if _is_cancelled(cancel):
                 logger.info(f"[{md5[:6]}] Download skipped — shutdown in progress")
                 return None
 
@@ -501,6 +511,7 @@ class AnnasArchiveTool:
                     final_path=final_path,
                     filename=filename,
                     output_dir=output_dir,
+                    cancel=cancel,
                 )
                 if result is not None:
                     return result
@@ -527,7 +538,7 @@ class AnnasArchiveTool:
                     f"failed: {last_error} -- retrying in {wait}s"
                 )
                 for _ in range(wait):
-                    if is_cancelled():
+                    if _is_cancelled(cancel):
                         return None
                     time.sleep(1)
             elif last_error is not None:
@@ -545,6 +556,7 @@ class AnnasArchiveTool:
         final_path: str,
         filename: str,
         output_dir: str = "downloads",
+        cancel: Optional[threading.Event] = None,
     ) -> Optional[str]:
         """
         Single download attempt.  Raises requests.RequestException on
@@ -592,7 +604,7 @@ class AnnasArchiveTool:
                     unit_scale=True,
                 ) as bar:
                     for chunk in res.iter_content(chunk_size=16384):
-                        if is_cancelled():
+                        if _is_cancelled(cancel):
                             cancelled = True
                             logger.info(
                                 f"[{md5[:6]}] Download interrupted — "

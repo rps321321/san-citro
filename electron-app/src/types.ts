@@ -38,7 +38,11 @@ export const IPC_CHANNELS = {
   GET_STATS: 'san-citro:getStats',
   GET_SETTINGS: 'san-citro:getSettings',
   UPDATE_SETTINGS: 'san-citro:updateSettings',
+  RELOAD_CONFIG: 'san-citro:reloadConfig',
   RUN_DIAGNOSTICS: 'san-citro:runDiagnostics',
   DOWNLOAD_PROGRESS: 'san-citro:downloadProgress',
   GET_APP_VERSION: 'san-citro:getAppVersion',
+  OPEN_EXTERNAL: 'san-citro:openExternal',
+  SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
+  RESOLVE_DOWNLOAD_PATH: 'san-citro:resolveDownloadPath',
 } as const;

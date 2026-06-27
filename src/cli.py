@@ -4,6 +4,7 @@ import sys
 import os
 import re
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any, Optional, List
@@ -13,17 +14,15 @@ from rich import box
 
 from .annas_archive_tool import AnnasArchiveTool
 from .scraper import scrape_annas_archive
-from .config_manager import get_config, set_config_path
+from .config_manager import get_config, set_config_path, clamp_concurrency
 from .logger import setup_logging, get_logger
 from .diagnostics import run_diagnostics
 from .download_strategy import create_strategy
 from .shutdown import install_signal_handlers, is_cancelled
 from .utils import format_filesize
+from .download_job import run_download
 from .download_history import (
     init_downloads_table,
-    record_download_start,
-    record_download_complete,
-    record_download_failed,
     get_download_history,
 )
 
@@ -129,38 +128,6 @@ def print_download_history(history_db: Optional[str], limit: int = 20) -> None:
 
 
 # ------------------------------------------------------------------
-# Tracked download wrapper (history recording)
-# ------------------------------------------------------------------
-
-def _tracked_download(
-    tool: AnnasArchiveTool,
-    md5: str,
-    title: str,
-    output_dir: str,
-    filename: Optional[str],
-    history_db: Optional[str],
-) -> Optional[str]:
-    """Wrap a single download with history tracking."""
-    record_download_start(db_path=history_db, md5=md5, title=title)
-    try:
-        result = tool.automated_slow_download(md5, output_dir=output_dir, custom_filename=filename)
-        if result:
-            filesize = os.path.getsize(result) if os.path.exists(result) else 0
-            record_download_complete(
-                db_path=history_db,
-                md5=md5,
-                filename=os.path.basename(result),
-                filesize_bytes=filesize,
-            )
-        else:
-            record_download_failed(db_path=history_db, md5=md5, error="Download returned no file")
-        return result
-    except Exception as e:
-        record_download_failed(db_path=history_db, md5=md5, error=str(e)[:500])
-        raise
-
-
-# ------------------------------------------------------------------
 # Concurrent downloads
 # ------------------------------------------------------------------
 
@@ -171,32 +138,44 @@ def _download_one(
     db_path: Optional[str],
     history_db: Optional[str],
 ) -> DownloadResult:
-    """Download a single file and return a structured result. Never raises."""
+    """Download a single file and return a structured result. Never raises.
+
+    Delegates the full tracked lifecycle (history records, terminal-state
+    guard, cancellation) to ``download_job.run_download``. The CLI has no
+    external cancel source, so a fresh per-job Event is passed; process-global
+    Ctrl+C is still honored via ``_is_cancelled`` inside the tool.
+    """
     filename = get_filename_from_db(db_path, md5) or f"{md5}.file"
     title = filename
-    logger = get_logger()
+    cancel = threading.Event()
+    last_status: dict[str, Any] = {}
+
+    def on_status(payload: dict) -> None:
+        last_status.update(payload)
+
     start = time.monotonic()
-    try:
-        path = _tracked_download(
-            tool, md5, title, output_dir, filename, history_db,
-        )
-        elapsed = time.monotonic() - start
-        if path:
-            return DownloadResult(
-                md5=md5, filename=filename, title=title, status="success",
-                path=path, elapsed_seconds=elapsed,
-            )
+    path = run_download(
+        md5=md5,
+        title=title,
+        out_dir=output_dir,
+        history_db=history_db,
+        strategy=create_strategy("direct"),
+        on_status=on_status,
+        cancel=cancel,
+    )
+    elapsed = time.monotonic() - start
+
+    if path:
         return DownloadResult(
-            md5=md5, filename=filename, title=title, status="failed",
-            error="No file returned", elapsed_seconds=elapsed,
+            md5=md5, filename=filename, title=title, status="success",
+            path=path, elapsed_seconds=elapsed,
         )
-    except Exception as exc:
-        elapsed = time.monotonic() - start
-        logger.error(f"[{md5[:6]}] Unexpected error: {exc}")
-        return DownloadResult(
-            md5=md5, filename=filename, title=title, status="error",
-            error=str(exc), elapsed_seconds=elapsed,
-        )
+
+    error = last_status.get("error") or "No file returned"
+    return DownloadResult(
+        md5=md5, filename=filename, title=title, status="failed",
+        error=error, elapsed_seconds=elapsed,
+    )
 
 
 def _run_concurrent_downloads(
@@ -412,19 +391,39 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # ------------------------------------------------------------------
+    # C4: single error boundary covering both `python -m src` and the
+    # console-script entry point. SystemExit (argparse / explicit exits)
+    # is intentionally NOT caught so it propagates unchanged.
+    # ------------------------------------------------------------------
+    try:
+        _dispatch(args)
+    except KeyboardInterrupt:
+        # Signal handler already printed the message; exit cleanly.
+        sys.exit(130)
+    except RuntimeError as e:
+        # Raised by scrape_annas_archive when the site is unreachable.
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[bold red]Error:[/bold red] {e}")
+        get_logger().critical(f"FATAL: {e}", exc_info=True)
+        sys.exit(1)
+
+
+def _dispatch(args: argparse.Namespace) -> None:
+    """Run the selected command. May raise; the boundary lives in ``main``."""
     # Apply --config override before loading config
     if args.config:
         set_config_path(args.config)
 
     config = get_config()
-    logger = setup_logging(verbose=args.verbose)
+    setup_logging(verbose=args.verbose)
 
-    active_db = config.get("db_path")
     active_out = config.get("out_dir", "downloads")
     active_proxies = config.get("proxies", [])
-    active_concurrency = args.concurrency or config.get("concurrency", 2)
-    active_concurrency = max(1, active_concurrency)
-    history_db = config.get("history_db")  # None -> uses module default
+    active_concurrency = clamp_concurrency(args.concurrency or config.get("concurrency", 2))
+    history_db = config.get("history_db")  # None -> resolved to platform data dir
 
     # Initialize download history table early
     init_downloads_table(history_db)
@@ -452,7 +451,7 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        _run_network_commands(args, tool, active_db, active_out, active_concurrency, history_db)
+        _run_network_commands(args, tool, None, active_out, active_concurrency, history_db)
     finally:
         tool.close()
 
@@ -613,11 +612,4 @@ def _run_network_commands(
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        # Signal handler already printed the message; exit cleanly
-        sys.exit(130)
-    except Exception as e:
-        get_logger().critical(f"FATAL: {e}", exc_info=True)
-        sys.exit(1)
+    main()

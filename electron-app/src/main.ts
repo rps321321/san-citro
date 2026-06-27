@@ -114,7 +114,7 @@ function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
 
@@ -209,7 +209,8 @@ app.whenReady().then(async () => {
           // epub.js renders into a blob: iframe
           "frame-src 'self' san-citro: blob:; " +
           "img-src 'self' san-citro: data: blob: https:; " +
-          "connect-src 'self' san-citro: blob:; " +
+          // Update this domain when NEXT_PUBLIC_SUPABASE_URL changes in web/.env.local
+          "connect-src 'self' san-citro: blob: https://baoxanfqzxpdevjbysjc.supabase.co; " +
           "font-src 'self' san-citro: data: blob:; " +
           // Harden: restrict object embeds, base URI, form targets, workers
           "object-src 'none'; " +

@@ -13,12 +13,15 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sqlite3
-from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse, urlunparse
 
-from src.config_manager import get_config, save_config
+from src.config_manager import (
+    get_config,
+    redact_proxy_url,
+    save_config,
+    validate_concurrency,
+    validate_writable_dir,
+)
 from src.scraper import scrape_annas_archive
 from src.diagnostics import (
     check_chrome_automation,
@@ -28,16 +31,17 @@ from src.diagnostics import (
     check_site_reachability,
     check_tls_fingerprint,
 )
-from src.download_history import get_download_history
+from src.download_history import (
+    get_completed_download,
+    get_download_history,
+    get_download_stats,
+)
 
 logger = logging.getLogger("bridge.handlers")
 
 # ---------------------------------------------------------------------------
 # Helpers shared across handlers
 # ---------------------------------------------------------------------------
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-
 
 _MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
 
@@ -47,19 +51,6 @@ def _validate_md5(md5: str) -> str:
     if not md5 or not _MD5_RE.match(md5):
         raise ValueError("Invalid md5 hash (must be 32 hex characters)")
     return md5
-
-
-def _connect_db(db_path: str) -> sqlite3.Connection:
-    """Open a SQLite connection with WAL mode and busy timeout.
-
-    All bridge handler DB access should go through this helper to ensure
-    consistent settings and avoid 'database is locked' errors during
-    concurrent ingest.
-    """
-    conn = sqlite3.connect(db_path, timeout=30)
-    conn.execute("PRAGMA busy_timeout = 30000")
-    conn.execute("PRAGMA journal_mode = WAL")
-    return conn
 
 
 def _get_history_db() -> Optional[str]:
@@ -94,19 +85,6 @@ def _redact_sensitive_message(name: str, success: Optional[bool], message: str) 
             return "OFFLINE"
         return "check inconclusive"
     return cleaned
-
-
-# ---------------------------------------------------------------------------
-# Settings helpers
-# ---------------------------------------------------------------------------
-
-def _redact_proxy_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.username or parsed.password:
-        netloc = f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
-        clean = parsed._replace(netloc=netloc)
-        return urlunparse(clean)
-    return url
 
 
 # ===================================================================
@@ -199,37 +177,7 @@ def handle_get_history(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 def handle_get_stats(params: dict[str, Any]) -> dict[str, Any]:
     """get_stats — download history statistics only (no archive DB)."""
-    config = get_config()
-    history_db = config.get("history_db")
-
-    downloads_by_status: dict[str, int] = {}
-    total_downloads = 0
-    total_size = 0
-
-    if history_db and os.path.exists(history_db):
-        try:
-            with _connect_db(history_db) as conn:
-                cursor = conn.cursor()
-                rows = cursor.execute(
-                    "SELECT status, COUNT(*) as cnt FROM downloads GROUP BY status"
-                ).fetchall()
-                for status_name, count in rows:
-                    downloads_by_status[status_name or "unknown"] = count
-                    total_downloads += count
-
-                size_row = cursor.execute(
-                    "SELECT COALESCE(SUM(filesize_bytes), 0) FROM downloads "
-                    "WHERE status = 'completed'"
-                ).fetchone()
-                total_size = size_row[0] if size_row else 0
-        except sqlite3.OperationalError:
-            pass
-
-    return {
-        "total_downloads": total_downloads,
-        "total_size_bytes": total_size,
-        "downloads_by_status": downloads_by_status,
-    }
+    return get_download_stats(db_path=_get_history_db())
 
 
 def handle_get_settings(params: dict[str, Any]) -> dict[str, Any]:
@@ -242,8 +190,11 @@ def handle_get_settings(params: dict[str, Any]) -> dict[str, Any]:
     the real ones in the config file).
     """
     config = get_config()
+    out_dir = config.get("out_dir", "downloads")
+    # Always return an absolute path so the frontend can display it.
+    out_dir = os.path.abspath(out_dir)
     return {
-        "out_dir": config.get("out_dir", "downloads"),
+        "out_dir": out_dir,
         "concurrency": config.get("concurrency", 2),
         "proxies": config.get("proxies", []),
     }
@@ -259,18 +210,13 @@ def handle_update_settings(params: dict[str, Any]) -> dict[str, Any]:
     if out_dir is not None and not out_dir.strip():
         out_dir = None
 
-    # Validate concurrency
+    # Validate concurrency (strict — reject out-of-bounds rather than clamp)
     if concurrency is not None:
-        concurrency = int(concurrency)
-        if not (1 <= concurrency <= 32):
-            raise ValueError("concurrency must be between 1 and 32.")
+        concurrency = validate_concurrency(int(concurrency))
 
-    # Validate out_dir is within project root
+    # Validate out_dir is a user-writable directory (no project-root restriction)
     if out_dir is not None:
-        resolved = Path(out_dir).resolve()
-        if not resolved.is_relative_to(_PROJECT_ROOT):
-            raise PermissionError("out_dir must be within the project directory.")
-        out_dir = str(resolved)
+        out_dir = validate_writable_dir(out_dir)
 
     updated = save_config(
         out_dir=out_dir,
@@ -279,11 +225,22 @@ def handle_update_settings(params: dict[str, Any]) -> dict[str, Any]:
     )
     raw_proxies: list[str] = updated.get("proxies", [])
     return {
-        "db_path": updated.get("db_path"),
         "out_dir": updated.get("out_dir", "downloads"),
         "concurrency": updated.get("concurrency", 2),
-        "proxies": [_redact_proxy_url(p) for p in raw_proxies],
+        "proxies": [redact_proxy_url(p) for p in raw_proxies],
     }
+
+
+def handle_reload_config(params: dict[str, Any]) -> dict[str, Any]:
+    """reload_config — apply config changes without restarting.
+
+    Resets the concurrency semaphore so the next enqueued download picks up
+    the updated limit. Returns the current settings so the caller can confirm
+    the new values are live.
+    """
+    import download_manager
+    download_manager.reset_concurrency_semaphore()
+    return handle_get_settings({})
 
 
 def handle_run_diagnostics(params: dict[str, Any]) -> list[dict[str, Any]]:
@@ -311,6 +268,33 @@ def handle_run_diagnostics(params: dict[str, Any]) -> list[dict[str, Any]]:
     return results
 
 
+def handle_resolve_download_path(params: dict[str, Any]) -> Optional[str]:
+    """resolve_download_path — return a realpath-contained absolute file path
+    for a completed download by md5, or None.
+
+    Used by the main process to back ``showItemInFolder``. The resolved path
+    MUST live inside the configured (validated) downloads directory — any
+    path that escapes it is rejected to prevent revealing arbitrary files.
+    """
+    md5 = _validate_md5(params.get("md5", ""))
+
+    record = get_completed_download(db_path=_get_history_db(), md5=md5)
+    if not record or not record.get("filename"):
+        return None
+
+    out_dir_abs = os.path.realpath(
+        validate_writable_dir(get_config().get("out_dir", "downloads"))
+    )
+    file_path = os.path.realpath(os.path.join(out_dir_abs, record["filename"]))
+
+    # Reject path escapes (e.g. a stored filename containing ../).
+    if not file_path.startswith(out_dir_abs + os.sep):
+        return None
+    if not os.path.exists(file_path):
+        return None
+    return file_path
+
+
 # ===================================================================
 # Registration — called by bridge.main()
 # ===================================================================
@@ -327,4 +311,6 @@ def register_handlers() -> None:
     register_method("get_stats", handle_get_stats)
     register_method("get_settings", handle_get_settings)
     register_method("update_settings", handle_update_settings)
+    register_method("reload_config", handle_reload_config)
     register_method("run_diagnostics", handle_run_diagnostics)
+    register_method("resolve_download_path", handle_resolve_download_path)

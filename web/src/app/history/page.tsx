@@ -6,6 +6,7 @@ import {
   LoaderIcon,
   FileSpreadsheetIcon,
   FileJsonIcon,
+  FolderOpenIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -176,6 +177,7 @@ export default function HistoryPage() {
                 <TableHead>Started</TableHead>
                 <TableHead>Completed</TableHead>
                 <TableHead>Error</TableHead>
+                <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -213,6 +215,21 @@ export default function HistoryPage() {
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">-</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {entry.status === "completed" && entry.filename && entry.md5 && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => {
+                          window.sanCitro?.showItemInFolder(entry.md5);
+                        }}
+                        aria-label={`Show ${entry.filename} in folder`}
+                        title="Show in folder"
+                      >
+                        <FolderOpenIcon className="size-4" />
+                      </Button>
                     )}
                   </TableCell>
                 </TableRow>
