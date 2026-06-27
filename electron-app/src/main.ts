@@ -22,6 +22,15 @@ import {
 } from './updater';
 
 // ---------------------------------------------------------------------------
+// Never crash on a broken stdout/stderr pipe. When the app is launched from a
+// parent that later closes the pipe (a shell, CI, a wrapping process), the next
+// console write would otherwise emit an unhandled EPIPE and take down the whole
+// app. Logging is best-effort — a dead pipe must not be fatal.
+// ---------------------------------------------------------------------------
+process.stdout.on('error', () => {});
+process.stderr.on('error', () => {});
+
+// ---------------------------------------------------------------------------
 // Single instance lock
 // ---------------------------------------------------------------------------
 const gotLock = app.requestSingleInstanceLock();
