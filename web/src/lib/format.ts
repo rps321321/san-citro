@@ -13,6 +13,17 @@ export function formatFileSize(bytes: number | null | undefined): string {
 }
 
 /**
+ * Format a duration in seconds as a compact human-readable string (e.g. "45s", "2m 5s").
+ */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const totalSec = Math.round(seconds);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s}s`;
+}
+
+/**
  * Truncate an MD5 hash to the first 8 characters.
  * Handles null/undefined defensively since API data may be nullable.
  */
@@ -30,6 +41,7 @@ export function formatDate(dateStr: string | null | undefined): string {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return "-";
     return d.toLocaleString(undefined, {
+      year: "numeric",
       month: "short",
       day: "numeric",
       hour: "2-digit",
