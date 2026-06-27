@@ -85,26 +85,27 @@ All tests are fully offline (mocked HTTP). No VPN or network access required.
 
 ```
 annas_archive_project/
-├── src/
-│   ├── annas_archive_tool.py   # HTTP client + download automation
+├── src/                        # Python core (CLI + shared download engine)
+│   ├── annas_archive_tool.py   # HTTP client + download automation (MD5 verify, resume)
 │   ├── cli.py                  # CLI entry point
+│   ├── scraper.py              # Live Anna's Archive search scraper
+│   ├── download_strategy.py    # Chrome / DirectHTTP download strategies
+│   ├── download_job.py         # Shared download lifecycle (CLI + Electron)
+│   ├── download_history.py     # SQLite download history
 │   ├── config_manager.py       # JSON config management
 │   ├── diagnostics.py          # System health checks
-│   ├── ingest_db.py            # ZST decompression + SQLite ingestion
+│   ├── migrations.py           # SQLite schema migrations
+│   ├── export.py               # Search-result exporters
 │   ├── logger.py               # Logging setup (Rich + rotating file)
-│   ├── mock_data_generator.py  # Test fixture generator
-│   └── search_local.py         # FTS5 search + Rich display
-├── tests/
-│   ├── conftest.py             # Shared fixtures
-│   ├── test_annas_archive.py   # Tool tests (mocked network)
-│   ├── test_config_manager.py  # Config tests
-│   ├── test_diagnostics.py     # Diagnostics tests
-│   ├── test_ingest_db.py       # Ingestion pipeline tests
-│   ├── test_logger.py          # Logger tests
-│   └── test_search_local.py    # Search + display tests
-├── data/                       # Local databases and data files
+│   ├── shutdown.py             # Graceful SIGINT/SIGTERM handling
+│   ├── utils.py                # Shared helpers (domains, rate limiting)
+│   └── mock_data_generator.py  # Test fixture generator
+├── tests/                      # pytest suite (offline, mocked network)
+├── electron-app/               # Electron desktop app
+│   ├── src/                    # main / preload / ipc-handlers (TypeScript)
+│   └── python/                 # JSON-RPC bridge over src/
+├── web/                        # Next.js renderer (loaded by Electron)
 ├── requirements.txt            # Production dependencies
-├── requirements-dev.txt        # Dev/test dependencies
 ├── pyproject.toml              # Package configuration
 └── .gitignore
 ```

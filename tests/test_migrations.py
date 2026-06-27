@@ -160,13 +160,14 @@ class TestMigrationV4:
     def test_should_handle_records_table_already_having_all_columns(
         self, tmp_path: Path
     ) -> None:
-        """Run on a DB already created by init_db -- nothing should break."""
-        from src.ingest_db import init_db
-
+        """Re-running migrations on an already-migrated DB must be a no-op."""
         db_path = str(tmp_path / "v4full.db")
-        conn = init_db(db_path)
-        conn.close()
-        # Should not raise
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT)"
+            )
+        run_migrations(db_path)  # first run adds all v4 columns
+        # Second run must not raise (idempotent)
         run_migrations(db_path)
         cols = _get_columns(db_path, "records")
         assert "source" in cols
