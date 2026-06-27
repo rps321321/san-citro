@@ -1,6 +1,7 @@
-import { ipcMain, BrowserWindow, shell } from 'electron';
+import { ipcMain, BrowserWindow, shell, dialog, app, Notification } from 'electron';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
+import { checkForUpdates, quitAndInstall } from './updater';
 
 /**
  * Register all IPC handlers that delegate to the Python bridge.
@@ -76,12 +77,47 @@ export function registerIpcHandlers(
     }
   );
 
+  // Native folder picker (sandboxed preload cannot import dialog).
+  ipcMain.handle(IPC_CHANNELS.SHOW_OPEN_DIALOG, async () => {
+    const win = getMainWindow();
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    return result.filePaths[0];
+  });
+
+  // --- Auto-update ---
+
+  ipcMain.handle(IPC_CHANNELS.CHECK_FOR_UPDATES, () => {
+    return checkForUpdates(app.isPackaged);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.QUIT_AND_INSTALL, () => {
+    quitAndInstall();
+  });
+
   // --- Forward push-events from bridge to renderer ---
 
   bridge.on('download_progress', (params) => {
     const win = getMainWindow();
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC_CHANNELS.DOWNLOAD_PROGRESS, params);
+    }
+
+    // OS notification on completion when the window isn't focused.
+    const p = params as { status?: string; title?: string };
+    if (
+      p.status === 'completed' &&
+      (!win || !win.isFocused()) &&
+      Notification.isSupported()
+    ) {
+      new Notification({
+        title: 'Download complete',
+        body: p.title ?? 'Your download has finished.',
+      }).show();
     }
   });
 

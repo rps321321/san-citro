@@ -1,7 +1,15 @@
 import { Tray, Menu, BrowserWindow, app, nativeImage, shell } from 'electron';
 import path from 'path';
+import { UpdateStatus } from './types';
 
 let tray: Tray | null = null;
+
+// Captured so we can rebuild the menu when an update becomes available.
+let getMainWindowRef: (() => BrowserWindow | null) | null = null;
+let downloadsDirRef = '';
+let onCheckForUpdatesRef: (() => void) | null = null;
+let onQuitAndInstallRef: (() => void) | null = null;
+let latestUpdate: UpdateStatus = { status: 'idle' };
 
 /**
  * Create the system tray icon with context menu.
@@ -9,8 +17,15 @@ let tray: Tray | null = null;
  */
 export function createTray(
   getMainWindow: () => BrowserWindow | null,
-  downloadsDir: string
+  downloadsDir: string,
+  onCheckForUpdates: () => void,
+  onQuitAndInstall: () => void
 ): Tray {
+  getMainWindowRef = getMainWindow;
+  downloadsDirRef = downloadsDir;
+  onCheckForUpdatesRef = onCheckForUpdates;
+  onQuitAndInstallRef = onQuitAndInstall;
+
   const iconPath = path.join(app.getAppPath(), 'resources', 'icon.ico');
 
   // Fallback: create a simple 16x16 icon if none exists
@@ -27,8 +42,7 @@ export function createTray(
   tray = new Tray(icon);
   tray.setToolTip('San Citro');
 
-  const contextMenu = buildContextMenu(getMainWindow, downloadsDir);
-  tray.setContextMenu(contextMenu);
+  rebuildMenu();
 
   // Double-click shows the main window
   tray.on('double-click', () => {
@@ -50,11 +64,36 @@ export function destroyTray(): void {
   }
 }
 
+/** Reflect the latest update state in the tray tooltip and menu. */
+export function setTrayUpdateStatus(status: UpdateStatus): void {
+  latestUpdate = status;
+  if (!tray) return;
+
+  if (status.status === 'downloaded') {
+    tray.setToolTip(
+      `San Citro — update ${status.version ?? ''} ready to install`.trim()
+    );
+  } else if (status.status === 'available') {
+    tray.setToolTip(
+      `San Citro — update ${status.version ?? ''} available`.trim()
+    );
+  } else {
+    tray.setToolTip('San Citro');
+  }
+
+  rebuildMenu();
+}
+
+function rebuildMenu(): void {
+  if (!tray || !getMainWindowRef) return;
+  tray.setContextMenu(buildContextMenu(getMainWindowRef, downloadsDirRef));
+}
+
 function buildContextMenu(
   getMainWindow: () => BrowserWindow | null,
   downloadsDir: string
 ): Menu {
-  return Menu.buildFromTemplate([
+  const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'Show / Hide',
       click: () => {
@@ -75,14 +114,36 @@ function buildContextMenu(
       },
     },
     { type: 'separator' },
+  ];
+
+  if (latestUpdate.status === 'downloaded') {
+    template.push({
+      label: `Restart to install update ${latestUpdate.version ?? ''}`.trim(),
+      click: () => onQuitAndInstallRef?.(),
+    });
+  } else {
+    template.push({
+      label:
+        latestUpdate.status === 'available'
+          ? `Downloading update ${latestUpdate.version ?? ''}…`.trim()
+          : 'Check for updates',
+      enabled: latestUpdate.status !== 'available',
+      click: () => onCheckForUpdatesRef?.(),
+    });
+  }
+
+  template.push(
+    { type: 'separator' },
     {
       label: 'Quit',
       click: () => {
         (app as Electron.App & { isQuitting?: boolean }).isQuitting = true;
         app.quit();
       },
-    },
-  ]);
+    }
+  );
+
+  return Menu.buildFromTemplate(template);
 }
 
 /** Generate a minimal tray icon when no icon file is found. */

@@ -64,6 +64,20 @@ export interface DiagnosticResult {
   message: string;
 }
 
+export interface UpdateStatus {
+  status:
+    | "idle"
+    | "checking"
+    | "available"
+    | "not-available"
+    | "downloading"
+    | "downloaded"
+    | "error";
+  version?: string;
+  percent?: number;
+  message?: string;
+}
+
 // --------------- Electron IPC Bridge ---------------
 
 export interface SanCitroApi {
@@ -83,6 +97,18 @@ export interface SanCitroApi {
   runDiagnostics(): Promise<DiagnosticResult[]>;
   onDownloadProgress(callback: (data: DownloadStatus | DownloadStatus[]) => void): () => void;
   showItemInFolder(md5: string): Promise<void>;
+  /** Native folder picker (openDirectory). Resolves abs path, or null if cancelled. */
+  showOpenDialog(): Promise<string | null>;
+  /** Current app version string. */
+  getAppVersion(): Promise<string>;
+  /** Open a URL in the user's default browser. */
+  openExternal(url: string): Promise<void>;
+  /** Trigger an electron-updater check; resolves the current update state. */
+  checkForUpdates(): Promise<UpdateStatus>;
+  /** Install a downloaded update and restart the app. */
+  quitAndInstall(): Promise<void>;
+  /** Subscribe to pushed update-status events. Returns an unsubscribe function. */
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
 }
 
 declare global {

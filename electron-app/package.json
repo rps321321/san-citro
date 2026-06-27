@@ -12,6 +12,10 @@
     "build:web": "powershell ./scripts/build-web.ps1",
     "build:all": "powershell ./scripts/build-all.ps1"
   },
+  "dependencies": {
+    "electron-log": "^5.0.0",
+    "electron-updater": "^6.0.0"
+  },
   "devDependencies": {
     "electron": "^35.0.0",
     "electron-builder": "^25.0.0",

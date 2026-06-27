@@ -15,6 +15,11 @@ extraResources:
   - from: renderer/
     to: renderer/
 
+publish:
+  provider: github
+  owner: rps321321
+  repo: san-citro
+
 win:
   target: nsis
   icon: resources/icon.ico

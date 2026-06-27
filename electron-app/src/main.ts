@@ -8,11 +8,18 @@ import {
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { autoUpdater } from 'electron-updater';
+import log from 'electron-log';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { registerIpcHandlers } from './ipc-handlers';
 import { showSplash, closeSplash } from './splash';
-import { createTray, destroyTray } from './tray';
+import { createTray, destroyTray, setTrayUpdateStatus } from './tray';
+import {
+  initAutoUpdater,
+  checkForUpdates,
+  quitAndInstall,
+} from './updater';
 
 // ---------------------------------------------------------------------------
 // Single instance lock
@@ -241,7 +248,25 @@ app.whenReady().then(async () => {
   }, 10_000);
 
   // 10. Create system tray
-  createTray(getMainWindow, DOWNLOADS_DIR);
+  createTray(
+    getMainWindow,
+    DOWNLOADS_DIR,
+    () => {
+      void checkForUpdates(app.isPackaged);
+    },
+    () => quitAndInstall()
+  );
+
+  // 11. Auto-update — packaged builds only (autoUpdater throws in dev).
+  if (app.isPackaged) {
+    autoUpdater.logger = log;
+    initAutoUpdater(getMainWindow, (status) => setTrayUpdateStatus(status));
+    try {
+      await autoUpdater.checkForUpdatesAndNotify();
+    } catch (err) {
+      console.error('[main] Auto-update check failed:', err);
+    }
+  }
 });
 
 app.on('window-all-closed', () => {

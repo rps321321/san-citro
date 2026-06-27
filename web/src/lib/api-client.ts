@@ -4,6 +4,7 @@ import type {
   HistoryEntry,
   ConfigModel,
   DiagnosticResult,
+  UpdateStatus,
   SanCitroApi,
 } from "@/types";
 
@@ -85,4 +86,32 @@ export async function reloadConfig(): Promise<ConfigModel> {
 
 export async function getDiagnostics(): Promise<DiagnosticResult[]> {
   return ipc().runDiagnostics();
+}
+
+// --------------- Shell / System ---------------
+
+export async function showOpenDialog(): Promise<string | null> {
+  return ipc().showOpenDialog();
+}
+
+export async function getAppVersion(): Promise<string> {
+  return ipc().getAppVersion();
+}
+
+export async function openExternal(url: string): Promise<void> {
+  return ipc().openExternal(url);
+}
+
+// --------------- Updates ---------------
+
+export async function checkForUpdates(): Promise<UpdateStatus> {
+  return ipc().checkForUpdates();
+}
+
+export async function quitAndInstall(): Promise<void> {
+  return ipc().quitAndInstall();
+}
+
+export function onUpdateStatus(cb: (status: UpdateStatus) => void): () => void {
+  return ipc().onUpdateStatus(cb);
 }

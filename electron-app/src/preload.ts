@@ -23,6 +23,10 @@ const IPC_CHANNELS = {
   GET_APP_VERSION: 'san-citro:getAppVersion',
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
+  SHOW_OPEN_DIALOG: 'san-citro:showOpenDialog',
+  CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
+  QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
+  UPDATE_STATUS: 'san-citro:updateStatus',
 } as const;
 
 const api = {
@@ -81,6 +85,28 @@ const api = {
 
   showItemInFolder: (md5: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SHOW_ITEM_IN_FOLDER, { md5 }),
+
+  // Native folder picker — returns absolute path or null if cancelled.
+  showOpenDialog: (): Promise<string | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHOW_OPEN_DIALOG),
+
+  // --- Auto-update ---
+
+  checkForUpdates: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CHECK_FOR_UPDATES),
+
+  quitAndInstall: (): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.QUIT_AND_INSTALL),
+
+  onUpdateStatus: (callback: (data: unknown) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+      callback(data);
+    };
+    ipcRenderer.on(IPC_CHANNELS.UPDATE_STATUS, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.UPDATE_STATUS, listener);
+    };
+  },
 };
 
 contextBridge.exposeInMainWorld('sanCitro', api);

@@ -45,4 +45,22 @@ export const IPC_CHANNELS = {
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
   RESOLVE_DOWNLOAD_PATH: 'san-citro:resolveDownloadPath',
+  SHOW_OPEN_DIALOG: 'san-citro:showOpenDialog',
+  CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
+  QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
+  UPDATE_STATUS: 'san-citro:updateStatus',
 } as const;
+
+export interface UpdateStatus {
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'not-available'
+    | 'downloading'
+    | 'downloaded'
+    | 'error';
+  version?: string;
+  percent?: number;
+  message?: string;
+}
