@@ -1,12 +1,11 @@
 """Tests for the graceful shutdown module."""
 
 import signal
-import sys
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import src.shutdown as shutdown_mod
 from src.shutdown import (
     _cancel_event,
     _signal_handler,
@@ -16,7 +15,6 @@ from src.shutdown import (
     request_shutdown,
     unregister_driver,
 )
-import src.shutdown as shutdown_mod
 
 
 @pytest.fixture(autouse=True)

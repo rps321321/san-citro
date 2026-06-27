@@ -3,18 +3,17 @@
 Supports table (Rich), JSON, and CSV output formats.
 Each exporter writes to a file handle or stdout by default.
 """
+
 import csv
 import io
 import json
 import os
-from typing import List, Tuple, Optional, Set, TextIO
 
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
 
 from .utils import format_filesize
-
 
 # Column definitions matching the tuple layout from search_db:
 # (title, author, year, extension, md5, language, filesize_bytes, publisher, isbn13)
@@ -31,14 +30,14 @@ FIELD_NAMES = [
 ]
 
 
-def _build_owned_set(download_dir: str) -> Set[str]:
+def _build_owned_set(download_dir: str) -> set[str]:
     """Build a set of filenames in the download directory for ownership checks."""
     if download_dir and os.path.exists(download_dir):
         return set(os.listdir(download_dir))
     return set()
 
 
-def _is_owned(md5: Optional[str], owned_files: Set[str]) -> bool:
+def _is_owned(md5: str | None, owned_files: set[str]) -> bool:
     """Check whether any file in the download dir contains this MD5."""
     if not md5:
         return False
@@ -46,8 +45,8 @@ def _is_owned(md5: Optional[str], owned_files: Set[str]) -> bool:
 
 
 def export_table(
-    results: List[Tuple],
-    file: Optional[str] = None,
+    results: list[tuple],
+    file: str | None = None,
     download_dir: str = "downloads",
 ) -> None:
     """Render results as a Rich table to the console or a file.
@@ -78,11 +77,7 @@ def export_table(
 
     for idx, row in enumerate(results, 1):
         title, author, year, ext, md5, lang, size, pub, isbn = row
-        status = (
-            "[bold green]OWNED[/bold green]"
-            if _is_owned(md5, owned_files)
-            else "[red]Missing[/red]"
-        )
+        status = "[bold green]OWNED[/bold green]" if _is_owned(md5, owned_files) else "[red]Missing[/red]"
         table.add_row(
             str(idx),
             title,
@@ -102,8 +97,8 @@ def export_table(
 
 
 def export_json(
-    results: List[Tuple],
-    file: Optional[str] = None,
+    results: list[tuple],
+    file: str | None = None,
     download_dir: str = "downloads",
 ) -> str:
     """Serialize results to a JSON array.
@@ -114,19 +109,21 @@ def export_json(
     records = []
     for row in results:
         title, author, year, ext, md5, lang, size, pub, isbn = row
-        records.append({
-            "title": title,
-            "author": author or "Unknown",
-            "year": int(year) if year else None,
-            "extension": ext,
-            "md5": md5,
-            "language": lang,
-            "filesize_bytes": size,
-            "size_human": format_filesize(size),
-            "publisher": pub,
-            "isbn13": isbn,
-            "owned": _is_owned(md5, owned_files),
-        })
+        records.append(
+            {
+                "title": title,
+                "author": author or "Unknown",
+                "year": int(year) if year else None,
+                "extension": ext,
+                "md5": md5,
+                "language": lang,
+                "filesize_bytes": size,
+                "size_human": format_filesize(size),
+                "publisher": pub,
+                "isbn13": isbn,
+                "owned": _is_owned(md5, owned_files),
+            }
+        )
 
     output = json.dumps(records, indent=2, ensure_ascii=False)
 
@@ -140,8 +137,8 @@ def export_json(
 
 
 def export_csv(
-    results: List[Tuple],
-    file: Optional[str] = None,
+    results: list[tuple],
+    file: str | None = None,
     download_dir: str = "downloads",
 ) -> str:
     """Write results as CSV with headers.
@@ -169,19 +166,21 @@ def export_csv(
 
     for row in results:
         title, author, year, ext, md5, lang, size, pub, isbn = row
-        writer.writerow([
-            title,
-            author or "Unknown",
-            int(year) if year else "",
-            ext,
-            md5,
-            lang,
-            size or "",
-            format_filesize(size),
-            pub or "",
-            isbn or "",
-            _is_owned(md5, owned_files),
-        ])
+        writer.writerow(
+            [
+                title,
+                author or "Unknown",
+                int(year) if year else "",
+                ext,
+                md5,
+                lang,
+                size or "",
+                format_filesize(size),
+                pub or "",
+                isbn or "",
+                _is_owned(md5, owned_files),
+            ]
+        )
 
     output = buf.getvalue()
     buf.close()

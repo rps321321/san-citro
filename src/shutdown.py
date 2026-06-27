@@ -6,15 +6,23 @@ An atexit handler ensures Chrome processes are cleaned up.
 """
 
 import atexit
+import contextlib
 import os
 import signal
 import sys
 import threading
-from typing import Optional
+from typing import Protocol
 
 from .logger import get_logger
 
 logger = get_logger()
+
+
+class _Quittable(Protocol):
+    """Minimal structural type for a Selenium/uc driver we can ``quit()``."""
+
+    def quit(self) -> None: ...
+
 
 # Global cancellation event — checked by long-running loops
 _cancel_event = threading.Event()
@@ -23,7 +31,7 @@ _cancel_event = threading.Event()
 _shutdown_requested = threading.Event()
 
 # Track the active Chrome driver so atexit can clean it up
-_active_driver: Optional[object] = None
+_active_driver: _Quittable | None = None
 _driver_lock = threading.Lock()
 
 
@@ -42,7 +50,7 @@ def request_shutdown() -> None:
     _cancel_event.set()
 
 
-def register_driver(driver: object) -> None:
+def register_driver(driver: _Quittable) -> None:
     """Register a Chrome driver instance for cleanup on exit."""
     global _active_driver
     with _driver_lock:
@@ -63,10 +71,8 @@ def _quit_driver_safe() -> None:
         driver = _active_driver
         _active_driver = None
     if driver is not None:
-        try:
+        with contextlib.suppress(Exception):
             driver.quit()
-        except Exception:
-            pass
 
 
 def _signal_handler(signum: int, frame: object) -> None:
@@ -99,10 +105,8 @@ def install_signal_handlers() -> None:
     On Windows, SIGTERM may not be available — we handle that gracefully.
     """
     signal.signal(signal.SIGINT, _signal_handler)
-    try:
+    # SIGTERM not available on some platforms (Windows)
+    with contextlib.suppress(OSError, ValueError):
         signal.signal(signal.SIGTERM, _signal_handler)
-    except (OSError, ValueError):
-        # SIGTERM not available on some platforms (Windows)
-        pass
 
     atexit.register(_atexit_cleanup)

@@ -1,10 +1,11 @@
+import contextlib
 import json
 import logging
 import os
 import platform
 import shutil
 from pathlib import Path
-from typing import Optional, List, Any, Dict
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 APP_NAME = "san-citro"
@@ -13,7 +14,7 @@ APP_NAME = "san-citro"
 _LEGACY_CONFIG_PATH = Path(__file__).parent / "annas_config.json"
 
 # Module-level override: set by set_config_path() when --config is used
-_config_path_override: Optional[Path] = None
+_config_path_override: Path | None = None
 
 
 def _get_platform_config_dir() -> Path:
@@ -98,28 +99,24 @@ def _migrate_legacy_config() -> None:
     try:
         _ensure_config_dir(new_path)
         shutil.copy2(str(_LEGACY_CONFIG_PATH), str(new_path))
-        logger.info(
-            f"Migrated config from {_LEGACY_CONFIG_PATH} -> {new_path}"
-        )
+        logger.info(f"Migrated config from {_LEGACY_CONFIG_PATH} -> {new_path}")
         # Remove legacy file after successful copy
         _LEGACY_CONFIG_PATH.unlink()
         logger.info(f"Removed legacy config file: {_LEGACY_CONFIG_PATH}")
     except OSError as e:
-        logger.warning(
-            f"Failed to migrate legacy config: {e} — continuing with defaults"
-        )
+        logger.warning(f"Failed to migrate legacy config: {e} — continuing with defaults")
 
 
 # Keep backward-compatible module-level attribute for tests that patch it
 CONFIG_PATH = get_config_path()
 
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     """Load settings from the config file with default fallbacks.
 
     On first call, attempts migration from the legacy location.
     """
-    defaults: Dict[str, Any] = {
+    defaults: dict[str, Any] = {
         "out_dir": "downloads",
         "concurrency": 2,
         "proxies": [],
@@ -133,7 +130,7 @@ def get_config() -> Dict[str, Any]:
     config_path = get_config_path()
     if config_path.exists():
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 config = json.load(f)
             return {**defaults, **config}
         except (json.JSONDecodeError, OSError) as e:
@@ -145,12 +142,12 @@ def get_config() -> Dict[str, Any]:
 
 
 def save_config(
-    out_dir: Optional[str] = None,
-    concurrency: Optional[int] = None,
-    proxies: Optional[List[str]] = None,
-    base_url: Optional[str] = None,
-    history_db: Optional[str] = None,
-) -> Dict[str, Any]:
+    out_dir: str | None = None,
+    concurrency: int | None = None,
+    proxies: list[str] | None = None,
+    base_url: str | None = None,
+    history_db: str | None = None,
+) -> dict[str, Any]:
     """Save current settings to the config file.
 
     Args:
@@ -176,19 +173,16 @@ def save_config(
     # Atomic write: write to temp file first, then replace to prevent corruption
     # if the process is killed mid-write.
     import tempfile
-    tmp_fd, tmp_path = tempfile.mkstemp(
-        dir=os.path.dirname(config_path), suffix=".tmp"
-    )
+
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(config_path), suffix=".tmp")
     try:
         with os.fdopen(tmp_fd, "w") as f:
             json.dump(config, f, indent=4)
         os.replace(tmp_path, config_path)
     except BaseException:
         # Clean up temp file on failure
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp_path)
-        except OSError:
-            pass
         raise
     return config
 

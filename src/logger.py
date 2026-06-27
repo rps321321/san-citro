@@ -1,8 +1,7 @@
 import logging
-import os
-import sys
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 from rich.logging import RichHandler
 
 # Resolve log file path relative to project root (one level up from src/)
@@ -48,6 +47,7 @@ def setup_logging(verbose: bool = False, log_file: str = "") -> logging.Logger:
     except OSError as e:
         # If log file can't be created (e.g., permissions), warn and continue with console only
         import sys
+
         print(f"WARNING: Could not create log file {resolved_log_file}: {e}", file=sys.stderr)
 
     logger.addHandler(console_handler)

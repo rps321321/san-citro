@@ -1,15 +1,13 @@
 """Tests for concurrent download functionality in cli.py."""
-import time
-from pathlib import Path
-from unittest.mock import patch, MagicMock, call
 
-import pytest
+import time
+from unittest.mock import MagicMock, patch
 
 from src.cli import (
     DownloadResult,
     _download_one,
-    _run_concurrent_downloads,
     _print_summary_table,
+    _run_concurrent_downloads,
 )
 
 
@@ -22,8 +20,13 @@ class TestDownloadResult:
 
     def test_dataclass_full(self):
         r = DownloadResult(
-            md5="abc123", filename="test.pdf", title="Test Book", status="failed",
-            path=None, error="timeout", elapsed_seconds=5.2,
+            md5="abc123",
+            filename="test.pdf",
+            title="Test Book",
+            status="failed",
+            path=None,
+            error="timeout",
+            elapsed_seconds=5.2,
         )
         assert r.error == "timeout"
         assert r.elapsed_seconds == 5.2
@@ -69,8 +72,10 @@ class TestDownloadOne:
         tool = MagicMock()
         md5 = "aabbccdd" * 4
 
-        with patch("src.cli.get_filename_from_db", return_value="Great_Gatsby.epub"), \
-                patch("src.cli.run_download", return_value="/downloads/Great_Gatsby.epub"):
+        with (
+            patch("src.cli.get_filename_from_db", return_value="Great_Gatsby.epub"),
+            patch("src.cli.run_download", return_value="/downloads/Great_Gatsby.epub"),
+        ):
             result = _download_one(tool, md5, "/downloads", "/some/db.sqlite", None)
 
         assert result.filename == "Great_Gatsby.epub"
@@ -79,8 +84,7 @@ class TestDownloadOne:
         tool = MagicMock()
         md5 = "aabbccdd" * 4
 
-        with patch("src.cli.get_filename_from_db", return_value=None), \
-                patch("src.cli.run_download", return_value=None):
+        with patch("src.cli.get_filename_from_db", return_value=None), patch("src.cli.run_download", return_value=None):
             result = _download_one(tool, md5, "/downloads", None, None)
 
         assert result.filename == f"{md5}.file"
@@ -96,8 +100,11 @@ class TestRunConcurrentDownloads:
     @patch("src.cli._download_one")
     def test_downloads_all_targets(self, mock_dl):
         mock_dl.side_effect = lambda tool, md5, out, db, hist: DownloadResult(
-            md5=md5, filename=f"{md5}.file", status="success",
-            path=f"/dl/{md5}.file", elapsed_seconds=1.0,
+            md5=md5,
+            filename=f"{md5}.file",
+            status="success",
+            path=f"/dl/{md5}.file",
+            elapsed_seconds=1.0,
         )
         tool = MagicMock()
         targets = self._make_targets(["aa" * 16, "bb" * 16, "cc" * 16])
@@ -113,12 +120,18 @@ class TestRunConcurrentDownloads:
         def side_effect(tool, md5, out, db, hist):
             if md5.startswith("bb"):
                 return DownloadResult(
-                    md5=md5, filename=f"{md5}.file", status="error",
-                    error="boom", elapsed_seconds=0.1,
+                    md5=md5,
+                    filename=f"{md5}.file",
+                    status="error",
+                    error="boom",
+                    elapsed_seconds=0.1,
                 )
             return DownloadResult(
-                md5=md5, filename=f"{md5}.file", status="success",
-                path=f"/dl/{md5}.file", elapsed_seconds=1.0,
+                md5=md5,
+                filename=f"{md5}.file",
+                status="success",
+                path=f"/dl/{md5}.file",
+                elapsed_seconds=1.0,
             )
 
         mock_dl.side_effect = side_effect
@@ -137,8 +150,11 @@ class TestRunConcurrentDownloads:
     def test_concurrency_1_runs_sequentially(self, mock_dl):
         """With concurrency=1 the thread pool should still work (single worker)."""
         mock_dl.return_value = DownloadResult(
-            md5="x" * 32, filename="x.file", status="success",
-            path="/dl/x.file", elapsed_seconds=0.5,
+            md5="x" * 32,
+            filename="x.file",
+            status="success",
+            path="/dl/x.file",
+            elapsed_seconds=0.5,
         )
         tool = MagicMock()
         targets = self._make_targets(["aa" * 16, "bb" * 16])
@@ -150,11 +166,15 @@ class TestRunConcurrentDownloads:
     @patch("src.cli._download_one")
     def test_actual_parallelism_with_concurrency_gt_1(self, mock_dl):
         """Verify that downloads actually run in parallel when concurrency > 1."""
+
         def slow_download(tool, md5, out, db, hist):
             time.sleep(0.2)
             return DownloadResult(
-                md5=md5, filename=f"{md5}.file", status="success",
-                path=f"/dl/{md5}.file", elapsed_seconds=0.2,
+                md5=md5,
+                filename=f"{md5}.file",
+                status="success",
+                path=f"/dl/{md5}.file",
+                elapsed_seconds=0.2,
             )
 
         mock_dl.side_effect = slow_download
@@ -175,12 +195,30 @@ class TestPrintSummaryTable:
 
     def test_prints_without_error(self, capsys):
         results = [
-            DownloadResult(md5="aa" * 16, filename="book1.pdf", title="", status="success",
-                           path="/dl/book1.pdf", elapsed_seconds=12.3),
-            DownloadResult(md5="bb" * 16, filename="book2.epub", title="", status="failed",
-                           error="No file returned", elapsed_seconds=5.0),
-            DownloadResult(md5="cc" * 16, filename="book3.mobi", title="", status="error",
-                           error="ConnectionError", elapsed_seconds=0.1),
+            DownloadResult(
+                md5="aa" * 16,
+                filename="book1.pdf",
+                title="",
+                status="success",
+                path="/dl/book1.pdf",
+                elapsed_seconds=12.3,
+            ),
+            DownloadResult(
+                md5="bb" * 16,
+                filename="book2.epub",
+                title="",
+                status="failed",
+                error="No file returned",
+                elapsed_seconds=5.0,
+            ),
+            DownloadResult(
+                md5="cc" * 16,
+                filename="book3.mobi",
+                title="",
+                status="error",
+                error="ConnectionError",
+                elapsed_seconds=0.1,
+            ),
         ]
         # Should not raise
         _print_summary_table(results)
@@ -210,12 +248,21 @@ class TestConcurrencyCliFlag:
     def test_concurrency_flag_overrides_config(self, mock_table, mock_run, mock_tool_cls):
         mock_tool_cls.return_value = MagicMock()
 
-        with patch("src.cli.get_config", return_value={
-            "db_path": None, "out_dir": "downloads", "concurrency": 2, "proxies": [],
-        }):
-            with patch("sys.argv", ["prog", "--concurrency", "5", "download", "aa" * 16]):
-                from src.cli import main
-                main()
+        with (
+            patch(
+                "src.cli.get_config",
+                return_value={
+                    "db_path": None,
+                    "out_dir": "downloads",
+                    "concurrency": 2,
+                    "proxies": [],
+                },
+            ),
+            patch("sys.argv", ["prog", "--concurrency", "5", "download", "aa" * 16]),
+        ):
+            from src.cli import main
+
+            main()
 
         # _run_concurrent_downloads should have been called for the download command
         mock_run.assert_called_once()
@@ -230,14 +277,23 @@ class TestConcurrencyCliFlag:
     def test_config_concurrency_used_when_no_flag(self, mock_table, mock_run, mock_tool_cls):
         mock_tool_cls.return_value = MagicMock()
 
-        with patch("src.cli.get_config", return_value={
-            "db_path": None, "out_dir": "downloads", "concurrency": 7, "proxies": [],
-        }):
-            # download command always uses concurrency=1, so this tests that
-            # active_concurrency is resolved from config when no --concurrency flag
-            with patch("sys.argv", ["prog", "download", "aa" * 16]):
-                from src.cli import main
-                main()
+        # download command always uses concurrency=1, so this tests that
+        # active_concurrency is resolved from config when no --concurrency flag
+        with (
+            patch(
+                "src.cli.get_config",
+                return_value={
+                    "db_path": None,
+                    "out_dir": "downloads",
+                    "concurrency": 7,
+                    "proxies": [],
+                },
+            ),
+            patch("sys.argv", ["prog", "download", "aa" * 16]),
+        ):
+            from src.cli import main
+
+            main()
 
         # For single download, concurrency is forced to 1
         mock_run.assert_called_once()

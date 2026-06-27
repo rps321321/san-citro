@@ -1,17 +1,19 @@
-from typing import Tuple, Optional, Dict, Any
-import requests
 import socket
+from typing import Any
+
+import requests
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
 from .logger import get_logger
-from .utils import get_working_domain, validate_proxy_url, test_proxy_connectivity
+from .utils import get_working_domain, test_proxy_connectivity
 
 logger = get_logger()
 console = Console()
 
 
-def check_ip_address() -> Tuple[bool, str]:
+def check_ip_address() -> tuple[bool, str]:
     """Hits an external IP echo service to verify public IP."""
     try:
         res = requests.get("https://api.ipify.org", timeout=5, verify=True)
@@ -21,7 +23,7 @@ def check_ip_address() -> Tuple[bool, str]:
         return False, f"Public IP Check: [bold red]FAILED[/bold red] ({e})"
 
 
-def check_internet() -> Tuple[bool, str]:
+def check_internet() -> tuple[bool, str]:
     """Checks basic internet connectivity."""
     try:
         socket.create_connection(("8.8.8.8", 53), timeout=3)
@@ -30,7 +32,7 @@ def check_internet() -> Tuple[bool, str]:
         return False, "Internet Connection: [bold red]OFFLINE[/bold red]"
 
 
-def check_site_reachability(base_url: str) -> Tuple[bool, str]:
+def check_site_reachability(base_url: str) -> tuple[bool, str]:
     """Checks if Anna's Archive is reachable."""
     try:
         response = requests.get(base_url, timeout=5, verify=True)
@@ -42,16 +44,17 @@ def check_site_reachability(base_url: str) -> Tuple[bool, str]:
         return False, "Anna's Archive: [bold red]UNREACHABLE[/bold red]"
 
 
-def check_chrome_automation() -> Tuple[bool, str]:
+def check_chrome_automation() -> tuple[bool, str]:
     """Checks if undetected_chromedriver is importable."""
     try:
         import undetected_chromedriver as uc  # noqa: F401
+
         return True, "Browser Automation: [bold green]READY[/bold green]"
     except ImportError:
         return False, "Browser Automation: [bold red]NOT READY[/bold red] (pip install undetected-chromedriver)"
 
 
-def check_proxies(proxies: list[str]) -> Tuple[Optional[bool], str]:
+def check_proxies(proxies: list[str]) -> tuple[bool | None, str]:
     """Test each configured proxy and report the results.
 
     Returns ``(True, ...)`` when all proxies pass, ``(None, ...)`` when none are
@@ -77,16 +80,17 @@ def check_proxies(proxies: list[str]) -> Tuple[Optional[bool], str]:
     return True, f"Proxies: [bold green]{len(passed)} OK[/bold green] — {pass_list}"
 
 
-def check_tls_fingerprint() -> Tuple[bool, str]:
+def check_tls_fingerprint() -> tuple[bool | None, str]:
     """Check if TLS fingerprint impersonation is available via curl_cffi."""
     try:
         from curl_cffi import requests as _cr  # noqa: F401
+
         return True, "TLS Fingerprint: [bold green]STEALTH[/bold green] (curl_cffi impersonating Chrome)"
     except ImportError:
         return None, "TLS Fingerprint: [bold yellow]STANDARD[/bold yellow] (pip install curl_cffi for stealth)"
 
 
-def run_diagnostics(config: Dict[str, Any]) -> None:
+def run_diagnostics(config: dict[str, Any]) -> None:
     """Runs a full suite of system diagnostics including IP leak test."""
     console.print("\n[bold magenta]Running System Pre-flight Check...[/bold magenta]\n")
 
@@ -105,7 +109,13 @@ def run_diagnostics(config: Dict[str, Any]) -> None:
 
     table = Table(show_header=False, box=None)
     for success, message in results:
-        icon = "[green]OK[/green]" if success is True else "[red]FAIL[/red]" if success is False else "[yellow]WARN[/yellow]"
+        icon = (
+            "[green]OK[/green]"
+            if success is True
+            else "[red]FAIL[/red]"
+            if success is False
+            else "[yellow]WARN[/yellow]"
+        )
         table.add_row(icon, message)
 
     console.print(Panel(table, title="System Health Report", border_style="cyan"))

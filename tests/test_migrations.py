@@ -3,8 +3,6 @@
 import sqlite3
 from pathlib import Path
 
-import pytest
-
 from src.migrations import (
     get_current_version,
     get_migration_history,
@@ -12,10 +10,10 @@ from src.migrations import (
     run_migrations,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _table_exists(db_path: str, table_name: str) -> bool:
     with sqlite3.connect(db_path) as conn:
@@ -44,6 +42,7 @@ def _index_exists(db_path: str, index_name: str) -> bool:
 # ---------------------------------------------------------------------------
 # Tests: version tracking
 # ---------------------------------------------------------------------------
+
 
 class TestGetCurrentVersion:
     def test_should_return_zero_when_database_does_not_exist(self, tmp_path: Path) -> None:
@@ -80,6 +79,7 @@ class TestGetMigrationHistory:
 # Tests: migration runner
 # ---------------------------------------------------------------------------
 
+
 class TestRunMigrations:
     def test_should_apply_all_migrations_on_fresh_database(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "new.db")
@@ -108,6 +108,7 @@ class TestRunMigrations:
 # ---------------------------------------------------------------------------
 # Tests: concrete migration outcomes
 # ---------------------------------------------------------------------------
+
 
 class TestMigrationV1:
     def test_should_create_schema_version_table(self, tmp_path: Path) -> None:
@@ -147,9 +148,7 @@ class TestMigrationV4:
         """Create a records table with a minimal schema, then verify v4 adds missing columns."""
         db_path = str(tmp_path / "v4.db")
         with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT, author TEXT)"
-            )
+            conn.execute("CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT, author TEXT)")
         run_migrations(db_path)
         cols = _get_columns(db_path, "records")
         assert "source" in cols
@@ -157,15 +156,11 @@ class TestMigrationV4:
         assert "extension" in cols
         assert "language" in cols
 
-    def test_should_handle_records_table_already_having_all_columns(
-        self, tmp_path: Path
-    ) -> None:
+    def test_should_handle_records_table_already_having_all_columns(self, tmp_path: Path) -> None:
         """Re-running migrations on an already-migrated DB must be a no-op."""
         db_path = str(tmp_path / "v4full.db")
         with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT)"
-            )
+            conn.execute("CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT)")
         run_migrations(db_path)  # first run adds all v4 columns
         # Second run must not raise (idempotent)
         run_migrations(db_path)
@@ -176,9 +171,7 @@ class TestMigrationV4:
     def test_should_create_expected_indexes(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "v4idx.db")
         with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT)"
-            )
+            conn.execute("CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT)")
         run_migrations(db_path)
         assert _index_exists(db_path, "idx_records_isbn13")
         assert _index_exists(db_path, "idx_records_added_at")
@@ -187,6 +180,7 @@ class TestMigrationV4:
 # ---------------------------------------------------------------------------
 # Tests: registered migrations sanity
 # ---------------------------------------------------------------------------
+
 
 class TestMigrationRegistry:
     def test_should_have_sequential_versions(self) -> None:

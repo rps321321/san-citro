@@ -13,18 +13,18 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
+
+from src.config_manager import clamp_concurrency, get_config
+from src.download_history import record_download_cancelled
+from src.download_job import TERMINAL_RETENTION_S, run_download
+from src.download_strategy import create_strategy
+
+logger = logging.getLogger("bridge.download_manager")
 
 # Sidecar file written by annas_archive_tool when Content-Length is known.
 # Format: plain integer (bytes) on a single line.
 _SIZE_SIDECAR_SUFFIX = ".size"
-
-from src.config_manager import clamp_concurrency, get_config
-from src.download_job import TERMINAL_RETENTION_S, run_download
-from src.download_history import record_download_cancelled
-from src.download_strategy import create_strategy
-
-logger = logging.getLogger("bridge.download_manager")
 
 
 @dataclass
@@ -33,14 +33,14 @@ class DownloadEntry:
 
     md5: str
     title: str
-    status: str = "queued"          # queued | downloading | completed | failed | cancelled
-    progress_percent: float = 0.0   # 0..100
+    status: str = "queued"  # queued | downloading | completed | failed | cancelled
+    progress_percent: float = 0.0  # 0..100
     total_bytes: int = 0
     downloaded_bytes: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     cancel_flag: threading.Event = field(default_factory=threading.Event)
-    file_path: Optional[str] = None
-    started_at: Optional[float] = None  # unix timestamp
+    file_path: str | None = None
+    started_at: float | None = None  # unix timestamp
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +87,7 @@ def reset_concurrency_semaphore() -> None:
 def _get_send_event():
     """Lazy import to avoid circular dependency with bridge.py."""
     from bridge import send_event
+
     return send_event
 
 
@@ -100,7 +101,8 @@ def _prune_terminal() -> None:
     """
     now = time.time()
     stale = [
-        md5 for md5, e in _downloads.items()
+        md5
+        for md5, e in _downloads.items()
         if e.status in ("completed", "failed", "cancelled")
         and e.started_at is not None
         and (now - e.started_at) > _TERMINAL_RETENTION_S
@@ -188,6 +190,7 @@ def get_all_statuses() -> list[dict[str, Any]]:
 # Worker
 # ---------------------------------------------------------------------------
 
+
 def _download_worker(md5: str) -> None:
     """Run on a background thread: perform the download and emit events.
 
@@ -240,9 +243,7 @@ def _download_worker_inner(md5: str, send_event) -> None:
                 entry.total_bytes = payload["total_bytes"]
             if payload.get("downloaded_bytes"):
                 entry.downloaded_bytes = payload["downloaded_bytes"]
-            entry.progress_percent = payload.get(
-                "progress_percent", entry.progress_percent
-            )
+            entry.progress_percent = payload.get("progress_percent", entry.progress_percent)
         send_event("download_progress", payload)
 
     # Start a progress-polling thread (transport-specific byte progress).
@@ -317,9 +318,7 @@ def _poll_progress(md5: str, out_dir: str, stop_event: threading.Event) -> None:
                 with _lock:
                     entry.downloaded_bytes = current
                     if entry.total_bytes > 0:
-                        entry.progress_percent = min(
-                            (current / entry.total_bytes) * 100, 99.9
-                        )
+                        entry.progress_percent = min((current / entry.total_bytes) * 100, 99.9)
                 send_event("download_progress", entry.to_dict())
         except OSError:
             pass

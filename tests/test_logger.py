@@ -1,10 +1,9 @@
 """Tests for logger.py."""
+
 import logging
 from pathlib import Path
 
-import pytest
-
-from src.logger import setup_logging, get_logger
+from src.logger import get_logger, setup_logging
 
 
 class TestSetupLogging:

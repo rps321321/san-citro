@@ -13,13 +13,13 @@ import logging
 import random
 import re
 import time
-from typing import Any, List, Optional
+from typing import Any
 from urllib.parse import quote_plus
 
 import requests
 from bs4 import BeautifulSoup
 
-from .utils import is_allowed_by_robots
+from .utils import attr_str, is_allowed_by_robots
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +39,12 @@ _DELAY_MIN = 0.5
 _DELAY_MAX = 2.0
 
 
-def _pick_proxy(proxies: List[str]) -> Optional[str]:
+def _pick_proxy(proxies: list[str]) -> str | None:
     """Return a random proxy URL from the list, or ``None`` if the list is empty."""
     return random.choice(proxies) if proxies else None
 
 
-def _make_session(proxies: List[str]) -> requests.Session:
+def _make_session(proxies: list[str]) -> requests.Session:
     """Build a ``requests.Session`` with a random User-Agent and an optional proxy.
 
     Proxy rotation (Gap 1): picks a random entry from ``proxies`` for each session
@@ -53,14 +53,16 @@ def _make_session(proxies: List[str]) -> requests.Session:
     session = requests.Session()
 
     user_agent = random.choice(_USER_AGENTS)
-    session.headers.update({
-        "User-Agent": user_agent,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "DNT": "1",
-        "Upgrade-Insecure-Requests": "1",
-    })
+    session.headers.update(
+        {
+            "User-Agent": user_agent,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
+            "Upgrade-Insecure-Requests": "1",
+        }
+    )
 
     proxy_url = _pick_proxy(proxies)
     if proxy_url:
@@ -74,6 +76,7 @@ def _make_session(proxies: List[str]) -> requests.Session:
 # Gap 8: Static-vs-dynamic detection
 # ---------------------------------------------------------------------------
 
+
 def _verify_response_has_results(html: str) -> bool:
     """Check if the HTML actually contains search result elements.
 
@@ -84,7 +87,7 @@ def _verify_response_has_results(html: str) -> bool:
     return 'href="/md5/' in html or "js-aarecord" in html
 
 
-def parse_filesize(text: str) -> Optional[int]:
+def parse_filesize(text: str) -> int | None:
     """Parse a human-readable size like ``'1.3MB'`` into bytes.
 
     Returns ``None`` when the string cannot be parsed.
@@ -97,9 +100,9 @@ def parse_filesize(text: str) -> Optional[int]:
     multipliers = {
         "B": 1,
         "KB": 1024,
-        "MB": 1024 ** 2,
-        "GB": 1024 ** 3,
-        "TB": 1024 ** 4,
+        "MB": 1024**2,
+        "GB": 1024**3,
+        "TB": 1024**4,
     }
     return int(value * multipliers.get(unit, 1))
 
@@ -107,12 +110,12 @@ def parse_filesize(text: str) -> Optional[int]:
 def scrape_annas_archive(
     query: str,
     *,
-    ext: Optional[str] = None,
-    lang: Optional[str] = None,
+    ext: str | None = None,
+    lang: str | None = None,
     page: int = 1,
     base_url: str = _DEFAULT_BASE_URL,
-    seen_md5s: Optional[set[str]] = None,
-    proxies: Optional[List[str]] = None,
+    seen_md5s: set[str] | None = None,
+    proxies: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Scrape an Anna's Archive search-results page and return book metadata.
 
@@ -157,6 +160,7 @@ def scrape_annas_archive(
     if proxies is None:
         try:
             from .config_manager import get_config
+
             proxies = get_config().get("proxies") or []
         except Exception:
             proxies = []
@@ -200,7 +204,7 @@ def scrape_annas_archive(
 
     for link in soup.select('a[href*="/md5/"]'):
         try:
-            href = link.get("href", "")
+            href = attr_str(link.get("href")) or ""
             md5_match = re.search(r"/md5/([a-f0-9]{32})", href)
             if not md5_match:
                 continue
@@ -218,29 +222,27 @@ def scrape_annas_archive(
                 parent = container.parent if container else None
                 if not parent or parent.name == "body":
                     break
-                parent_classes = " ".join(parent.get("class", []))
+                class_attr = parent.get("class")
+                parent_classes = " ".join(class_attr) if isinstance(class_attr, list) else ""
                 if "border-b" in parent_classes:
                     container = parent
                     break
                 container = parent
 
-            card_text = (
-                container.get_text(separator="\n", strip=True) if container else ""
-            )
+            card_text = container.get_text(separator="\n", strip=True) if container else ""
             card_lines = [ln.strip() for ln in card_text.split("\n") if ln.strip()]
 
-            author: Optional[str] = None
-            year: Optional[str] = None
-            extension: Optional[str] = None
-            language: Optional[str] = None
-            filesize_bytes: Optional[int] = None
-            publisher: Optional[str] = None
+            author: str | None = None
+            year: str | None = None
+            extension: str | None = None
+            language: str | None = None
+            filesize_bytes: int | None = None
+            publisher: str | None = None
 
             # Metadata line: "English [en] · EPUB · 3.2MB · 2011 · Book"
             for line in card_lines:
                 meta_match = re.match(
-                    r"(\w[\w\s]*?)\s*\[\w+\]\s*\xb7\s*(\w+)\s*\xb7\s*"
-                    r"([\d.]+\s*[KMGT]?B)\s*\xb7\s*(\d{4})",
+                    r"(\w[\w\s]*?)\s*\[\w+\]\s*\xb7\s*(\w+)\s*\xb7\s*" r"([\d.]+\s*[KMGT]?B)\s*\xb7\s*(\d{4})",
                     line,
                 )
                 if meta_match:
@@ -251,7 +253,7 @@ def scrape_annas_archive(
                     break
 
             # Find author — typically the line right after the title
-            title_idx: Optional[int] = None
+            title_idx: int | None = None
             for i, line in enumerate(card_lines):
                 if title in line or line in title:
                     title_idx = i
@@ -279,11 +281,11 @@ def scrape_annas_archive(
                         break
 
             # Extract cover image URL from the card's <img> tag
-            cover_url: Optional[str] = None
+            cover_url: str | None = None
             if container:
                 img = container.select_one("img")
                 if img:
-                    src = img.get("src") or img.get("data-src") or ""
+                    src = attr_str(img.get("src")) or attr_str(img.get("data-src")) or ""
                     if src and not src.endswith("placeholder") and len(src) > 10:
                         cover_url = src if src.startswith("http") else None
 

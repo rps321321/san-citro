@@ -1,9 +1,10 @@
 """Generate mock JSONL.ZST test data for the Anna's Archive toolkit."""
+
 import json
-from typing import List, Dict
+
 import zstandard as zstd
 
-MOCK_RECORDS: List[Dict[str, str]] = [
+MOCK_RECORDS: list[dict[str, str]] = [
     {
         "md5": "72a7e9cb2b7a5c9d03f6ae095745a1fa",
         "title": "The Great Gatsby",
@@ -50,11 +51,10 @@ MOCK_RECORDS: List[Dict[str, str]] = [
 def create_mock_data(filename: str) -> None:
     """Create a compressed JSONL file with mock book records."""
     cctx = zstd.ZstdCompressor()
-    with open(filename, "wb") as f:
-        with cctx.stream_writer(f) as compressor:
-            for record in MOCK_RECORDS:
-                line = json.dumps(record) + "\n"
-                compressor.write(line.encode("utf-8"))
+    with open(filename, "wb") as f, cctx.stream_writer(f) as compressor:
+        for record in MOCK_RECORDS:
+            line = json.dumps(record) + "\n"
+            compressor.write(line.encode("utf-8"))
 
 
 if __name__ == "__main__":

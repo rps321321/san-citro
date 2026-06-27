@@ -1,4 +1,5 @@
 """Shared fixtures for the Anna's Archive test suite."""
+
 from pathlib import Path
 
 import pytest

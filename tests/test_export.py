@@ -1,4 +1,5 @@
 """Tests for export.py -- table, JSON, and CSV exporters."""
+
 import csv
 import io
 import json
@@ -6,24 +7,42 @@ from pathlib import Path
 
 import pytest
 
-from src.export import export_table, export_json, export_csv, _is_owned
-from src.utils import format_filesize
+from src.export import _is_owned, export_csv, export_json, export_table
 from src.mock_data_generator import MOCK_RECORDS
-
+from src.utils import format_filesize
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def sample_results():
     """Return a list of result tuples matching the search_db schema."""
     # (title, author, year, extension, md5, language, filesize_bytes, publisher, isbn13)
     return [
-        ("The Great Gatsby", "F. Scott Fitzgerald", "1925", "epub",
-         MOCK_RECORDS[0]["md5"], "en", 1_500_000, "Scribner", "9780743273565"),
-        ("1984", "George Orwell", "1949", "pdf",
-         MOCK_RECORDS[1]["md5"], "en", 800_000, "Secker & Warburg", "9780451524935"),
+        (
+            "The Great Gatsby",
+            "F. Scott Fitzgerald",
+            "1925",
+            "epub",
+            MOCK_RECORDS[0]["md5"],
+            "en",
+            1_500_000,
+            "Scribner",
+            "9780743273565",
+        ),
+        (
+            "1984",
+            "George Orwell",
+            "1949",
+            "pdf",
+            MOCK_RECORDS[1]["md5"],
+            "en",
+            800_000,
+            "Secker & Warburg",
+            "9780451524935",
+        ),
     ]
 
 
@@ -35,6 +54,7 @@ def empty_results():
 # ---------------------------------------------------------------------------
 # format_filesize
 # ---------------------------------------------------------------------------
+
 
 class TestFormatSize:
     def test_should_return_mb_when_over_1mb(self):
@@ -54,6 +74,7 @@ class TestFormatSize:
 # _is_owned
 # ---------------------------------------------------------------------------
 
+
 class TestIsOwned:
     def test_should_detect_owned_file(self):
         md5 = "abc123def456"
@@ -70,6 +91,7 @@ class TestIsOwned:
 # ---------------------------------------------------------------------------
 # export_json
 # ---------------------------------------------------------------------------
+
 
 class TestExportJson:
     def test_should_produce_valid_json_array(self, sample_results):
@@ -88,7 +110,7 @@ class TestExportJson:
     def test_should_write_to_file(self, sample_results, tmp_path):
         out_file = str(tmp_path / "results.json")
         export_json(sample_results, file=out_file, download_dir="nonexistent_dir_xyz")
-        with open(out_file, "r", encoding="utf-8") as fh:
+        with open(out_file, encoding="utf-8") as fh:
             parsed = json.load(fh)
         assert len(parsed) == 2
 
@@ -100,6 +122,7 @@ class TestExportJson:
 # ---------------------------------------------------------------------------
 # export_csv
 # ---------------------------------------------------------------------------
+
 
 class TestExportCsv:
     def test_should_produce_csv_with_header_and_rows(self, sample_results):
@@ -113,7 +136,7 @@ class TestExportCsv:
     def test_should_write_to_file(self, sample_results, tmp_path):
         out_file = str(tmp_path / "results.csv")
         export_csv(sample_results, file=out_file, download_dir="nonexistent_dir_xyz")
-        with open(out_file, "r", encoding="utf-8") as fh:
+        with open(out_file, encoding="utf-8") as fh:
             reader = csv.reader(fh)
             rows = list(reader)
         assert len(rows) == 3
@@ -128,6 +151,7 @@ class TestExportCsv:
 # ---------------------------------------------------------------------------
 # export_table
 # ---------------------------------------------------------------------------
+
 
 class TestExportTable:
     def test_should_not_crash_on_empty_results(self, empty_results):

@@ -9,18 +9,26 @@ from __future__ import annotations
 
 import re
 import sqlite3
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import TYPE_CHECKING
 
 from .logger import get_logger
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 logger = get_logger()
+
+# Whitelist patterns for DDL-safe column name/type validation (compiled once).
+_VALID_COL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+_VALID_COL_TYPE = re.compile(r"^[A-Z]+$")
 
 # ---------------------------------------------------------------------------
 # Migration registry
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class MigrationEntry:
@@ -31,7 +39,7 @@ class MigrationEntry:
     fn: Callable[[sqlite3.Cursor], None]
 
 
-_MIGRATIONS: Dict[int, MigrationEntry] = {}
+_MIGRATIONS: dict[int, MigrationEntry] = {}
 
 
 def migration(version: int, description: str) -> Callable:
@@ -53,7 +61,7 @@ def migration(version: int, description: str) -> Callable:
     return decorator
 
 
-def get_registered_migrations() -> List[MigrationEntry]:
+def get_registered_migrations() -> list[MigrationEntry]:
     """Return all registered migrations sorted by version."""
     return sorted(_MIGRATIONS.values(), key=lambda m: m.version)
 
@@ -62,12 +70,11 @@ def get_registered_migrations() -> List[MigrationEntry]:
 # Version helpers
 # ---------------------------------------------------------------------------
 
+
 def _has_schema_version_table(cursor: sqlite3.Cursor) -> bool:
     """Check whether the schema_version table already exists."""
-    cursor.execute(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'"
-    )
-    return cursor.fetchone()[0] > 0
+    cursor.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='schema_version'")
+    return bool(cursor.fetchone()[0])
 
 
 def get_current_version(db_path: str) -> int:
@@ -79,10 +86,10 @@ def get_current_version(db_path: str) -> int:
         if not _has_schema_version_table(cursor):
             return 0
         cursor.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version")
-        return cursor.fetchone()[0]
+        return int(cursor.fetchone()[0])
 
 
-def get_migration_history(db_path: str) -> List[Dict]:
+def get_migration_history(db_path: str) -> list[dict]:
     """Return the full migration history for display purposes."""
     if not Path(db_path).exists():
         return []
@@ -90,18 +97,14 @@ def get_migration_history(db_path: str) -> List[Dict]:
         cursor = conn.cursor()
         if not _has_schema_version_table(cursor):
             return []
-        cursor.execute(
-            "SELECT version, applied_at, description FROM schema_version ORDER BY version"
-        )
-        return [
-            {"version": row[0], "applied_at": row[1], "description": row[2]}
-            for row in cursor.fetchall()
-        ]
+        cursor.execute("SELECT version, applied_at, description FROM schema_version ORDER BY version")
+        return [{"version": row[0], "applied_at": row[1], "description": row[2]} for row in cursor.fetchall()]
 
 
 # ---------------------------------------------------------------------------
 # Migration runner
 # ---------------------------------------------------------------------------
+
 
 def run_migrations(db_path: str) -> int:
     """Apply all pending migrations to *db_path* and return the count applied.
@@ -134,7 +137,7 @@ def run_migrations(db_path: str) -> int:
                 mig.fn(cursor)
                 cursor.execute(
                     "INSERT INTO schema_version (version, applied_at, description) VALUES (?, ?, ?)",
-                    (mig.version, datetime.now(timezone.utc).isoformat(), mig.description),
+                    (mig.version, datetime.now(UTC).isoformat(), mig.description),
                 )
                 conn.commit()
                 applied += 1
@@ -152,6 +155,7 @@ def run_migrations(db_path: str) -> int:
 # ---------------------------------------------------------------------------
 # Concrete migrations
 # ---------------------------------------------------------------------------
+
 
 @migration(1, "Create schema_version tracking table")
 def _m1(cursor: sqlite3.Cursor) -> None:
@@ -238,8 +242,6 @@ def _m4(cursor: sqlite3.Cursor) -> None:
         ("added_at", "TEXT"),
     ]
 
-    _VALID_COL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
-    _VALID_COL_TYPE = re.compile(r"^[A-Z]+$")
     for col_name, col_type in expected_columns:
         if col_name not in existing_columns:
             # Whitelist-validate to prevent DDL injection (even though values are hardcoded)
@@ -271,9 +273,7 @@ def _m5(cursor: sqlite3.Cursor) -> None:
     cursor.execute("PRAGMA table_info(ingest_metadata)")
     existing_cols = {row[1] for row in cursor.fetchall()}
     if "records_processed" not in existing_cols:
-        cursor.execute(
-            "ALTER TABLE ingest_metadata ADD COLUMN records_processed INTEGER DEFAULT 0"
-        )
+        cursor.execute("ALTER TABLE ingest_metadata ADD COLUMN records_processed INTEGER DEFAULT 0")
     # Backfill: set records_processed = records_added for incomplete runs so
     # that an in-progress ingest can resume correctly after the upgrade.
     cursor.execute(

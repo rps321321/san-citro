@@ -16,7 +16,7 @@ import logging
 import os
 import sys
 import threading
-from typing import Any, Optional
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Add the project root to sys.path so ``from src.xxx import ...`` works.
@@ -69,10 +69,11 @@ def _write_message(obj: dict[str, Any]) -> None:
 # Public helpers -- importable by handlers / download_manager
 # ---------------------------------------------------------------------------
 
+
 def send_response(
     request_id: int,
     result: Any = None,
-    error: Optional[dict[str, Any]] = None,
+    error: dict[str, Any] | None = None,
 ) -> None:
     """Send a JSON-RPC response for *request_id*."""
     msg: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id}
@@ -108,10 +109,13 @@ def _dispatch(request_id: int, method: str, params: dict[str, Any]) -> None:
     """Look up *method* in the registry and call it."""
     handler = _handlers.get(method)
     if handler is None:
-        send_response(request_id, error={
-            "code": -32601,
-            "message": f"Method not found: {method}",
-        })
+        send_response(
+            request_id,
+            error={
+                "code": -32601,
+                "message": f"Method not found: {method}",
+            },
+        )
         return
 
     try:
@@ -119,10 +123,13 @@ def _dispatch(request_id: int, method: str, params: dict[str, Any]) -> None:
         send_response(request_id, result=result)
     except Exception as exc:
         logger.exception("Handler %s raised an exception", method)
-        send_response(request_id, error={
-            "code": -32000,
-            "message": f"{type(exc).__name__}: {exc}",
-        })
+        send_response(
+            request_id,
+            error={
+                "code": -32000,
+                "message": f"{type(exc).__name__}: {exc}",
+            },
+        )
 
 
 def _dispatch_threaded(request_id: int, method: str, params: dict[str, Any]) -> None:
@@ -140,6 +147,7 @@ def _dispatch_threaded(request_id: int, method: str, params: dict[str, Any]) -> 
 # Main loop
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     """Read stdin line-by-line and dispatch JSON-RPC requests."""
 
@@ -151,13 +159,15 @@ def main() -> None:
         sys.modules["bridge"] = this_module
 
     # Import handlers to populate the registry
-    import bridge_handlers  # noqa: F401
+    import bridge_handlers
+
     bridge_handlers.register_handlers()
 
     # Clean up downloads orphaned by a previous unclean shutdown
     try:
         from src.config_manager import get_config
         from src.download_history import cleanup_orphaned_downloads
+
         config = get_config()
         history_db = config.get("history_db")
         cleanup_orphaned_downloads(db_path=history_db)
@@ -188,14 +198,17 @@ def main() -> None:
             logger.warning("Malformed request (missing id or method): %s", line[:200])
             # Send error response if we have an id, so caller doesn't hang
             if request_id is not None:
-                send_response(request_id, error={
-                    "code": -32600,
-                    "message": "Invalid request: missing method",
-                })
+                send_response(
+                    request_id,
+                    error={
+                        "code": -32600,
+                        "message": "Invalid request: missing method",
+                    },
+                )
             continue
 
         # Validate request_id type (JSON-RPC 2.0 requires string or number)
-        if not isinstance(request_id, (int, str)):
+        if not isinstance(request_id, int | str):
             logger.warning("Invalid request id type: %s", type(request_id).__name__)
             continue
 
