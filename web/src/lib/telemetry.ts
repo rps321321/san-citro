@@ -94,7 +94,8 @@ async function sendToSupabase(table: string, rows: Record<string, unknown>[]): P
       body: JSON.stringify(rows),
     });
     if (!res.ok) {
-      console.warn(`[telemetry] Failed to send to ${table}: ${res.status}`);
+      const body = await res.text().catch(() => "");
+      console.warn(`[telemetry] Failed to send to ${table}: ${res.status} ${body}`);
     }
   } catch (err) {
     // Network failure — silently drop. Telemetry should never break the app.
@@ -178,21 +179,6 @@ export function trackError(
   });
 }
 
-/** Track a performance metric */
-export function trackMetric(
-  name: string,
-  value: number,
-  unit: string = "ms",
-  tags?: Record<string, unknown>
-): void {
-  enqueue("metrics", {
-    metric_name: name,
-    metric_value: value,
-    unit,
-    tags: tags || {},
-  });
-}
-
 /** Track a search */
 export function trackSearch(opts: {
   query: string;
@@ -213,35 +199,6 @@ export function trackSearch(opts: {
     result_count: opts.resultCount,
     response_time_ms: opts.responseTimeMs,
     page_number: opts.page || 1,
-  });
-}
-
-/** Track a download lifecycle event */
-export function trackDownload(opts: {
-  md5: string;
-  title?: string;
-  extension?: string;
-  fileSizeBytes?: number;
-  status: string;
-  durationSeconds?: number;
-  avgSpeedBps?: number;
-  mirrorDomain?: string;
-  strategy?: string;
-  proxyUsed?: boolean;
-  errorMessage?: string;
-}): void {
-  enqueue("download_analytics", {
-    md5: opts.md5,
-    title: opts.title,
-    extension: opts.extension,
-    file_size_bytes: opts.fileSizeBytes,
-    status: opts.status,
-    duration_seconds: opts.durationSeconds,
-    avg_speed_bps: opts.avgSpeedBps,
-    mirror_domain: opts.mirrorDomain,
-    strategy: opts.strategy,
-    proxy_used: opts.proxyUsed || false,
-    error_message: opts.errorMessage,
   });
 }
 
@@ -349,6 +306,19 @@ export function startSession(): void {
 
   // Track daily activity (upsert)
   trackEvent("session_start");
+
+  // Push telemetry context to Python bridge (fire-and-forget)
+  try {
+    window.sanCitro?.setTelemetryContext?.({
+      device_id: getDeviceId(),
+      session_id: sessionId,
+      app_version: getAppVersion(),
+      supabase_url: SUPABASE_URL,
+      anon_key: SUPABASE_ANON_KEY,
+    })?.catch(() => undefined);
+  } catch {
+    // never throw
+  }
 }
 
 /** End a session */
@@ -406,27 +376,6 @@ export function trackBridgeCall(opts: {
   });
 }
 
-/** Track scraper request health */
-export function trackScraperRequest(opts: {
-  domain: string;
-  statusCode?: number;
-  responseTimeMs: number;
-  success: boolean;
-  blocked?: boolean;
-  proxyUsed?: string;
-  errorMessage?: string;
-}): void {
-  enqueue("scraper_health", {
-    domain: opts.domain,
-    status_code: opts.statusCode,
-    response_time_ms: opts.responseTimeMs,
-    success: opts.success,
-    blocked: opts.blocked || false,
-    proxy_used: opts.proxyUsed,
-    error_message: opts.errorMessage,
-  });
-}
-
 /** Track first-time feature discovery */
 const discoveredFeatures = new Set<string>();
 export function trackFeatureDiscovery(feature: string): void {
@@ -447,29 +396,6 @@ export function trackSettingsChange(
     setting_name: setting,
     old_value: oldValue,
     new_value: newValue,
-  });
-}
-
-/** Track mirror download performance */
-export function trackMirrorPerformance(opts: {
-  mirrorDomain: string;
-  downloadSpeedBps?: number;
-  timeToFirstByteMs?: number;
-  totalTimeMs: number;
-  fileSizeBytes?: number;
-  success: boolean;
-  statusCode?: number;
-  errorType?: string;
-}): void {
-  enqueue("mirror_performance", {
-    mirror_domain: opts.mirrorDomain,
-    download_speed_bps: opts.downloadSpeedBps,
-    time_to_first_byte_ms: opts.timeToFirstByteMs,
-    total_time_ms: opts.totalTimeMs,
-    file_size_bytes: opts.fileSizeBytes,
-    success: opts.success,
-    status_code: opts.statusCode,
-    error_type: opts.errorType,
   });
 }
 

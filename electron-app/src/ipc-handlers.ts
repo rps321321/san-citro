@@ -54,6 +54,10 @@ export function registerIpcHandlers(
     return bridge.call('run_diagnostics');
   });
 
+  ipcMain.handle(IPC_CHANNELS.SET_TELEMETRY_CONTEXT, (_event, ctx) => {
+    return bridge.call('set_telemetry_context', ctx);
+  });
+
   // --- Shell access (owned by main process under sandboxed preload) ---
 
   ipcMain.handle(IPC_CHANNELS.OPEN_EXTERNAL, (_event, url: string) => {

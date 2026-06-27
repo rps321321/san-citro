@@ -45,7 +45,7 @@ import type { SearchParams } from "@/lib/api-client";
 import type { BookRecord, SearchResponse } from "@/types";
 import { formatFileSize, truncateMd5 } from "@/lib/format";
 import {
-  trackSearch, trackDownload, trackInteraction, trackError,
+  trackSearch, trackInteraction, trackError,
   trackFunnelStep, trackFeatureDiscovery, incrementEngagement,
 } from "@/lib/telemetry";
 
@@ -235,13 +235,6 @@ function SearchContent() {
       incrementEngagement("downloadStarted");
       trackFunnelStep("search_to_download", "download_clicked", 2, { md5: book.md5 });
       trackFeatureDiscovery("download");
-      trackDownload({
-        md5: book.md5,
-        title: book.title,
-        extension: book.extension,
-        fileSizeBytes: book.filesize_bytes,
-        status: "started",
-      });
       // Do NOT optimistically mark as downloaded — the download was only just
       // enqueued, not completed. Mark it "enqueued" so the row shows a persistent
       // "Queued" badge, and surface a success banner linking to Downloads.

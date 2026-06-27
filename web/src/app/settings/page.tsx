@@ -33,7 +33,7 @@ import {
 } from "@/lib/api-client";
 import {
   trackInteraction, trackSettingsChange, trackFeatureDiscovery,
-  incrementEngagement, trackBridgeCall,
+  incrementEngagement,
 } from "@/lib/telemetry";
 import type { DiagnosticResult, UpdateStatus } from "@/types";
 
@@ -75,6 +75,9 @@ export default function SettingsPage() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
+  // Snapshot of last-saved values for trackSettingsChange diffing
+  const savedSnapshot = useRef<{ out_dir: string; concurrency: string; proxies: string } | null>(null);
+
   // Timer ref to avoid setState-on-unmounted-component warnings
   const saveSuccessTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -90,6 +93,11 @@ export default function SettingsPage() {
           setOutDir(data.out_dir);
           setConcurrency(String(data.concurrency));
           setProxiesText(data.proxies.join(", "));
+          savedSnapshot.current = {
+            out_dir: data.out_dir,
+            concurrency: String(data.concurrency),
+            proxies: data.proxies.join(", "),
+          };
         }
       } catch (err) {
         if (!cancelled) {
@@ -197,6 +205,22 @@ export default function SettingsPage() {
       setOutDir(updated.out_dir);
       setConcurrency(String(updated.concurrency));
       setProxiesText(updated.proxies.join(", "));
+
+      const newSnapshot = {
+        out_dir: updated.out_dir,
+        concurrency: String(updated.concurrency),
+        proxies: updated.proxies.join(", "),
+      };
+      const snap = savedSnapshot.current;
+      if (snap) {
+        if (snap.out_dir !== newSnapshot.out_dir)
+          trackSettingsChange("out_dir", snap.out_dir, newSnapshot.out_dir);
+        if (snap.concurrency !== newSnapshot.concurrency)
+          trackSettingsChange("concurrency", snap.concurrency, newSnapshot.concurrency);
+        if (snap.proxies !== newSnapshot.proxies)
+          trackSettingsChange("proxies", snap.proxies, newSnapshot.proxies);
+      }
+      savedSnapshot.current = newSnapshot;
 
       showSuccess("Settings saved.");
     } catch (err) {

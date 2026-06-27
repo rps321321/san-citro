@@ -13,7 +13,7 @@ import { useDownloadStream } from "@/lib/use-sse";
 import { cancelDownload } from "@/lib/api-client";
 import { truncateMd5, formatFileSize } from "@/lib/format";
 import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
-import { trackInteraction, trackDownload, trackFeatureDiscovery, incrementEngagement } from "@/lib/telemetry";
+import { trackInteraction } from "@/lib/telemetry";
 import type { DownloadStatus } from "@/types";
 
 function formatDuration(seconds: number): string {

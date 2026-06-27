@@ -13,13 +13,16 @@ import logging
 import random
 import re
 import time
-from typing import Any
-from urllib.parse import quote_plus
+from typing import TYPE_CHECKING, Any
+from urllib.parse import quote_plus, urlparse
 
 import requests
 from bs4 import BeautifulSoup
 
 from .utils import attr_str, is_allowed_by_robots
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -63,11 +66,14 @@ def _pick_proxy(proxies: list[str]) -> str | None:
     return random.choice(proxies) if proxies else None
 
 
-def _make_session(proxies: list[str]) -> requests.Session:
+def _make_session(proxies: list[str]) -> tuple[requests.Session, str | None, str]:
     """Build a ``requests.Session`` with a random User-Agent and an optional proxy.
 
     Proxy rotation (Gap 1): picks a random entry from ``proxies`` for each session
     so consecutive requests don't always share the same egress IP.
+
+    Returns the session along with the redacted proxy URL (or ``None``) and the
+    chosen User-Agent so callers can report which egress was used.
     """
     session = requests.Session()
 
@@ -84,11 +90,13 @@ def _make_session(proxies: list[str]) -> requests.Session:
     )
 
     proxy_url = _pick_proxy(proxies)
+    redacted_proxy: str | None = None
     if proxy_url:
         session.proxies.update({"http": proxy_url, "https": proxy_url})
-        logger.debug("Using proxy: %s", proxy_url.split("@")[-1])  # redact credentials
+        redacted_proxy = proxy_url.split("@")[-1]  # redact credentials
+        logger.debug("Using proxy: %s", redacted_proxy)
 
-    return session
+    return session, redacted_proxy, user_agent
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +195,7 @@ def scrape_annas_archive(
     base_url: str = _DEFAULT_BASE_URL,
     seen_md5s: set[str] | None = None,
     proxies: list[str] | None = None,
+    on_health: Callable[[dict], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Scrape an Anna's Archive search-results page and return book metadata.
 
@@ -211,6 +220,11 @@ def scrape_annas_archive(
         List of proxy URLs (e.g. ``["http://host:port"]``).  A random one
         is selected per request (Gap 1 rotation).  When omitted, the
         config is read automatically.
+    on_health:
+        Optional sink invoked exactly once per call with a dict describing the
+        request health (domain, status_code, response_time_ms, success, blocked,
+        proxy_used, user_agent, error_message).  Callback errors are swallowed
+        so they never break scraping.  When omitted, no health is reported.
 
     Returns
     -------
@@ -254,14 +268,49 @@ def scrape_annas_archive(
     logger.debug("Scraper sleeping %.2fs before request", delay)
     time.sleep(delay)
 
-    session = _make_session(proxies)
+    session, proxy_used, user_agent = _make_session(proxies)
+    domain = urlparse(base_url).netloc
+
+    def _emit_health(health: dict[str, Any]) -> None:
+        if on_health is None:
+            return
+        try:
+            on_health(health)
+        except Exception:  # health reporting must never break scraping
+            logger.debug("on_health callback raised", exc_info=True)
 
     try:
         resp = session.get(url, timeout=15)
         resp.raise_for_status()
     except requests.RequestException as exc:
+        status_code = getattr(exc.response, "status_code", None)
+        _emit_health(
+            {
+                "domain": domain,
+                "status_code": status_code,
+                "response_time_ms": None,
+                "success": False,
+                "blocked": status_code in (403, 429),
+                "proxy_used": proxy_used,
+                "user_agent": user_agent,
+                "error_message": str(exc)[:500],
+            }
+        )
         logger.error("Failed to reach Anna's Archive: %s", exc)
         raise RuntimeError(f"Failed to reach Anna's Archive: {exc}") from exc
+
+    _emit_health(
+        {
+            "domain": domain,
+            "status_code": resp.status_code,
+            "response_time_ms": int(resp.elapsed.total_seconds() * 1000),
+            "success": True,
+            "blocked": not _verify_response_has_results(resp.text),
+            "proxy_used": proxy_used,
+            "user_agent": user_agent,
+            "error_message": None,
+        }
+    )
 
     # Gap 8: verify the response contains expected result markers
     if not _verify_response_has_results(resp.text):

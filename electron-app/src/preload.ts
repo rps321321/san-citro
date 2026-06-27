@@ -28,6 +28,7 @@ const IPC_CHANNELS = {
   CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
   QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
   UPDATE_STATUS: 'san-citro:updateStatus',
+  SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
 } as const;
 
 const api = {
@@ -63,6 +64,9 @@ const api = {
 
   runDiagnostics: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.RUN_DIAGNOSTICS),
+
+  setTelemetryContext: (ctx: Record<string, unknown>): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SET_TELEMETRY_CONTEXT, ctx),
 
   // --- Event subscriptions (return unsubscribe function) ---
 

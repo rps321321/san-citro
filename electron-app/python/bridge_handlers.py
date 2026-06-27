@@ -15,6 +15,8 @@ import os
 import re
 from typing import Any
 
+import telemetry_emitter
+
 from src.config_manager import (
     get_config,
     save_config,
@@ -109,7 +111,14 @@ def handle_search(params: dict[str, Any]) -> dict[str, Any]:
     config = get_config()
     proxy_list: list[str] = config.get("proxies") or []
 
-    results = scrape_annas_archive(query, ext=ext, lang=lang, page=page, proxies=proxy_list)
+    results = scrape_annas_archive(
+        query,
+        ext=ext,
+        lang=lang,
+        page=page,
+        proxies=proxy_list,
+        on_health=lambda h: telemetry_emitter.emit("scraper_health", h),
+    )
 
     # Flag results that already have a completed download so is_downloaded is
     # truthful (the scraper always returns False — it has no history).
@@ -312,6 +321,18 @@ def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
     return file_path
 
 
+def handle_set_telemetry_context(params: dict[str, Any]) -> dict[str, Any]:
+    """set_telemetry_context — thread renderer identity + Supabase creds to Python."""
+    telemetry_emitter.set_context(
+        device_id=params.get("device_id", ""),
+        session_id=params.get("session_id", ""),
+        app_version=params.get("app_version", ""),
+        supabase_url=params.get("supabase_url", ""),
+        anon_key=params.get("anon_key", ""),
+    )
+    return {"ok": True}
+
+
 # ===================================================================
 # Registration — called by bridge.main()
 # ===================================================================
@@ -332,3 +353,4 @@ def register_handlers() -> None:
     register_method("reload_config", handle_reload_config)
     register_method("run_diagnostics", handle_run_diagnostics)
     register_method("resolve_download_path", handle_resolve_download_path)
+    register_method("set_telemetry_context", handle_set_telemetry_context)

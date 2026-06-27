@@ -7,6 +7,7 @@ import type {
   UpdateStatus,
   SanCitroApi,
 } from "@/types";
+import { trackBridgeCall } from "./telemetry";
 
 /** Throws a clear error if the Electron preload script hasn't injected the bridge. */
 function ipc(): SanCitroApi {
@@ -16,6 +17,18 @@ function ipc(): SanCitroApi {
     );
   }
   return window.sanCitro;
+}
+
+async function timed<T>(method: string, fn: () => Promise<T>): Promise<T> {
+  const t0 = performance.now();
+  try {
+    const r = await fn();
+    trackBridgeCall({ method, durationMs: Math.round(performance.now() - t0), success: true });
+    return r;
+  } catch (e) {
+    trackBridgeCall({ method, durationMs: Math.round(performance.now() - t0), success: false, errorMessage: e instanceof Error ? e.message : String(e) });
+    throw e;
+  }
 }
 
 // --------------- Search ---------------
@@ -28,12 +41,12 @@ export interface SearchParams {
 }
 
 export async function search(params: SearchParams): Promise<SearchResponse> {
-  return ipc().search({
+  return timed("search", () => ipc().search({
     query: params.query,
     extension: params.extension,
     language: params.language,
     page: params.page,
-  });
+  }));
 }
 
 // --------------- Downloads ---------------
@@ -48,44 +61,44 @@ function assertValidMd5(md5: string): void {
 
 export async function startDownload(md5: string, title?: string): Promise<DownloadStatus> {
   assertValidMd5(md5);
-  return ipc().startDownload({ md5, title });
+  return timed("start_download", () => ipc().startDownload({ md5, title }));
 }
 
 export async function getActiveDownloads(): Promise<DownloadStatus[]> {
-  return ipc().getDownloads();
+  return timed("get_downloads", () => ipc().getDownloads());
 }
 
 export async function cancelDownload(md5: string): Promise<{ status?: string; error?: string }> {
   assertValidMd5(md5);
-  return ipc().cancelDownload(md5);
+  return timed("cancel_download", () => ipc().cancelDownload(md5));
 }
 
 // --------------- History ---------------
 
 export async function getHistory(): Promise<HistoryEntry[]> {
-  return ipc().getHistory();
+  return timed("get_history", () => ipc().getHistory());
 }
 
 // --------------- Settings ---------------
 
 export async function getSettings(): Promise<ConfigModel> {
-  return ipc().getSettings();
+  return timed("get_settings", () => ipc().getSettings());
 }
 
 export async function updateSettings(
   config: Partial<ConfigModel>
 ): Promise<ConfigModel> {
-  return ipc().updateSettings(config);
+  return timed("update_settings", () => ipc().updateSettings(config));
 }
 
 export async function reloadConfig(): Promise<ConfigModel> {
-  return ipc().reloadConfig();
+  return timed("reload_config", () => ipc().reloadConfig());
 }
 
 // --------------- Diagnostics ---------------
 
 export async function getDiagnostics(): Promise<DiagnosticResult[]> {
-  return ipc().runDiagnostics();
+  return timed("run_diagnostics", () => ipc().runDiagnostics());
 }
 
 // --------------- Shell / System ---------------
@@ -106,13 +119,13 @@ export async function openExternal(url: string): Promise<void> {
 
 export async function readBookFile(md5: string): Promise<ArrayBuffer> {
   assertValidMd5(md5);
-  return ipc().readBookFile(md5);
+  return timed("read_book_file", () => ipc().readBookFile(md5));
 }
 
 // --------------- Updates ---------------
 
 export async function checkForUpdates(): Promise<UpdateStatus> {
-  return ipc().checkForUpdates();
+  return timed("check_for_updates", () => ipc().checkForUpdates());
 }
 
 export async function quitAndInstall(): Promise<void> {

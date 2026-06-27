@@ -50,6 +50,7 @@ export const IPC_CHANNELS = {
   CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
   QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
   UPDATE_STATUS: 'san-citro:updateStatus',
+  SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
 } as const;
 
 export interface UpdateStatus {

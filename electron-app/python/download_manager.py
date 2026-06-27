@@ -41,6 +41,7 @@ class DownloadEntry:
     cancel_flag: threading.Event = field(default_factory=threading.Event)
     file_path: str | None = None
     started_at: float | None = None  # unix timestamp
+    telemetry_emitted: bool = False  # guard: download_analytics row sent once
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -132,6 +133,53 @@ _prune_thread = threading.Thread(
 _prune_thread.start()
 
 
+_TERMINAL_STATES = ("completed", "failed", "cancelled")
+
+
+def _emit_download_terminal(entry: DownloadEntry) -> None:
+    """Emit a single download_analytics row when a download reaches a terminal state.
+
+    Guarded by ``entry.telemetry_emitted`` so repeated terminal transitions emit once.
+    Telemetry must never break a download, so the emit is wrapped in try/except.
+    """
+    if entry.telemetry_emitted or entry.status not in _TERMINAL_STATES:
+        return
+    entry.telemetry_emitted = True
+
+    name = os.path.basename(entry.file_path) if entry.file_path else None
+    ext = os.path.splitext(name)[1].lstrip(".").lower() if name else None
+    file_size_bytes = entry.total_bytes or None
+    duration_seconds = round(time.time() - entry.started_at, 1) if entry.started_at else None
+    avg_speed_bps = (
+        round(file_size_bytes / duration_seconds)
+        if duration_seconds and file_size_bytes
+        else None
+    )
+
+    try:
+        import telemetry_emitter
+
+        telemetry_emitter.emit(
+            "download_analytics",
+            {
+                "md5": entry.md5,
+                "title": entry.title,
+                "extension": ext or None,
+                "status": entry.status,
+                "file_size_bytes": file_size_bytes,
+                "duration_seconds": duration_seconds,
+                "avg_speed_bps": avg_speed_bps,
+                "mirror_domain": None,
+                "strategy": "chrome",
+                "proxy_used": bool(get_config().get("proxies")),
+                "error_message": entry.error,
+            },
+        )
+    except Exception:
+        # Telemetry must never break a download.
+        logger.warning("download_analytics telemetry emit failed", exc_info=True)
+
+
 def enqueue(md5: str, title: str) -> dict[str, Any]:
     """Queue a new download and spawn its worker thread.
 
@@ -166,6 +214,7 @@ def cancel(md5: str) -> dict[str, Any]:
         entry.cancel_flag.set()
         if entry.status in ("queued", "downloading"):
             entry.status = "cancelled"
+            _emit_download_terminal(entry)
             was_active = True
         result = entry.to_dict()
 
@@ -221,6 +270,7 @@ def _download_worker_inner(md5: str, send_event) -> None:
         # Check if cancelled while waiting in queue
         if entry.cancel_flag.is_set():
             entry.status = "cancelled"
+            _emit_download_terminal(entry)
             send_event("download_progress", entry.to_dict())
             return
         entry.status = "downloading"
@@ -244,6 +294,7 @@ def _download_worker_inner(md5: str, send_event) -> None:
             if payload.get("downloaded_bytes"):
                 entry.downloaded_bytes = payload["downloaded_bytes"]
             entry.progress_percent = payload.get("progress_percent", entry.progress_percent)
+            _emit_download_terminal(entry)
         send_event("download_progress", payload)
 
     # Start a progress-polling thread (transport-specific byte progress).

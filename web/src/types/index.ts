@@ -111,6 +111,14 @@ export interface SanCitroApi {
   quitAndInstall(): Promise<void>;
   /** Subscribe to pushed update-status events. Returns an unsubscribe function. */
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+  /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
+  setTelemetryContext(ctx: {
+    device_id: string;
+    session_id: string;
+    app_version: string;
+    supabase_url: string;
+    anon_key: string;
+  }): Promise<void>;
 }
 
 declare global {
