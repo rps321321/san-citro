@@ -283,13 +283,6 @@ function SearchContent() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
-        <p className="text-sm text-muted-foreground">
-          Find books, papers, and files from Anna&apos;s Archive
-        </p>
-      </div>
-
       {/* Search form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex gap-2">
@@ -326,7 +319,7 @@ function SearchContent() {
               }}
             >
               <SelectTrigger className="w-full" aria-label="Filter by file extension">
-                <SelectValue placeholder="Extension" />
+                <SelectValue>{(value) => (typeof value === "string" && value !== "__all" ? value.toUpperCase() : "All formats")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {EXTENSIONS.map((ext) => (
@@ -347,7 +340,7 @@ function SearchContent() {
               }}
             >
               <SelectTrigger className="w-full" aria-label="Filter by language">
-                <SelectValue placeholder="Language" />
+                <SelectValue>{(value) => (typeof value === "string" && value !== "__all" ? value : "All languages")}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {LANGUAGES.map((lang) => (

@@ -5,7 +5,6 @@ import { DownloadIcon } from "lucide-react";
 
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
-import { ConnectionIndicator } from "@/components/connection-indicator";
 import { useDownloadStream } from "@/lib/use-sse";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -31,7 +30,7 @@ export function AppHeader() {
     () => window.location.pathname,
     () => ""
   );
-  const { downloads, connection } = useDownloadStream();
+  const { downloads } = useDownloadStream();
 
   const activeCount = Array.from(downloads.values()).filter(
     (d) => d.status === "downloading" || d.status === "started" || d.status === "queued"
@@ -53,7 +52,6 @@ export function AppHeader() {
             {activeCount}
           </Badge>
         )}
-        <ConnectionIndicator connection={connection} />
       </div>
     </header>
   );

@@ -63,9 +63,6 @@ export function AppSidebar() {
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">San Citro</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  Desktop
-                </span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>

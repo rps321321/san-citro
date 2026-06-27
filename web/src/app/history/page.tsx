@@ -175,13 +175,7 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">History</h1>
-          <p className="text-sm text-muted-foreground">
-            A record of everything you have downloaded
-          </p>
-        </div>
+      <div className="flex items-center justify-end">
         <div className="flex gap-2">
           <Button
             variant="outline"

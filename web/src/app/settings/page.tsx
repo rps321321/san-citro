@@ -271,10 +271,6 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="space-y-6 max-w-2xl" aria-busy="true" aria-label="Loading settings">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">Adjust download location, concurrency, and more</p>
-        </div>
         <Card>
           <CardHeader>
             <Skeleton className="h-4 w-28" />
@@ -315,10 +311,6 @@ export default function SettingsPage() {
   if (error && !outDir) {
     return (
       <div className="space-y-6 max-w-2xl">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-          <p className="text-sm text-muted-foreground">Adjust download location, concurrency, and more</p>
-        </div>
         <div role="alert" className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
         </div>
@@ -328,13 +320,6 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">
-          Configure application settings
-        </p>
-      </div>
-
       {error && <Banner variant="error" message={error} />}
 
       {successMessage && (

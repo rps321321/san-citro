@@ -316,14 +316,9 @@ export default function DownloadsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1
-            ref={headingRef}
-            tabIndex={-1}
-            className="text-2xl font-semibold tracking-tight outline-none"
-          >
+          <h1 ref={headingRef} tabIndex={-1} className="sr-only">
             Downloads
           </h1>
-          <p className="text-sm text-muted-foreground">Track and manage your downloads</p>
         </div>
         <ConnectionIndicator connection={connection} />
       </div>
