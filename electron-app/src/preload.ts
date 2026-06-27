@@ -23,6 +23,7 @@ const IPC_CHANNELS = {
   GET_APP_VERSION: 'san-citro:getAppVersion',
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
+  READ_BOOK_FILE: 'san-citro:readBookFile',
   SHOW_OPEN_DIALOG: 'san-citro:showOpenDialog',
   CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
   QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
@@ -85,6 +86,9 @@ const api = {
 
   showItemInFolder: (md5: string): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.SHOW_ITEM_IN_FOLDER, { md5 }),
+
+  readBookFile: (md5: string): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke(IPC_CHANNELS.READ_BOOK_FILE, { md5 }),
 
   // Native folder picker — returns absolute path or null if cancelled.
   showOpenDialog: (): Promise<string | null> =>

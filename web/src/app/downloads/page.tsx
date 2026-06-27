@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DownloadIcon, XIcon, WifiOffIcon, Trash2Icon, XCircleIcon, FolderOpenIcon } from "lucide-react";
+import { DownloadIcon, XIcon, WifiOffIcon, Trash2Icon, XCircleIcon, FolderOpenIcon, BookOpenIcon } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -189,6 +189,18 @@ function DownloadCard({
             <span className="text-xs text-muted-foreground truncate flex-1" title={dl.filename}>
               {dl.filename}
             </span>
+            {dl.filename.toLowerCase().endsWith(".epub") && dl.md5 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0 text-xs"
+                onClick={() => openReader(dl.md5, dl.title || dl.filename || "")}
+                aria-label={`Read ${dl.title || dl.filename}`}
+              >
+                <BookOpenIcon className="size-3.5" />
+                Read
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="sm"
@@ -228,6 +240,12 @@ function DownloadCard({
       </CardContent>
     </Card>
   );
+}
+
+function openReader(md5: string, title: string) {
+  sessionStorage.setItem("reader:md5", md5);
+  sessionStorage.setItem("reader:title", title || "");
+  window.location.href = "/reader";
 }
 
 export default function DownloadsPage() {

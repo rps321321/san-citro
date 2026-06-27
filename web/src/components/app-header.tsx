@@ -11,6 +11,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/downloads": "Downloads",
   "/history": "History",
   "/settings": "Settings",
+  "/reader": "Reader",
 };
 
 function titleForPath(pathname: string): string {

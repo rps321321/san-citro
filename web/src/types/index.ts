@@ -97,6 +97,8 @@ export interface SanCitroApi {
   runDiagnostics(): Promise<DiagnosticResult[]>;
   onDownloadProgress(callback: (data: DownloadStatus | DownloadStatus[]) => void): () => void;
   showItemInFolder(md5: string): Promise<void>;
+  /** Read a downloaded book's bytes (for the in-app epub reader). */
+  readBookFile(md5: string): Promise<ArrayBuffer>;
   /** Native folder picker (openDirectory). Resolves abs path, or null if cancelled. */
   showOpenDialog(): Promise<string | null>;
   /** Current app version string. */

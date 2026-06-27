@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow, shell, dialog, app, Notification } from 'electron';
+import { promises as fsp } from 'fs';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { checkForUpdates, quitAndInstall } from './updater';
@@ -74,6 +75,23 @@ export function registerIpcHandlers(
       if (abs) {
         shell.showItemInFolder(abs);
       }
+    }
+  );
+
+  // Read a downloaded book's bytes (for the in-app epub reader). Resolves the
+  // validated absolute path via the bridge, then returns the file as an
+  // ArrayBuffer (structured-cloned across IPC).
+  ipcMain.handle(
+    IPC_CHANNELS.READ_BOOK_FILE,
+    async (_event, { md5 }: { md5: string }): Promise<ArrayBuffer> => {
+      const abs = (await bridge.call('resolve_download_path', { md5 })) as
+        | string
+        | null;
+      if (!abs) {
+        throw new Error('Downloaded file not found for this book.');
+      }
+      const buf = await fsp.readFile(abs);
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
     }
   );
 

@@ -102,6 +102,13 @@ export async function openExternal(url: string): Promise<void> {
   return ipc().openExternal(url);
 }
 
+// --------------- Reader ---------------
+
+export async function readBookFile(md5: string): Promise<ArrayBuffer> {
+  assertValidMd5(md5);
+  return ipc().readBookFile(md5);
+}
+
 // --------------- Updates ---------------
 
 export async function checkForUpdates(): Promise<UpdateStatus> {

@@ -45,6 +45,7 @@ export const IPC_CHANNELS = {
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
   RESOLVE_DOWNLOAD_PATH: 'san-citro:resolveDownloadPath',
+  READ_BOOK_FILE: 'san-citro:readBookFile',
   SHOW_OPEN_DIALOG: 'san-citro:showOpenDialog',
   CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
   QUIT_AND_INSTALL: 'san-citro:quitAndInstall',

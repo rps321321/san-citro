@@ -8,6 +8,7 @@ import {
   FolderOpenIcon,
   RefreshCwIcon,
   SearchIcon,
+  BookOpenIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -115,6 +116,12 @@ function compareEntries(a: HistoryEntry, b: HistoryEntry, key: SortKey): number 
     case "completed":
       return (a.completed_at ?? "").localeCompare(b.completed_at ?? "");
   }
+}
+
+function openReader(md5: string, title: string) {
+  sessionStorage.setItem("reader:md5", md5);
+  sessionStorage.setItem("reader:title", title || "");
+  window.location.href = "/reader";
 }
 
 export default function HistoryPage() {
@@ -317,19 +324,34 @@ export default function HistoryPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {entry.status === "completed" && entry.filename && entry.md5 && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => {
-                          window.sanCitro?.showItemInFolder(entry.md5);
-                        }}
-                        aria-label={`Show ${entry.filename} in folder`}
-                        title="Show in folder"
-                      >
-                        <FolderOpenIcon className="size-3.5" />
-                      </Button>
-                    )}
+                    <div className="flex items-center justify-end gap-1">
+                      {entry.status === "completed" &&
+                        entry.md5 &&
+                        entry.filename?.toLowerCase().endsWith(".epub") && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => openReader(entry.md5, entry.title ?? entry.filename ?? "")}
+                            aria-label={`Read ${entry.title ?? entry.filename}`}
+                            title="Read"
+                          >
+                            <BookOpenIcon className="size-3.5" />
+                          </Button>
+                        )}
+                      {entry.status === "completed" && entry.filename && entry.md5 && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => {
+                            window.sanCitro?.showItemInFolder(entry.md5);
+                          }}
+                          aria-label={`Show ${entry.filename} in folder`}
+                          title="Show in folder"
+                        >
+                          <FolderOpenIcon className="size-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
