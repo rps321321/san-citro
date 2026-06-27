@@ -43,18 +43,25 @@ const NAV_ITEMS = [
   { label: "Settings", href: "/settings", icon: SettingsIcon },
 ] as const;
 
+function subscribeAfterHydration(callback: () => void) {
+  queueMicrotask(callback);
+  return () => {};
+}
+
 export function AppSidebar() {
-  // Read pathname via useSyncExternalStore to avoid SSR hydration mismatch
-  // without calling setState in an effect. next/navigation hooks are unreliable
-  // in Electron's san-citro:// custom protocol. The location never changes
-  // without a full reload here, so subscribe is a no-op.
   const pathname = useSyncExternalStore(
-    () => () => {},
+    subscribeAfterHydration,
     () => window.location.pathname,
     () => ""
   );
+  const mounted = useSyncExternalStore(
+    subscribeAfterHydration,
+    () => true,
+    () => false
+  );
   const { resolvedTheme } = useTheme();
   const { toggleTheme } = useThemeToggle({ variant: "circle", start: "bottom-left" });
+  const isDark = mounted && resolvedTheme === "dark";
 
   return (
     <Sidebar collapsible="icon">
@@ -120,23 +127,23 @@ export function AppSidebar() {
                       className="w-full justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
                       onClick={() => {
                         trackInteraction("theme_toggle", "sidebar", {
-                          theme: resolvedTheme === "dark" ? "light" : "dark",
+                          theme: isDark ? "light" : "dark",
                         });
                         toggleTheme();
                       }}
-                      aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
                     >
                       <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" aria-hidden="true" />
                       <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" aria-hidden="true" />
                       <span className="group-data-[collapsible=icon]:hidden">
-                        {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+                        {isDark ? "Light mode" : "Dark mode"}
                       </span>
                     </Button>
                   }
                 />
                 {/* Tooltip label for when sidebar is icon-collapsed and text span is hidden */}
                 <TooltipContent side="right">
-                  {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+                  {isDark ? "Light mode" : "Dark mode"}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

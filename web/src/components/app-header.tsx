@@ -14,6 +14,11 @@ const PAGE_TITLES: Record<string, string> = {
   "/reader": "Reader",
 };
 
+function subscribeAfterHydration(callback: () => void) {
+  queueMicrotask(callback);
+  return () => {};
+}
+
 function titleForPath(pathname: string): string {
   // Home ("/") re-exports the search page, so treat it as /search.
   const normalized = pathname === "/" ? "/search" : pathname;
@@ -22,11 +27,8 @@ function titleForPath(pathname: string): string {
 }
 
 export function AppHeader() {
-  // Read pathname the same way app-sidebar does — next/navigation hooks are
-  // unreliable under Electron's san-citro:// protocol. Location never changes
-  // without a full reload, so subscribe is a no-op.
   const pathname = useSyncExternalStore(
-    () => () => {},
+    subscribeAfterHydration,
     () => window.location.pathname,
     () => ""
   );
