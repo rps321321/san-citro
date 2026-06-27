@@ -23,14 +23,11 @@ from .download_history import (
 from .download_job import run_download
 from .download_strategy import create_strategy
 from .logger import get_logger, setup_logging
-from .scraper import scrape_annas_archive
+from .scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
 from .shutdown import install_signal_handlers, is_cancelled
 from .utils import format_filesize
 
 MD5_LINE_PATTERN = re.compile(r"^[a-fA-F0-9]{32}$")
-
-# A full scraped page is 20 results; used to infer "there may be a next page".
-SCRAPE_PAGE_SIZE = 20
 
 console = Console()
 
@@ -345,6 +342,20 @@ def _build_filter_kwargs(args: argparse.Namespace) -> dict:
     return kwargs
 
 
+def _filter_after(results: list[dict], after: int | None) -> list[dict]:
+    if after is None:
+        return results
+    filtered: list[dict] = []
+    for row in results:
+        try:
+            year = int(str(row.get("year")))
+        except (TypeError, ValueError):
+            continue
+        if year >= after:
+            filtered.append(row)
+    return filtered
+
+
 # ------------------------------------------------------------------
 # Main entry point
 # ------------------------------------------------------------------
@@ -509,6 +520,7 @@ def _run_network_commands(
             lang=filter_kwargs.get("lang"),
             page=page,
         )
+        search_results = _filter_after(search_results, filter_kwargs.get("after"))
         limit = getattr(args, "limit", None)
         if limit is not None:
             search_results = search_results[:limit]
@@ -522,15 +534,16 @@ def _run_network_commands(
             current_page = args.page
 
             while True:
-                live_results = scrape_annas_archive(
+                raw_live_results = scrape_annas_archive(
                     args.query,
                     ext=filter_kwargs.get("ext"),
                     lang=filter_kwargs.get("lang"),
                     page=current_page,
                 )
-                if not live_results:
+                if not raw_live_results:
                     console.print("\n[yellow]No results found.[/yellow]")
                     return
+                live_results = _filter_after(raw_live_results, filter_kwargs.get("after"))
                 _print_live_results(live_results, page=current_page)
 
                 # Build navigation hints
@@ -538,7 +551,7 @@ def _run_network_commands(
                 if current_page > 1:
                     nav_hints.append("[bold yellow]P[/bold yellow]=Prev page")
                 # Assume there's a next page if we got a full page of results
-                if len(live_results) >= SCRAPE_PAGE_SIZE:
+                if len(raw_live_results) >= SCRAPE_PAGE_SIZE:
                     nav_hints.append("[bold yellow]N[/bold yellow]=Next page")
                 nav_hints.append("[bold yellow]Q[/bold yellow]=Quit")
                 nav_line = "  ".join(nav_hints)
@@ -546,7 +559,7 @@ def _run_network_commands(
                 choice = console.input(f"\n[bold cyan]Select numbers (e.g. 1,3) or navigate ({nav_line}):[/bold cyan] ")
                 choice_stripped = choice.strip().upper()
 
-                if choice_stripped == "N" and len(live_results) >= SCRAPE_PAGE_SIZE:
+                if choice_stripped == "N" and len(raw_live_results) >= SCRAPE_PAGE_SIZE:
                     current_page += 1
                     continue
                 elif choice_stripped == "P" and current_page > 1:
@@ -588,6 +601,7 @@ def _run_network_commands(
                     ext=filter_kwargs.get("ext"),
                     lang=filter_kwargs.get("lang"),
                 )
+                live_results = _filter_after(live_results, filter_kwargs.get("after"))
                 if live_results:
                     targets.append(_dict_to_tuple(live_results[0]))
 

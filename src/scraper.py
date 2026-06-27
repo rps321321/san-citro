@@ -38,6 +38,25 @@ _USER_AGENTS: list[str] = [
 _DELAY_MIN = 0.5
 _DELAY_MAX = 2.0
 
+# Anna's Archive currently returns about 50 rows per search page.
+SCRAPE_PAGE_SIZE = 50
+
+_FILE_EXTENSIONS = {
+    "azw3",
+    "cb7",
+    "cbr",
+    "cbz",
+    "djvu",
+    "epub",
+    "fb2",
+    "mobi",
+    "pdf",
+    "txt",
+}
+_METADATA_SEPARATORS = re.compile(r"\s*(?:\xb7|\u2022|\|)\s*")
+_LANGUAGE_TOKEN_RE = re.compile(r"^(.+?)\s*\[[a-z]{2,3}\]$", re.IGNORECASE)
+_YEAR_RE = re.compile(r"\b(1[0-9]{3}|20[0-9]{2}|2100)\b")
+
 
 def _pick_proxy(proxies: list[str]) -> str | None:
     """Return a random proxy URL from the list, or ``None`` if the list is empty."""
@@ -105,6 +124,58 @@ def parse_filesize(text: str) -> int | None:
         "TB": 1024**4,
     }
     return int(value * multipliers.get(unit, 1))
+
+
+def _metadata_tokens(card_lines: list[str]) -> list[str]:
+    tokens: list[str] = []
+    for line in card_lines:
+        for part in _METADATA_SEPARATORS.split(line):
+            token = part.strip(" \t\r\n,;")
+            if token:
+                tokens.append(token)
+    return tokens
+
+
+def _parse_card_metadata(card_lines: list[str]) -> tuple[str | None, str | None, int | None, str | None]:
+    tokens = _metadata_tokens(card_lines)
+    start = next(
+        (
+            i
+            for i, token in enumerate(tokens)
+            if _LANGUAGE_TOKEN_RE.match(token)
+            or parse_filesize(token) is not None
+            or token.lower().lstrip(".") in _FILE_EXTENSIONS
+        ),
+        None,
+    )
+    if start is None:
+        return None, None, None, None
+
+    language: str | None = None
+    extension: str | None = None
+    filesize_bytes: int | None = None
+    year: str | None = None
+
+    for token in tokens[start : start + 8]:
+        if language is None:
+            lang_match = _LANGUAGE_TOKEN_RE.match(token)
+            if lang_match:
+                language = lang_match.group(1).strip()
+
+        if extension is None:
+            candidate_ext = token.lower().lstrip(".")
+            if candidate_ext in _FILE_EXTENSIONS:
+                extension = candidate_ext
+
+        if filesize_bytes is None:
+            filesize_bytes = parse_filesize(token)
+
+        if year is None:
+            year_match = _YEAR_RE.search(token)
+            if year_match:
+                year = year_match.group(1)
+
+    return language, extension, filesize_bytes, year
 
 
 def scrape_annas_archive(
@@ -239,18 +310,7 @@ def scrape_annas_archive(
             filesize_bytes: int | None = None
             publisher: str | None = None
 
-            # Metadata line: "English [en] · EPUB · 3.2MB · 2011 · Book"
-            for line in card_lines:
-                meta_match = re.match(
-                    r"(\w[\w\s]*?)\s*\[\w+\]\s*\xb7\s*(\w+)\s*\xb7\s*" r"([\d.]+\s*[KMGT]?B)\s*\xb7\s*(\d{4})",
-                    line,
-                )
-                if meta_match:
-                    language = meta_match.group(1).strip()
-                    extension = meta_match.group(2).lower()
-                    filesize_bytes = parse_filesize(meta_match.group(3))
-                    year = meta_match.group(4)
-                    break
+            language, extension, filesize_bytes, year = _parse_card_metadata(card_lines)
 
             # Find author — typically the line right after the title
             title_idx: int | None = None

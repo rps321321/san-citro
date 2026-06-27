@@ -35,7 +35,7 @@ from src.download_history import (
     get_download_history,
     get_download_stats,
 )
-from src.scraper import scrape_annas_archive
+from src.scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
 
 logger = logging.getLogger("bridge.handlers")
 
@@ -44,9 +44,6 @@ logger = logging.getLogger("bridge.handlers")
 # ---------------------------------------------------------------------------
 
 _MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
-
-# A full scraped page is 20 results; used to infer "there may be a next page".
-SCRAPE_PAGE_SIZE = 20
 
 
 def _validate_md5(md5: str) -> str:
@@ -88,6 +85,9 @@ def _redact_sensitive_message(name: str, success: bool | None, message: str) -> 
         if success is False:
             return "OFFLINE"
         return "check inconclusive"
+    prefix = f"{name}:"
+    if cleaned.lower().startswith(prefix.lower()):
+        return cleaned[len(prefix) :].strip()
     return cleaned
 
 

@@ -4,8 +4,8 @@
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$webDir = Join-Path $scriptDir ".." ".." "web"
-$rendererDir = Join-Path $scriptDir ".." "renderer"
+$webDir = Join-Path (Join-Path $scriptDir "..") "..\web"
+$rendererDir = Join-Path (Join-Path $scriptDir "..") "renderer"
 
 Write-Host "Building web frontend from: $webDir"
 

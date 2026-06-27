@@ -149,6 +149,31 @@ class TestDownloadCommand:
         assert mock_run.call_args[0][5] == 1
 
 
+class TestSearchFilters:
+    def test_search_after_filters_by_year(self):
+        rows = [
+            {"title": "Old", "year": "1999", "md5": "aa" * 16},
+            {"title": "New", "year": "2001", "md5": "bb" * 16},
+            {"title": "Unknown", "year": None, "md5": "cc" * 16},
+        ]
+        tool = MagicMock()
+        with (
+            patch("sys.argv", ["cli", "search", "python", "--after", "2000"]),
+            patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
+            patch("src.cli.init_downloads_table"),
+            patch("src.cli.create_strategy", return_value=MagicMock()),
+            patch("src.cli.AnnasArchiveTool", return_value=tool),
+            patch("src.cli.scrape_annas_archive", return_value=rows),
+            patch("src.cli._print_live_results") as mock_print,
+            patch("src.cli.setup_logging", return_value=MagicMock()),
+        ):
+            main()
+
+        mock_print.assert_called_once()
+        assert mock_print.call_args.args[0] == [rows[1]]
+        tool.close.assert_called_once()
+
+
 class TestDownloadOneStrategy:
     """_download_one must honor the tool's chosen strategy/proxies, not hardcode 'direct'."""
 
