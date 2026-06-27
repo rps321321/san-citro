@@ -3,7 +3,6 @@
 import { useSyncExternalStore } from "react";
 import { DownloadIcon } from "lucide-react";
 
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { useDownloadStream } from "@/lib/use-sse";
 
@@ -38,7 +37,6 @@ export function AppHeader() {
 
   return (
     <header className="app-region-drag flex h-12 items-center gap-2 border-b pl-4 pr-[140px]">
-      <SidebarTrigger className="app-region-no-drag" />
       <h1 className="text-sm font-semibold tracking-tight">{titleForPath(pathname)}</h1>
       <div className="app-region-no-drag ml-auto flex items-center gap-3">
         {activeCount > 0 && (

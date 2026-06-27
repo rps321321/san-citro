@@ -24,8 +24,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { TextRepel } from "@/components/ui/text-repel";
+import { useThemeToggle } from "@/components/ui/skiper-ui/skiper26";
 import {
   Tooltip,
   TooltipContent,
@@ -50,23 +53,25 @@ export function AppSidebar() {
     () => window.location.pathname,
     () => ""
   );
-  const { resolvedTheme, setTheme } = useTheme();
+  const { resolvedTheme } = useTheme();
+  const { toggleTheme } = useThemeToggle({ variant: "circle", start: "bottom-left" });
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="app-region-drag">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip="San Citro" className="app-region-no-drag">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <BookOpenIcon className="size-4" />
-              </div>
-              <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">San Citro</span>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+          <a
+            href="/search"
+            aria-label="San Citro — home"
+            className="app-region-no-drag flex items-center gap-2 overflow-hidden group-data-[collapsible=icon]:hidden"
+          >
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <BookOpenIcon className="size-4" />
+            </div>
+            <TextRepel text="San Citro" className="text-sm font-semibold" radius={70} strength={16} />
+          </a>
+          <SidebarTrigger className="app-region-no-drag" />
+        </div>
       </SidebarHeader>
 
       <SidebarContent>
@@ -108,9 +113,10 @@ export function AppSidebar() {
                       size="icon"
                       className="w-full justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
                       onClick={() => {
-                        const next = resolvedTheme === "dark" ? "light" : "dark";
-                        trackInteraction("theme_toggle", "sidebar", { theme: next });
-                        setTheme(next);
+                        trackInteraction("theme_toggle", "sidebar", {
+                          theme: resolvedTheme === "dark" ? "light" : "dark",
+                        });
+                        toggleTheme();
                       }}
                       aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
                     >
