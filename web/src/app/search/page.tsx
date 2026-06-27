@@ -1,17 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import {
   SearchIcon,
   DownloadIcon,
   CheckCircle2Icon,
   LoaderIcon,
   BookOpenIcon,
+  XIcon,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Banner } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -35,6 +38,7 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
+import { SortableHead, toggleSort, type SortState } from "@/components/ui/sortable-head";
 
 import { search, startDownload } from "@/lib/api-client";
 import type { SearchParams } from "@/lib/api-client";
@@ -48,6 +52,19 @@ import {
 const EXTENSIONS = ["", "pdf", "epub", "djvu", "mobi", "azw3", "fb2", "txt", "cbr", "cbz"];
 const LANGUAGES = ["", "English", "Russian", "German", "French", "Spanish", "Italian", "Chinese", "Japanese", "Portuguese"];
 
+type SearchSortKey = "title" | "year" | "size";
+
+function compareBooks(a: BookRecord, b: BookRecord, key: SearchSortKey): number {
+  switch (key) {
+    case "title":
+      return (a.title ?? "").localeCompare(b.title ?? "");
+    case "year":
+      return (a.year ?? 0) - (b.year ?? 0);
+    case "size":
+      return (a.filesize_bytes ?? 0) - (b.filesize_bytes ?? 0);
+  }
+}
+
 function BookCover({ coverUrl, isbn13, title }: { coverUrl?: string | null; isbn13?: string; title: string }) {
   const [failed, setFailed] = useState(false);
 
@@ -57,7 +74,7 @@ function BookCover({ coverUrl, isbn13, title }: { coverUrl?: string | null; isbn
   if (!src || failed) {
     return (
       <div className="w-12 h-16 rounded bg-muted flex items-center justify-center shrink-0">
-        <BookOpenIcon className="size-5 text-muted-foreground opacity-40" />
+        <BookOpenIcon className="size-5 text-muted-foreground/40" />
       </div>
     );
   }
@@ -86,8 +103,73 @@ function SearchContent() {
   const [error, setError] = useState<string | null>(null);
   const [downloadingMd5s, setDownloadingMd5s] = useState<Set<string>>(new Set());
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  // Persists across the download lifecycle (NOT cleared in finally) so the row
+  // keeps showing "Queued" after the handoff.
+  const [enqueuedMd5s, setEnqueuedMd5s] = useState<Set<string>>(new Set());
+  // md5s that reached "completed" live via onDownloadProgress this session.
+  const [completedMd5s, setCompletedMd5s] = useState<Set<string>>(new Set());
+  const [downloadSuccess, setDownloadSuccess] = useState(false);
+  // Set to true when a re-search fails so previously shown results are dimmed/labelled.
+  const [resultsStale, setResultsStale] = useState(false);
+  // Client-side sort of the current page's results (null = server/scrape order).
+  const [sort, setSort] = useState<SortState<SearchSortKey> | null>(null);
 
   const requestIdRef = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  // Focused after pagination so keyboard users don't lose their place.
+  const resultsHeadingRef = useRef<HTMLDivElement>(null);
+
+  // Subscribe to live download progress so a row whose md5 reaches "completed"
+  // flips to the green check without a re-search (fixes stale is_downloaded).
+  useEffect(() => {
+    const unsub = window.sanCitro?.onDownloadProgress?.((data) => {
+      const items = Array.isArray(data) ? data : [data];
+      const done = items.filter((d) => d.status === "completed").map((d) => d.md5);
+      if (done.length > 0) {
+        setCompletedMd5s((prev) => {
+          const next = new Set(prev);
+          for (const md5 of done) next.add(md5);
+          return next;
+        });
+      }
+    });
+    return () => unsub?.();
+  }, []);
+
+  // Global shortcut: '/' or Ctrl/Cmd+K focuses the search input. Ignored while
+  // typing in another field so '/' stays usable as a literal character.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrlK = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
+      const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (!ctrlK && !slash) return;
+      const el = document.activeElement;
+      const typing =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLElement && el.isContentEditable);
+      if (slash && typing) return;
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+      trackFeatureDiscovery("search_shortcut");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const handleSort = (key: SearchSortKey) => {
+    setSort((prev) => toggleSort(prev, key));
+    trackInteraction("sort", "search", { key });
+  };
+
+  const sortedResults = useMemo(() => {
+    if (!data) return [];
+    if (!sort) return data.results;
+    const sorted = [...data.results].sort((a, b) => compareBooks(a, b, sort.key));
+    if (sort.direction === "desc") sorted.reverse();
+    return sorted;
+  }, [data, sort]);
 
   const doSearch = useCallback(
     async (pageNum: number = 1) => {
@@ -114,6 +196,7 @@ function SearchContent() {
         const elapsed = Date.now() - t0;
         if (currentRequestId !== requestIdRef.current) return;
         setData(result);
+        setResultsStale(false);
         window.scrollTo({ top: 0 });
         incrementEngagement("searchCount");
         trackFunnelStep("search_to_download", "search_performed", 1, { query: params.query, results: result.total_count });
@@ -129,6 +212,8 @@ function SearchContent() {
         if (currentRequestId !== requestIdRef.current) return;
         const message = err instanceof Error ? err.message : "Search failed";
         setError(message);
+        // Don't present old results as current — mark them stale (dimmed + labelled).
+        setResultsStale(true);
         trackError("search_error", message, { component: "search_page" });
       } finally {
         if (currentRequestId === requestIdRef.current) {
@@ -158,8 +243,10 @@ function SearchContent() {
         status: "started",
       });
       // Do NOT optimistically mark as downloaded — the download was only just
-      // enqueued, not completed. is_downloaded reflects real completion (from
-      // history) on the next search; live progress lives on the Downloads page.
+      // enqueued, not completed. Mark it "enqueued" so the row shows a persistent
+      // "Queued" badge, and surface a success banner linking to Downloads.
+      setEnqueuedMd5s((prev) => new Set(prev).add(book.md5));
+      setDownloadSuccess(true);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Download failed";
@@ -178,12 +265,28 @@ function SearchContent() {
     doSearch(1);
   };
 
+  // When a filter changes and results are already shown, re-run from page 1 so a
+  // stale filter never silently persists. doSearch reads the latest state via its
+  // deps, so defer to the next tick after setState lands.
+  const rerunIfResults = () => {
+    if (data) setTimeout(() => doSearch(1), 0);
+  };
+
+  const activeFilterCount = (extension ? 1 : 0) + (language ? 1 : 0);
+
+  const handleClearFilters = () => {
+    setExtension("");
+    setLanguage("");
+    trackInteraction("clear_filters", "search");
+    if (data) setTimeout(() => doSearch(1), 0);
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Search</h1>
         <p className="text-sm text-muted-foreground">
-          Search Anna&apos;s Archive via live scraping
+          Find books, papers, and files from Anna&apos;s Archive
         </p>
       </div>
 
@@ -193,20 +296,22 @@ function SearchContent() {
           <div className="relative flex-1">
             <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
+              ref={searchInputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by title, author, ISBN..."
+              placeholder="Title, author, or ISBN — press / to focus"
               className="pl-9"
               aria-label="Search query"
+              title="Press / or Ctrl+K to focus search"
             />
           </div>
-          <Button type="submit" disabled={isLoading || !query.trim()}>
+          <Button type="submit" disabled={isLoading || !query.trim()} aria-busy={isLoading}>
             {isLoading ? (
-              <LoaderIcon className="size-4 animate-spin" />
+              <LoaderIcon className="size-4 animate-spin" aria-hidden="true" />
             ) : (
-              <SearchIcon className="size-4" />
+              <SearchIcon className="size-4" aria-hidden="true" />
             )}
-            Search
+            {isLoading ? "Searching…" : "Search"}
           </Button>
         </div>
 
@@ -215,9 +320,12 @@ function SearchContent() {
           <div className="w-40">
             <Select
               value={extension || "__all"}
-              onValueChange={(val) => setExtension(!val || val === "__all" ? "" : val)}
+              onValueChange={(val) => {
+                setExtension(!val || val === "__all" ? "" : val);
+                rerunIfResults();
+              }}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Filter by file extension">
                 <SelectValue placeholder="Extension" />
               </SelectTrigger>
               <SelectContent>
@@ -233,9 +341,12 @@ function SearchContent() {
           <div className="w-40">
             <Select
               value={language || "__all"}
-              onValueChange={(val) => setLanguage(!val || val === "__all" ? "" : val)}
+              onValueChange={(val) => {
+                setLanguage(!val || val === "__all" ? "" : val);
+                rerunIfResults();
+              }}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Filter by language">
                 <SelectValue placeholder="Language" />
               </SelectTrigger>
               <SelectContent>
@@ -248,62 +359,152 @@ function SearchContent() {
             </Select>
           </div>
 
+          {activeFilterCount > 0 && (
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" aria-label={`${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}`}>
+                {activeFilterCount} active
+              </Badge>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearFilters}
+              >
+                <XIcon className="size-3.5" />
+                Clear filters
+              </Button>
+            </div>
+          )}
         </div>
       </form>
 
       {/* Search error */}
       {error && (
-        <div role="alert" className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
+        <Banner
+          variant="error"
+          onDismiss={() => setError(null)}
+        >
+          Could not complete the search. Check your connection, then{" "}
+          <button
+            type="button"
+            className="font-medium underline underline-offset-2"
+            onClick={() => doSearch(data?.page ?? 1)}
+          >
+            try again
+          </button>
+          .
+        </Banner>
+      )}
+
+      {/* Download handoff confirmation */}
+      {downloadSuccess && (
+        <Banner variant="success" onDismiss={() => setDownloadSuccess(false)}>
+          Added to downloads.{" "}
+          <a href="/downloads" className="font-medium underline underline-offset-2">
+            View downloads
+          </a>
+        </Banner>
       )}
 
       {/* Download error */}
       {downloadError && (
-        <div className="flex items-center justify-between rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-          <span>{downloadError}</span>
-          <button
-            onClick={() => setDownloadError(null)}
-            className="ml-3 shrink-0 text-destructive/70 hover:text-destructive"
-            aria-label="Dismiss"
-          >
-            &times;
-          </button>
+        <Banner
+          variant="error"
+          onDismiss={() => setDownloadError(null)}
+        >
+          {downloadError} — click the download icon to retry.
+        </Banner>
+      )}
+
+      {/* Skeleton loading state — 5 rows mirroring the 8-col search table */}
+      {isLoading && !data && (
+        <div className="rounded-lg border overflow-x-auto" aria-busy="true" aria-label="Loading results">
+          <Table>
+            <TableCaption className="sr-only">Loading search results…</TableCaption>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-16"><span className="sr-only">Cover</span></TableHead>
+                <TableHead>Title</TableHead>
+                <TableHead>Author</TableHead>
+                <TableHead>Year</TableHead>
+                <TableHead>Format</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Language</TableHead>
+                <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <TableRow key={i}>
+                  <TableCell className="w-16 p-2">
+                    <Skeleton className="w-12 h-16 rounded" />
+                  </TableCell>
+                  <TableCell>
+                    <Skeleton className="h-4 w-40 mb-1" />
+                    <Skeleton className="h-3 w-24" />
+                  </TableCell>
+                  <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                  <TableCell><Skeleton className="h-5 w-10 rounded-full" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-12" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                  <TableCell><Skeleton className="h-6 w-6 rounded" /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         </div>
       )}
 
       {/* Results */}
       {data && (
         <>
-          <div className="text-sm text-muted-foreground">
-            Showing {data.results.length.toLocaleString()} result
-            {data.results.length === 1 ? "" : "s"} · page {data.page}
+          <div
+            ref={resultsHeadingRef}
+            tabIndex={-1}
+            className="text-sm text-muted-foreground outline-none"
+            aria-live="polite"
+          >
+            {resultsStale ? (
+              <span className="text-destructive">
+                Showing previous results — the latest search failed.
+              </span>
+            ) : (
+              <>
+                Showing {data.results.length.toLocaleString()} on this page · page{" "}
+                {data.page}
+                {data.has_next && " · more available"}
+              </>
+            )}
           </div>
 
-          <div className="rounded-lg border overflow-x-auto">
+          <div
+            className={`rounded-lg border overflow-x-auto${resultsStale ? " opacity-50" : ""}`}
+            aria-busy={resultsStale}
+          >
             <Table>
               <TableCaption className="sr-only">Search results</TableCaption>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-16"><span className="sr-only">Cover</span></TableHead>
-                  <TableHead>Title</TableHead>
+                  <SortableHead sortKey="title" sort={sort} onSort={handleSort}>Title</SortableHead>
                   <TableHead>Author</TableHead>
-                  <TableHead>Year</TableHead>
+                  <SortableHead sortKey="year" sort={sort} onSort={handleSort}>Year</SortableHead>
                   <TableHead>Format</TableHead>
-                  <TableHead>Size</TableHead>
+                  <SortableHead sortKey="size" sort={sort} onSort={handleSort}>Size</SortableHead>
                   <TableHead>Language</TableHead>
-                  <TableHead className="w-10" />
+                  <TableHead className="w-10"><span className="sr-only">Actions</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.results.length === 0 ? (
+                {sortedResults.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                      No results found
+                      No results found — try a different term or remove a filter
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.results.map((book) => (
+                  sortedResults.map((book) => (
                     <TableRow key={book.md5}>
                       <TableCell className="w-16 p-2">
                         <BookCover coverUrl={book.cover_url} isbn13={book.isbn13} title={book.title} />
@@ -313,7 +514,7 @@ function SearchContent() {
                           {book.title || "Untitled"}
                         </div>
                         <div
-                          className="truncate text-xs text-muted-foreground font-mono"
+                          className="truncate text-xs text-muted-foreground/60 font-mono"
                           title={book.md5}
                         >
                           {truncateMd5(book.md5)}
@@ -326,17 +527,24 @@ function SearchContent() {
                       </TableCell>
                       <TableCell>{book.year ?? "-"}</TableCell>
                       <TableCell>
-                        <Badge variant="secondary">
+                        <Badge variant="outline">
                           {book.extension?.toUpperCase() ?? "?"}
                         </Badge>
                       </TableCell>
                       <TableCell>{formatFileSize(book.filesize_bytes)}</TableCell>
                       <TableCell>{book.language || "-"}</TableCell>
                       <TableCell>
-                        {book.is_downloaded ? (
-                          <CheckCircle2Icon className="size-4 text-green-500" />
+                        {book.is_downloaded || completedMd5s.has(book.md5) ? (
+                          <span role="img" aria-label="Downloaded" title="Downloaded">
+                            <CheckCircle2Icon className="size-4 text-success" aria-hidden="true" />
+                          </span>
                         ) : downloadingMd5s.has(book.md5) ? (
-                          <LoaderIcon className="size-4 animate-spin text-muted-foreground" />
+                          <span role="status" aria-label={`Downloading ${book.title}`}>
+                            <LoaderIcon className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                            <span className="sr-only">Downloading…</span>
+                          </span>
+                        ) : enqueuedMd5s.has(book.md5) ? (
+                          <Badge variant="outline">Queued</Badge>
                         ) : (
                           <Button
                             variant="ghost"
@@ -361,13 +569,20 @@ function SearchContent() {
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
-                    onClick={() => data.has_prev && doSearch(data.page - 1)}
+                    onClick={() => {
+                      if (data.has_prev) {
+                        void doSearch(data.page - 1).then(() =>
+                          resultsHeadingRef.current?.focus()
+                        );
+                      }
+                    }}
                     className={
                       !data.has_prev
                         ? "pointer-events-none opacity-50"
                         : "cursor-pointer"
                     }
                     aria-disabled={!data.has_prev}
+                    tabIndex={!data.has_prev ? -1 : undefined}
                   />
                 </PaginationItem>
                 <PaginationItem>
@@ -377,13 +592,20 @@ function SearchContent() {
                 </PaginationItem>
                 <PaginationItem>
                   <PaginationNext
-                    onClick={() => data.has_next && doSearch(data.page + 1)}
+                    onClick={() => {
+                      if (data.has_next) {
+                        void doSearch(data.page + 1).then(() =>
+                          resultsHeadingRef.current?.focus()
+                        );
+                      }
+                    }}
                     className={
                       !data.has_next
                         ? "pointer-events-none opacity-50"
                         : "cursor-pointer"
                     }
                     aria-disabled={!data.has_next}
+                    tabIndex={!data.has_next ? -1 : undefined}
                   />
                 </PaginationItem>
               </PaginationContent>
@@ -395,8 +617,19 @@ function SearchContent() {
       {/* Empty state before searching */}
       {!data && !isLoading && !error && (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-          <SearchIcon className="size-12 mb-4 opacity-30" />
+          <SearchIcon className="size-12 mb-4 text-muted-foreground/40" />
           <p className="text-sm">Enter a search query to get started</p>
+          <p className="text-xs mt-1">
+            Try{" "}
+            <button
+              type="button"
+              className="font-medium text-foreground underline underline-offset-2"
+              onClick={() => setQuery("The Pragmatic Programmer")}
+            >
+              The Pragmatic Programmer
+            </button>{" "}
+            or an author, title, or ISBN
+          </p>
         </div>
       )}
     </div>

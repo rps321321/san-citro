@@ -5,6 +5,9 @@ import type { DownloadStatus } from "@/types";
 
 const TERMINAL_RETENTION_MS = 60_000; // auto-remove completed/failed entries after 60s
 
+/** Three-state link health so the UI can show a neutral "Connecting…" on first load. */
+export type ConnectionState = "connecting" | "connected" | "disconnected";
+
 /**
  * Subscribes to IPC download progress events for real-time download status.
  * Returns a Map keyed by md5, updated as events arrive.
@@ -13,7 +16,8 @@ export function useDownloadStream() {
   const [downloads, setDownloads] = useState<Map<string, DownloadStatus>>(
     new Map()
   );
-  const [isConnected, setIsConnected] = useState(false);
+  // Start "connecting" (neutral) rather than a red "disconnected" before init runs.
+  const [connection, setConnection] = useState<ConnectionState>("connecting");
   const evictionTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map()
   );
@@ -65,7 +69,7 @@ export function useDownloadStream() {
         console.error(
           "[useDownloadStream] window.sanCitro is not defined — preload script may have failed"
         );
-        if (!cancelled) setIsConnected(false);
+        if (!cancelled) setConnection("disconnected");
         return;
       }
 
@@ -87,10 +91,10 @@ export function useDownloadStream() {
         if (unsub) {
           unsubscribe = unsub;
         }
-        setIsConnected(true);
+        setConnection("connected");
       } catch (err) {
         console.error("[useDownloadStream] Failed to initialise IPC subscription:", err);
-        if (!cancelled) setIsConnected(false);
+        if (!cancelled) setConnection("disconnected");
       }
     }
 
@@ -122,5 +126,5 @@ export function useDownloadStream() {
     });
   }, []);
 
-  return { downloads, isConnected, removeDownloads };
+  return { downloads, connection, removeDownloads };
 }

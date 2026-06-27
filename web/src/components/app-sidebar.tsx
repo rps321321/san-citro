@@ -26,6 +26,12 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const NAV_ITEMS = [
   { label: "Search", href: "/search", icon: SearchIcon },
@@ -72,7 +78,9 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV_ITEMS.map((item) => {
-                const isActive = pathname.startsWith(item.href);
+                // Home ("/") re-exports the search page, so treat it as /search.
+                const normalized = pathname === "/" ? "/search" : pathname;
+                const isActive = normalized.startsWith(item.href);
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
@@ -94,23 +102,35 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="w-full justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-              onClick={() => {
-                const next = resolvedTheme === "dark" ? "light" : "dark";
-                trackInteraction("theme_toggle", "sidebar", { theme: next });
-                setTheme(next);
-              }}
-              aria-label="Toggle theme"
-            >
-              <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" />
-              <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" />
-              <span className="group-data-[collapsible=icon]:hidden">
-                Toggle theme
-              </span>
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-full justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+                      onClick={() => {
+                        const next = resolvedTheme === "dark" ? "light" : "dark";
+                        trackInteraction("theme_toggle", "sidebar", { theme: next });
+                        setTheme(next);
+                      }}
+                      aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+                    >
+                      <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" aria-hidden="true" />
+                      <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" aria-hidden="true" />
+                      <span className="group-data-[collapsible=icon]:hidden">
+                        {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+                      </span>
+                    </Button>
+                  }
+                />
+                {/* Tooltip label for when sidebar is icon-collapsed and text span is hidden */}
+                <TooltipContent side="right">
+                  {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

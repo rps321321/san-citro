@@ -5,7 +5,9 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TelemetryProvider } from "@/components/telemetry-provider";
 import { AppSidebar } from "@/components/app-sidebar";
-import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppHeader } from "@/components/app-header";
+import { UpdateBanner } from "@/components/update-banner";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,9 +44,8 @@ export default function RootLayout({
           <SidebarProvider>
             <AppSidebar />
             <SidebarInset>
-              <header className="flex h-12 items-center gap-2 border-b px-4">
-                <SidebarTrigger />
-              </header>
+              <UpdateBanner />
+              <AppHeader />
               <main id="main-content" className="flex-1 overflow-auto p-4 md:p-6">
                 {children}
               </main>
