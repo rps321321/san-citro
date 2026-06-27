@@ -136,6 +136,15 @@
   }
 }
 
+/* Frameless window (Electron titleBarStyle: hidden): draggable title-bar regions.
+   Interactive children inside a drag region must opt back out with no-drag. */
+.app-region-drag {
+  -webkit-app-region: drag;
+}
+.app-region-no-drag {
+  -webkit-app-region: no-drag;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

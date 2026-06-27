@@ -54,10 +54,10 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
+      <SidebarHeader className="app-region-drag">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" tooltip="San Citro">
+            <SidebarMenuButton size="lg" tooltip="San Citro" className="app-region-no-drag">
               <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <BookOpenIcon className="size-4" />
               </div>

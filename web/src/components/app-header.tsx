@@ -38,10 +38,10 @@ export function AppHeader() {
   ).length;
 
   return (
-    <header className="flex h-12 items-center gap-2 border-b px-4">
-      <SidebarTrigger />
+    <header className="app-region-drag flex h-12 items-center gap-2 border-b pl-4 pr-[140px]">
+      <SidebarTrigger className="app-region-no-drag" />
       <h1 className="text-sm font-semibold tracking-tight">{titleForPath(pathname)}</h1>
-      <div className="ml-auto flex items-center gap-3">
+      <div className="app-region-no-drag ml-auto flex items-center gap-3">
         {activeCount > 0 && (
           <Badge
             variant="secondary"
