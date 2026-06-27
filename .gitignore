@@ -20,9 +20,13 @@ src/annas_config.json
 *.db-wal
 *.db-shm
 
-# Downloads
+# Downloads (download OUTPUT dirs only — not the app's source route)
 downloads/
 downloads_*/
+# The broad downloads/ rule above also matches the renderer's source route dir;
+# keep that tracked (re-include the dir, then its files).
+!web/src/app/downloads/
+!web/src/app/downloads/**
 
 # Logs
 *.log
