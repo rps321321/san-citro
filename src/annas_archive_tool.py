@@ -201,8 +201,9 @@ def _remove_meta(meta_path: str) -> None:
 
 class AnnasArchiveTool:
     """
-    Anna's Archive Toolkit - VPN-Only Edition.
-    A streamlined, high-stability tool designed for use with a system-wide VPN.
+    Anna's Archive Toolkit download engine.
+    A streamlined, high-stability HTTP client for automated downloads. A VPN or
+    proxy is optional — only needed if your IP is blocked by the mirrors.
 
     Supports pluggable download strategies (Chrome or DirectHTTP),
     retry with exponential backoff, .part.meta caching to skip Chrome

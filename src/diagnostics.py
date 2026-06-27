@@ -16,7 +16,7 @@ def check_ip_address() -> Tuple[bool, str]:
     try:
         res = requests.get("https://api.ipify.org", timeout=5, verify=True)
         ip = res.text
-        return True, f"Public IP Address: [bold yellow]{ip}[/bold yellow] (Verify this is your VPN!)"
+        return True, f"Public IP Address: [bold yellow]{ip}[/bold yellow] (your current public egress IP)"
     except requests.RequestException as e:
         return False, f"Public IP Check: [bold red]FAILED[/bold red] ({e})"
 
@@ -111,6 +111,6 @@ def run_diagnostics(config: Dict[str, Any]) -> None:
     console.print(Panel(table, title="System Health Report", border_style="cyan"))
 
     if all(r[0] is not False for r in results):
-        console.print("\n[bold green]System is ready for VPN-mode operation![/bold green]")
+        console.print("\n[bold green]System is ready for download operations![/bold green]")
     else:
         console.print("\n[bold red]Issues detected. Please fix FAIL items before proceeding.[/bold red]")

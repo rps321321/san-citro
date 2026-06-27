@@ -5,8 +5,8 @@ A production-ready Python CLI for searching and downloading from Anna's Archive 
 ## Requirements
 
 - Python 3.11+
-- VPN recommended for download operations
-- Chrome/Chromium (for automated downloads only)
+- Chrome/Chromium installed (downloads drive a real browser to pass anti-bot checks)
+- VPN/proxy optional — only needed if your IP is blocked by the mirrors
 
 ## Installation
 
@@ -56,7 +56,7 @@ python src/cli.py <command> [options]
 ### Global Flags
 
 - `--verbose` — Enable DEBUG-level logging
-- `--direct` — Bypass proxy logic (use system VPN directly)
+- `--direct` — Bypass proxy logic and connect directly
 
 ## Data Pipeline
 

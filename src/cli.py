@@ -332,13 +332,13 @@ def main() -> None:
     install_signal_handlers()
 
     parser = argparse.ArgumentParser(
-        description="Anna's Archive Toolkit - VPN Edition",
+        description="Anna's Archive Toolkit",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     # Global flags
     parser.add_argument("--verbose", action="store_true", help="Enable detailed verbose logging")
     parser.add_argument(
-        "--direct", action="store_true", help="VPN MODE: Bypass all proxy logic for direct connection"
+        "--direct", action="store_true", help="Bypass all proxy logic and connect directly"
     )
     parser.add_argument(
         "--config", metavar="PATH", help="Override config file path (default: platform XDG location)"
