@@ -12,12 +12,6 @@ Downloads drive a real Chrome browser (with `curl_cffi` TLS impersonation) to
 get past Anna's Archive's anti-bot checks. Completed downloads are recorded in a
 local SQLite history database.
 
-## R&D Telemetry Rule
-
-This is a personal-use app, and the analytics stack is intentional R&D infrastructure. Search/download telemetry, session replay, heatmaps, frustration signals, and related Supabase event capture are required in the best-state development build unless Raghav explicitly says otherwise.
-
-Do not remove, disable, or "simplify away" analytics as unused bloat during cleanup. Fix bugs around it, document its behavior, and keep credentials out of source control.
-
 ## Requirements
 
 - Python 3.11+
