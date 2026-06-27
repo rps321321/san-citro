@@ -13,16 +13,14 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Optional
+from typing import Any
 
 from src.config_manager import (
     get_config,
-    redact_proxy_url,
     save_config,
     validate_concurrency,
     validate_writable_dir,
 )
-from src.scraper import scrape_annas_archive
 from src.diagnostics import (
     check_chrome_automation,
     check_internet,
@@ -33,9 +31,11 @@ from src.diagnostics import (
 )
 from src.download_history import (
     get_completed_download,
+    get_completed_md5s,
     get_download_history,
     get_download_stats,
 )
+from src.scraper import scrape_annas_archive
 
 logger = logging.getLogger("bridge.handlers")
 
@@ -45,6 +45,9 @@ logger = logging.getLogger("bridge.handlers")
 
 _MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
 
+# A full scraped page is 20 results; used to infer "there may be a next page".
+SCRAPE_PAGE_SIZE = 20
+
 
 def _validate_md5(md5: str) -> str:
     """Validate and return an MD5 hash string, or raise ValueError."""
@@ -53,7 +56,7 @@ def _validate_md5(md5: str) -> str:
     return md5
 
 
-def _get_history_db() -> Optional[str]:
+def _get_history_db() -> str | None:
     """Get the download history database path from config."""
     config = get_config()
     return config.get("history_db")
@@ -63,11 +66,12 @@ def _get_history_db() -> Optional[str]:
 # Diagnostics helpers (strip Rich markup)
 # ---------------------------------------------------------------------------
 
+
 def _strip_rich_markup(text: str) -> str:
     return re.sub(r"\[/?[^\]]+\]", "", text)
 
 
-def _status_from_bool(success: Optional[bool]) -> str:
+def _status_from_bool(success: bool | None) -> str:
     if success is True:
         return "ok"
     if success is False:
@@ -75,7 +79,7 @@ def _status_from_bool(success: Optional[bool]) -> str:
     return "warn"
 
 
-def _redact_sensitive_message(name: str, success: Optional[bool], message: str) -> str:
+def _redact_sensitive_message(name: str, success: bool | None, message: str) -> str:
     cleaned = _strip_rich_markup(message)
     if "ip" in name.lower():
         # Do NOT log the actual IP — privacy sensitive
@@ -90,6 +94,7 @@ def _redact_sensitive_message(name: str, success: Optional[bool], message: str) 
 # ===================================================================
 # HANDLERS — one function per JSON-RPC method
 # ===================================================================
+
 
 def handle_search(params: dict[str, Any]) -> dict[str, Any]:
     """search — live scrape from Anna's Archive."""
@@ -106,16 +111,22 @@ def handle_search(params: dict[str, Any]) -> dict[str, Any]:
 
     results = scrape_annas_archive(query, ext=ext, lang=lang, page=page, proxies=proxy_list)
 
-    # The scraper already returns one page of results (typically 20).
-    # Pass them through directly — no second layer of pagination.
-    SCRAPE_PAGE_SIZE = 20
+    # Flag results that already have a completed download so is_downloaded is
+    # truthful (the scraper always returns False — it has no history).
+    completed = get_completed_md5s(
+        db_path=config.get("history_db"),
+        md5s=[r.get("md5", "") for r in results],
+    )
+    for r in results:
+        r["is_downloaded"] = r.get("md5", "") in completed
 
+    # A live scrape has no grand total or page count, so report only what this
+    # page returned. Pagination rides on has_next/has_prev — no fabricated
+    # total_count-as-total or total_pages.
     return {
         "results": results,
         "total_count": len(results),
         "page": page,
-        "per_page": SCRAPE_PAGE_SIZE,
-        "total_pages": page + (1 if len(results) >= SCRAPE_PAGE_SIZE else 0),
         "has_next": len(results) >= SCRAPE_PAGE_SIZE,
         "has_prev": page > 1,
     }
@@ -127,6 +138,7 @@ def handle_start_download(params: dict[str, Any]) -> dict[str, Any]:
     title: str = params.get("title", "")
 
     import download_manager
+
     return download_manager.enqueue(md5, title)
 
 
@@ -135,12 +147,14 @@ def handle_cancel_download(params: dict[str, Any]) -> dict[str, Any]:
     md5 = _validate_md5(params.get("md5", ""))
 
     import download_manager
+
     return download_manager.cancel(md5)
 
 
 def handle_get_downloads(params: dict[str, Any]) -> list[dict[str, Any]]:
     """get_downloads — return all active download statuses."""
     import download_manager
+
     return download_manager.get_all_statuses()
 
 
@@ -169,7 +183,6 @@ def handle_get_history(params: dict[str, Any]) -> list[dict[str, Any]]:
         }
         for row in rows
     ]
-
 
 
 # Ingest handlers removed — app uses live scraping only, no local DB.
@@ -223,11 +236,14 @@ def handle_update_settings(params: dict[str, Any]) -> dict[str, Any]:
         concurrency=concurrency,
         proxies=proxies,
     )
-    raw_proxies: list[str] = updated.get("proxies", [])
+    # Return RAW proxies (not redacted), matching handle_get_settings. The UI
+    # writes this response back into its form state, so redacting here would
+    # overwrite the real credentials in the config on the next save. This is a
+    # local desktop app — the user's own credentials are theirs to see.
     return {
         "out_dir": updated.get("out_dir", "downloads"),
         "concurrency": updated.get("concurrency", 2),
-        "proxies": [redact_proxy_url(p) for p in raw_proxies],
+        "proxies": updated.get("proxies", []),
     }
 
 
@@ -239,6 +255,7 @@ def handle_reload_config(params: dict[str, Any]) -> dict[str, Any]:
     the new values are live.
     """
     import download_manager
+
     download_manager.reset_concurrency_semaphore()
     return handle_get_settings({})
 
@@ -259,16 +276,18 @@ def handle_run_diagnostics(params: dict[str, Any]) -> list[dict[str, Any]]:
 
     results: list[dict[str, Any]] = []
     for name, (success, message) in checks:
-        results.append({
-            "name": name,
-            "status": _status_from_bool(success),
-            "message": _redact_sensitive_message(name, success, message),
-        })
+        results.append(
+            {
+                "name": name,
+                "status": _status_from_bool(success),
+                "message": _redact_sensitive_message(name, success, message),
+            }
+        )
 
     return results
 
 
-def handle_resolve_download_path(params: dict[str, Any]) -> Optional[str]:
+def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
     """resolve_download_path — return a realpath-contained absolute file path
     for a completed download by md5, or None.
 
@@ -282,9 +301,7 @@ def handle_resolve_download_path(params: dict[str, Any]) -> Optional[str]:
     if not record or not record.get("filename"):
         return None
 
-    out_dir_abs = os.path.realpath(
-        validate_writable_dir(get_config().get("out_dir", "downloads"))
-    )
+    out_dir_abs = os.path.realpath(validate_writable_dir(get_config().get("out_dir", "downloads")))
     file_path = os.path.realpath(os.path.join(out_dir_abs, record["filename"]))
 
     # Reject path escapes (e.g. a stored filename containing ../).
@@ -298,6 +315,7 @@ def handle_resolve_download_path(params: dict[str, Any]) -> Optional[str]:
 # ===================================================================
 # Registration — called by bridge.main()
 # ===================================================================
+
 
 def register_handlers() -> None:
     """Bind all method names to their handler functions."""

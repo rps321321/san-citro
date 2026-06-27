@@ -1,6 +1,22 @@
-# Anna's Archive Toolkit
+# Anna's Archive Toolkit / San Citro
 
-A production-ready Python CLI for searching and downloading from Anna's Archive via bulk metadata dumps. Minimizes live server load by ingesting `.jsonl.zst` data dumps into a local SQLite database with FTS5 full-text search.
+Search and download from Anna's Archive via **live scraping** — no bulk metadata
+dumps or local archive database required. Ships in two forms that share one
+Python core (`src/`):
+
+- **CLI** (`src/cli.py`) — search, snatch, and download from the terminal.
+- **San Citro** — an Electron desktop app whose Next.js renderer (`web/`) talks
+  to the Python core over a JSON-RPC bridge (`electron-app/python/`). No HTTP server.
+
+Downloads drive a real Chrome browser (with `curl_cffi` TLS impersonation) to
+get past Anna's Archive's anti-bot checks. Completed downloads are recorded in a
+local SQLite history database.
+
+## R&D Telemetry Rule
+
+This is a personal-use app, and the analytics stack is intentional R&D infrastructure. Search/download telemetry, session replay, heatmaps, frustration signals, and related Supabase event capture are required in the best-state development build unless Raghav explicitly says otherwise.
+
+Do not remove, disable, or "simplify away" analytics as unused bloat during cleanup. Fix bugs around it, document its behavior, and keep credentials out of source control.
 
 ## Requirements
 
@@ -11,66 +27,56 @@ A production-ready Python CLI for searching and downloading from Anna's Archive 
 ## Installation
 
 ```bash
-pip install -r requirements.txt
-
-# For download features (Selenium/Chrome):
-pip install -r requirements-dev.txt
-
-# Or install as a package:
+# Install the package with its dev dependencies (pytest, ruff, mypy, …):
 pip install -e ".[dev]"
 ```
 
+There is no `requirements.txt`; all dependencies are declared in `pyproject.toml`.
+Chrome automation (`undetected-chromedriver`, `selenium`) and TLS impersonation
+(`curl_cffi`) are core dependencies, so a plain install is download-ready.
+
 ## Configuration
 
-Copy the example config and edit it:
-
-```bash
-cp src/annas_config.example.json src/annas_config.json
-```
+Settings live in a JSON file under the platform config directory
+(`%APPDATA%/san-citro` on Windows, `~/.config/san-citro` on Linux,
+`~/Library/Application Support/san-citro` on macOS). It is created on first use;
+the desktop app's **Settings** page edits it, or pass `--config PATH` to the CLI.
 
 Config fields:
-- `db_path` — Path to your SQLite database
-- `out_dir` — Download output directory
-- `concurrency` — Parallel download limit
-- `proxies` — List of proxy addresses (optional)
+- `out_dir` — download output directory
+- `concurrency` — parallel download limit (1–32)
+- `proxies` — list of proxy URLs (optional)
+- `base_url` — pin an Anna's Archive domain (omit/`null` to auto-detect)
+- `history_db` — download-history DB path (omit/`null` for the platform data dir)
 
 ## CLI Commands
 
 ```bash
-python src/cli.py <command> [options]
+python -m src <command> [options]     # or: annas-archive <command> [options]
 ```
 
 | Command | Description |
 |---------|-------------|
-| `init` | Set default configuration |
-| `fetch` | Discover latest metadata dump magnet links |
-| `search <query>` | Search local database (FTS5) |
+| `search <query>` | Search Anna's Archive (live scraping) |
 | `snatch <query>` | Interactive search + multi-select download |
-| `batch-snatch <file>` | Process a wishlist file for batch downloads |
+| `batch-snatch <file>` | Process a wishlist file (queries and/or MD5 hashes) |
 | `download <md5>` | Direct download by MD5 hash |
-| `diagnose` | Run system health checks (network, DB, Chrome) |
-| `optimize` | VACUUM and optimize the database |
-| `stats` | Show database statistics |
-| `refresh-proxies` | Fetch fresh proxy list |
+| `fetch` | Discover the latest metadata-dump magnet link |
+| `history` | Show recent download history |
+| `diagnose` | Run system health checks (internet, IP, reachability, Chrome, TLS, proxies) |
 
 ### Global Flags
 
-- `--verbose` — Enable DEBUG-level logging
-- `--direct` — Bypass proxy logic and connect directly
-
-## Data Pipeline
-
-1. **Fetch** — `cli.py fetch` discovers latest `.jsonl.zst` dump and outputs a magnet link
-2. **Download** — Use a torrent client to download the metadata dump
-3. **Ingest** — Stream-decompress and load into SQLite with FTS5 indexing
-4. **Search** — Query locally with full-text search, no live server hits
-5. **Download Books** — Automated Chrome-based downloads with MD5 verification
+- `--verbose` — enable DEBUG-level logging
+- `--direct` — bypass all proxy logic and connect directly
+- `--config PATH` — override the config file path
+- `--concurrency N` — override the parallel download limit
+- `--strategy {chrome,direct}` — download strategy (default: `chrome`)
 
 ## Testing
 
 ```bash
-# Install dev dependencies
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 
 # Run all tests
 pytest
@@ -79,7 +85,7 @@ pytest
 pytest -v
 ```
 
-All tests are fully offline (mocked HTTP). No VPN or network access required.
+All tests are fully offline (network mocked). No VPN or network access required.
 
 ## Project Structure
 
@@ -101,11 +107,9 @@ annas_archive_project/
 │   ├── utils.py                # Shared helpers (domains, rate limiting)
 │   └── mock_data_generator.py  # Test fixture generator
 ├── tests/                      # pytest suite (offline, mocked network)
-├── electron-app/               # Electron desktop app
+├── electron-app/               # Electron desktop app (San Citro)
 │   ├── src/                    # main / preload / ipc-handlers (TypeScript)
 │   └── python/                 # JSON-RPC bridge over src/
 ├── web/                        # Next.js renderer (loaded by Electron)
-├── requirements.txt            # Production dependencies
-├── pyproject.toml              # Package configuration
-└── .gitignore
+└── pyproject.toml              # Package + dependency configuration
 ```

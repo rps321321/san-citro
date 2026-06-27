@@ -7,11 +7,11 @@ Implements a strategy pattern with two concrete strategies:
 
 from __future__ import annotations
 
+import contextlib
 import random
 import re
 import time
 from abc import ABC, abstractmethod
-from typing import List, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -19,16 +19,30 @@ from bs4 import BeautifulSoup
 
 from .logger import get_logger
 from .shutdown import register_driver, unregister_driver
-from .utils import TRUSTED_DOMAINS, get_browser_headers
+from .utils import attr_str, get_browser_headers
+
+try:
+    from curl_cffi.requests import exceptions as _curl_exc
+except ImportError:
+    REQUEST_EXCEPTIONS: tuple[type[Exception], ...] = (requests.RequestException,)
+else:
+    # curl_cffi exceptions do not subclass requests' exceptions.
+    REQUEST_EXCEPTIONS = (requests.RequestException, _curl_exc.RequestException)
 
 logger = get_logger()
 
 # Domains that appear on the download page but are NOT actual file hosts
 BLACKLISTED_DOMAINS = {
-    "jdownloader.org", "www.jdownloader.org",
-    "donate.annas-archive.org", "annas-blog.org",
-    "t.me", "twitter.com", "x.com", "reddit.com",
-    "github.com", "patreon.com",
+    "jdownloader.org",
+    "www.jdownloader.org",
+    "donate.annas-archive.org",
+    "annas-blog.org",
+    "t.me",
+    "twitter.com",
+    "x.com",
+    "reddit.com",
+    "github.com",
+    "patreon.com",
 }
 
 # Known CDN / mirror patterns for actual file downloads
@@ -51,8 +65,20 @@ CDN_PATTERNS = [
 ]
 
 FILE_EXTENSIONS = (
-    ".pdf", ".epub", ".mobi", ".azw3", ".djvu", ".cbr", ".cbz",
-    ".fb2", ".txt", ".doc", ".docx", ".rtf", ".zip", ".rar",
+    ".pdf",
+    ".epub",
+    ".mobi",
+    ".azw3",
+    ".djvu",
+    ".cbr",
+    ".cbz",
+    ".fb2",
+    ".txt",
+    ".doc",
+    ".docx",
+    ".rtf",
+    ".zip",
+    ".rar",
 )
 
 
@@ -83,10 +109,7 @@ def _is_plausible_download_url(href: str, base_url: str) -> bool:
         return True
 
     # Accept URLs with long paths (CDN download paths are typically long)
-    if len(parsed.path) > 50:
-        return True
-
-    return False
+    return len(parsed.path) > 50
 
 
 class DownloadStrategy(ABC):
@@ -99,7 +122,7 @@ class DownloadStrategy(ABC):
         md5: str,
         session: requests.Session,
         base_url: str,
-    ) -> Optional[tuple[str, dict[str, str], dict[str, str]]]:
+    ) -> tuple[str, dict[str, str], dict[str, str]] | None:
         """Resolve the slow_download page to a direct download URL.
 
         Args:
@@ -117,7 +140,7 @@ class DownloadStrategy(ABC):
 class ChromeStrategy(DownloadStrategy):
     """Uses undetected_chromedriver to wait for JS countdown and extract the download link."""
 
-    def __init__(self, proxies: Optional[List[str]] = None) -> None:
+    def __init__(self, proxies: list[str] | None = None) -> None:
         self.proxies = proxies or []
 
     def get_download_url(
@@ -126,7 +149,7 @@ class ChromeStrategy(DownloadStrategy):
         md5: str,
         session: requests.Session,
         base_url: str,
-    ) -> Optional[tuple[str, dict[str, str], dict[str, str]]]:
+    ) -> tuple[str, dict[str, str], dict[str, str]] | None:
         try:
             import undetected_chromedriver as uc
         except ImportError:
@@ -145,25 +168,30 @@ class ChromeStrategy(DownloadStrategy):
             options.add_argument("--disable-blink-features=AutomationControlled")
             if self.proxies:
                 proxy = random.choice(self.proxies)
-                options.add_argument(f'--proxy-server={proxy}')
+                options.add_argument(f"--proxy-server={proxy}")
             # Detect installed Chrome major version to avoid chromedriver mismatch
             ver_major = None
             try:
                 chrome_exe = uc.find_chrome_executable()
                 if chrome_exe:
-                    import subprocess, platform
+                    import platform
+                    import subprocess
+
                     if platform.system() == "Windows":
                         result = subprocess.run(
-                            ["powershell", "-Command",
-                             f"(Get-Item '{chrome_exe}').VersionInfo.FileVersion"],
-                            capture_output=True, text=True, timeout=5,
+                            ["powershell", "-Command", f"(Get-Item '{chrome_exe}').VersionInfo.FileVersion"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
                         )
                         if result.returncode == 0 and result.stdout.strip():
                             ver_major = int(result.stdout.strip().split(".")[0])
                     else:
                         result = subprocess.run(
                             [chrome_exe, "--version"],
-                            capture_output=True, text=True, timeout=5,
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
                         )
                         if result.returncode == 0:
                             m = re.search(r"(\d+)\.", result.stdout)
@@ -185,10 +213,7 @@ class ChromeStrategy(DownloadStrategy):
             for attempt in range(max_polls):
                 time.sleep(poll_interval)
                 if attempt > 0 and attempt % 6 == 0:
-                    logger.info(
-                        f"[{short}] Waiting for countdown... "
-                        f"({attempt * poll_interval}s elapsed)"
-                    )
+                    logger.info(f"[{short}] Waiting for countdown... " f"({attempt * poll_interval}s elapsed)")
                 try:
                     for a in driver.find_elements("tag name", "a"):
                         text = (a.text or "").lower().strip()
@@ -197,10 +222,7 @@ class ChromeStrategy(DownloadStrategy):
                         is_real_url = href.startswith("http") and not href.endswith("#")
                         if has_keyword and is_real_url and _is_plausible_download_url(href, base_url):
                             download_url = href
-                            logger.info(
-                                f"[{short}] Found download link after "
-                                f"{attempt * poll_interval}s"
-                            )
+                            logger.info(f"[{short}] Found download link after " f"{attempt * poll_interval}s")
                             break
                 except Exception as e:
                     logger.debug(f"Selenium poll error (retrying): {e}")
@@ -208,10 +230,7 @@ class ChromeStrategy(DownloadStrategy):
                     break
 
             if not download_url:
-                logger.warning(
-                    f"[{short}] No download link found after "
-                    f"{max_polls * poll_interval}s"
-                )
+                logger.warning(f"[{short}] No download link found after " f"{max_polls * poll_interval}s")
                 return None
 
             cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
@@ -226,10 +245,8 @@ class ChromeStrategy(DownloadStrategy):
         finally:
             unregister_driver()
             if driver:
-                try:
+                with contextlib.suppress(Exception):
                     driver.quit()
-                except Exception:
-                    pass
 
 
 class DirectHTTPStrategy(DownloadStrategy):
@@ -242,7 +259,7 @@ class DirectHTTPStrategy(DownloadStrategy):
     4. Re-fetches or follows the redirect to get the final download URL
     """
 
-    def __init__(self, proxies: Optional[List[str]] = None) -> None:
+    def __init__(self, proxies: list[str] | None = None) -> None:
         self.proxies = proxies or []
 
     def get_download_url(
@@ -251,7 +268,7 @@ class DirectHTTPStrategy(DownloadStrategy):
         md5: str,
         session: requests.Session,
         base_url: str,
-    ) -> Optional[tuple[str, dict[str, str], dict[str, str]]]:
+    ) -> tuple[str, dict[str, str], dict[str, str]] | None:
         short = md5[:6]
         logger.info(f"[{short}] DirectHTTPStrategy: fetching slow_download page")
 
@@ -270,7 +287,7 @@ class DirectHTTPStrategy(DownloadStrategy):
                 verify=True,
             )
             resp.raise_for_status()
-        except requests.RequestException as e:
+        except REQUEST_EXCEPTIONS as e:
             logger.error(f"[{short}] Failed to fetch slow_download page: {e}")
             return None
 
@@ -280,9 +297,7 @@ class DirectHTTPStrategy(DownloadStrategy):
         # Common patterns: a JS variable like `countdown = 5;` or a visible timer element.
         countdown_seconds = self._extract_countdown(soup, resp.text)
         if countdown_seconds > 0:
-            logger.info(
-                f"[{short}] Waiting {countdown_seconds}s for countdown to expire..."
-            )
+            logger.info(f"[{short}] Waiting {countdown_seconds}s for countdown to expire...")
             time.sleep(countdown_seconds + 1)  # +1s safety margin
 
         # After countdown: try to find a direct download link on the page
@@ -301,7 +316,7 @@ class DirectHTTPStrategy(DownloadStrategy):
                 resp2.raise_for_status()
                 soup2 = BeautifulSoup(resp2.text, "html.parser")
                 download_url = self._extract_download_link(soup2, base_url)
-            except requests.RequestException as e:
+            except REQUEST_EXCEPTIONS as e:
                 logger.error(f"[{short}] Re-fetch failed: {e}")
                 return None
 
@@ -324,12 +339,12 @@ class DirectHTTPStrategy(DownloadStrategy):
         """
         # Pattern 1: JS countdown variable assignments
         js_patterns = [
-            r'countdown\s*=\s*(\d+)',
-            r'seconds?\s*=\s*(\d+)',
-            r'timer\s*=\s*(\d+)',
-            r'wait\s*=\s*(\d+)',
-            r'delay\s*=\s*(\d+)',
-            r'setTimeout\s*\([^,]+,\s*(\d{3,6})\)',  # setTimeout(..., milliseconds)
+            r"countdown\s*=\s*(\d+)",
+            r"seconds?\s*=\s*(\d+)",
+            r"timer\s*=\s*(\d+)",
+            r"wait\s*=\s*(\d+)",
+            r"delay\s*=\s*(\d+)",
+            r"setTimeout\s*\([^,]+,\s*(\d{3,6})\)",  # setTimeout(..., milliseconds)
         ]
         for pattern in js_patterns:
             match = re.search(pattern, raw_html, re.IGNORECASE)
@@ -344,19 +359,19 @@ class DirectHTTPStrategy(DownloadStrategy):
 
         # Pattern 2: data-countdown or data-seconds attributes
         for attr_name in ("data-countdown", "data-seconds", "data-timer", "data-wait"):
-            el = soup.find(attrs={attr_name: True})
+            el = soup.find(None, attrs={attr_name: True})
             if el:
                 try:
-                    value = int(el[attr_name])
+                    value = int(attr_str(el.get(attr_name)) or "")
                     if 1 <= value <= 120:
                         return value
                 except (ValueError, TypeError):
                     pass
 
         # Pattern 3: element text with countdown-like class/id
-        for el in soup.find_all(attrs={"id": re.compile(r"countdown|timer", re.I)}):
+        for el in soup.find_all(None, attrs={"id": re.compile(r"countdown|timer", re.I)}):
             text = el.get_text(strip=True)
-            match = re.search(r'(\d+)', text)
+            match = re.search(r"(\d+)", text)
             if match:
                 value = int(match.group(1))
                 if 1 <= value <= 120:
@@ -364,7 +379,7 @@ class DirectHTTPStrategy(DownloadStrategy):
 
         for el in soup.find_all(class_=re.compile(r"countdown|timer", re.I)):
             text = el.get_text(strip=True)
-            match = re.search(r'(\d+)', text)
+            match = re.search(r"(\d+)", text)
             if match:
                 value = int(match.group(1))
                 if 1 <= value <= 120:
@@ -374,9 +389,7 @@ class DirectHTTPStrategy(DownloadStrategy):
         logger.debug("Could not detect countdown duration, defaulting to 5s")
         return 5
 
-    def _extract_download_link(
-        self, soup: BeautifulSoup, base_url: str
-    ) -> Optional[str]:
+    def _extract_download_link(self, soup: BeautifulSoup, base_url: str) -> str | None:
         """Extract the actual file download link from the parsed page.
 
         Looks for anchor tags with download-related text/attributes
@@ -386,7 +399,7 @@ class DirectHTTPStrategy(DownloadStrategy):
 
         # Strategy A: links with download-related text
         for a in soup.find_all("a", href=True):
-            href = a["href"]
+            href = attr_str(a.get("href")) or ""
             text = a.get_text(strip=True).lower()
             has_keyword = any(kw in text for kw in download_keywords)
             is_real_url = href.startswith("http") and not href.endswith("#")
@@ -396,15 +409,15 @@ class DirectHTTPStrategy(DownloadStrategy):
 
         # Strategy B: links with 'download' attribute (HTML5 download attr)
         for a in soup.find_all("a", attrs={"download": True}):
-            href = a.get("href", "")
+            href = attr_str(a.get("href")) or ""
             if href.startswith("http"):
                 return href
 
         # Strategy C: look for meta refresh redirect or JS redirect
         meta_refresh = soup.find("meta", attrs={"http-equiv": "refresh"})
         if meta_refresh:
-            content = meta_refresh.get("content", "")
-            match = re.search(r'url=(.+)', content, re.IGNORECASE)
+            content = attr_str(meta_refresh.get("content")) or ""
+            match = re.search(r"url=(.+)", content, re.IGNORECASE)
             if match:
                 url = match.group(1).strip().strip("'\"")
                 if url.startswith("http") and base_url not in url:
@@ -413,9 +426,7 @@ class DirectHTTPStrategy(DownloadStrategy):
         return None
 
 
-def create_strategy(
-    name: str, proxies: Optional[List[str]] = None
-) -> DownloadStrategy:
+def create_strategy(name: str, proxies: list[str] | None = None) -> DownloadStrategy:
     """Factory function to create a download strategy by name.
 
     Args:
@@ -428,11 +439,8 @@ def create_strategy(
     Raises:
         ValueError: If the strategy name is not recognized.
     """
-    strategies: dict[str, type[DownloadStrategy]] = {
-        "chrome": ChromeStrategy,
-        "direct": DirectHTTPStrategy,
-    }
-    if name not in strategies:
-        valid = ", ".join(sorted(strategies.keys()))
-        raise ValueError(f"Unknown strategy {name!r}. Valid options: {valid}")
-    return strategies[name](proxies=proxies)
+    if name == "chrome":
+        return ChromeStrategy(proxies=proxies)
+    if name == "direct":
+        return DirectHTTPStrategy(proxies=proxies)
+    raise ValueError(f"Unknown strategy {name!r}. Valid options: chrome, direct")

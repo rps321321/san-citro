@@ -2,8 +2,8 @@
 
 import sqlite3
 import threading
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from .config_manager import get_default_history_db_path
 from .logger import get_logger
@@ -15,12 +15,12 @@ _initialized_dbs: set[str] = set()
 _init_lock = threading.Lock()
 
 
-def _resolve_db_path(db_path: Optional[str]) -> str:
+def _resolve_db_path(db_path: str | None) -> str:
     """Resolve a db path, falling back to the platform data dir."""
     return db_path or get_default_history_db_path()
 
 
-def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
+def _connect(db_path: str | None = None) -> sqlite3.Connection:
     """Open a connection with WAL mode and busy timeout for safe concurrent access."""
     resolved = _resolve_db_path(db_path)
     conn = sqlite3.connect(resolved, timeout=30)
@@ -31,7 +31,7 @@ def _connect(db_path: Optional[str] = None) -> sqlite3.Connection:
     return conn
 
 
-def _ensure_table(db_path: Optional[str] = None) -> None:
+def _ensure_table(db_path: str | None = None) -> None:
     """Create the downloads table once per db_path, guarded by a lock."""
     resolved = _resolve_db_path(db_path)
     if resolved in _initialized_dbs:
@@ -57,12 +57,12 @@ def _ensure_table(db_path: Optional[str] = None) -> None:
         _initialized_dbs.add(resolved)
 
 
-def init_downloads_table(db_path: Optional[str] = None) -> None:
+def init_downloads_table(db_path: str | None = None) -> None:
     """Public entry point kept for backwards compatibility."""
     _ensure_table(db_path)
 
 
-def cleanup_orphaned_downloads(db_path: Optional[str] = None) -> int:
+def cleanup_orphaned_downloads(db_path: str | None = None) -> int:
     """Mark any 'downloading'/'started'/'queued' entries as 'interrupted'.
 
     Called on app startup to handle downloads that were abandoned when the
@@ -70,7 +70,7 @@ def cleanup_orphaned_downloads(db_path: Optional[str] = None) -> int:
     the number of rows updated.
     """
     _ensure_table(db_path)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -88,7 +88,7 @@ def cleanup_orphaned_downloads(db_path: Optional[str] = None) -> int:
 
 
 def record_download_start(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     md5: str = "",
     title: str = "",
 ) -> None:
@@ -98,7 +98,7 @@ def record_download_start(
         return
 
     _ensure_table(db_path)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
         conn.execute(
@@ -121,7 +121,7 @@ def record_download_start(
 
 
 def record_download_complete(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     md5: str = "",
     filename: str = "",
     filesize_bytes: int = 0,
@@ -132,7 +132,7 @@ def record_download_complete(
         return
 
     _ensure_table(db_path)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
         conn.execute(
@@ -151,7 +151,7 @@ def record_download_complete(
 
 
 def record_download_failed(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     md5: str = "",
     error: str = "",
 ) -> None:
@@ -161,7 +161,7 @@ def record_download_failed(
         return
 
     _ensure_table(db_path)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
         conn.execute(
@@ -179,7 +179,7 @@ def record_download_failed(
 
 
 def record_download_cancelled(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     md5: str = "",
 ) -> None:
     """Mark an existing download as cancelled."""
@@ -188,7 +188,7 @@ def record_download_cancelled(
         return
 
     _ensure_table(db_path)
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
         conn.execute(
@@ -205,9 +205,9 @@ def record_download_cancelled(
 
 
 def get_download_history(
-    db_path: Optional[str] = None,
+    db_path: str | None = None,
     limit: int = 20,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Return the most recent downloads, newest first."""
     _ensure_table(db_path)
 
@@ -225,9 +225,7 @@ def get_download_history(
         return [dict(row) for row in cursor.fetchall()]
 
 
-def get_completed_download(
-    db_path: Optional[str] = None, md5: str = ""
-) -> Optional[Dict[str, Any]]:
+def get_completed_download(db_path: str | None = None, md5: str = "") -> dict[str, Any] | None:
     """Return the completed download record for an md5, or None."""
     if not md5:
         return None
@@ -247,7 +245,7 @@ def get_completed_download(
         return dict(row) if row else None
 
 
-def is_downloaded(db_path: Optional[str] = None, md5: str = "") -> bool:
+def is_downloaded(db_path: str | None = None, md5: str = "") -> bool:
     """Return True if the given md5 has a completed download record."""
     if not md5:
         return False
@@ -262,19 +260,36 @@ def is_downloaded(db_path: Optional[str] = None, md5: str = "") -> bool:
         return cursor.fetchone() is not None
 
 
-def get_download_stats(db_path: Optional[str] = None) -> Dict[str, Any]:
+def get_completed_md5s(db_path: str | None = None, md5s: list[str] | None = None) -> set[str]:
+    """Return the subset of ``md5s`` that have a completed download record.
+
+    One query for the whole batch — lets search results be flagged as already
+    downloaded without an N+1 round-trip per result.
+    """
+    md5_list = [m for m in (md5s or []) if m]
+    if not md5_list:
+        return set()
+    _ensure_table(db_path)
+    placeholders = ",".join("?" for _ in md5_list)
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT md5 FROM downloads WHERE status = 'completed' AND md5 IN ({placeholders})",
+            md5_list,
+        ).fetchall()
+    return {row["md5"] for row in rows}
+
+
+def get_download_stats(db_path: str | None = None) -> dict[str, Any]:
     """Return aggregate download stats. Never raises on an empty/new DB."""
     _ensure_table(db_path)
 
     with _connect(db_path) as conn:
-        counts = conn.execute(
-            "SELECT status, COUNT(*) AS n FROM downloads GROUP BY status"
-        ).fetchall()
+        counts = conn.execute("SELECT status, COUNT(*) AS n FROM downloads GROUP BY status").fetchall()
         total_size = conn.execute(
             "SELECT COALESCE(SUM(filesize_bytes), 0) FROM downloads WHERE status = 'completed'"
         ).fetchone()[0]
 
-    downloads_by_status: Dict[str, int] = {}
+    downloads_by_status: dict[str, int] = {}
     total_downloads = 0
     for row in counts:
         status = row["status"] if row["status"] is not None else "unknown"

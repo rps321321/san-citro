@@ -81,8 +81,6 @@ function SearchContent() {
   const [query, setQuery] = useState("");
   const [extension, setExtension] = useState("");
   const [language, setLanguage] = useState("");
-  const [yearMin, setYearMin] = useState("");
-  const [yearMax, setYearMax] = useState("");
   const [data, setData] = useState<SearchResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,12 +104,9 @@ function SearchContent() {
       const params: SearchParams = {
         query: query.trim(),
         page: pageNum,
-        per_page: 25,
       };
       if (extension) params.extension = extension;
       if (language) params.language = language;
-      if (yearMin) params.year_min = Number(yearMin);
-      if (yearMax) params.year_max = Number(yearMax);
 
       try {
         const t0 = Date.now();
@@ -126,8 +121,6 @@ function SearchContent() {
           query: params.query,
           extension: params.extension,
           language: params.language,
-          yearMin: params.year_min,
-          yearMax: params.year_max,
           resultCount: result.total_count,
           responseTimeMs: elapsed,
           page: pageNum,
@@ -143,7 +136,7 @@ function SearchContent() {
         }
       }
     },
-    [query, extension, language, yearMin, yearMax]
+    [query, extension, language]
   );
 
   // No auto-search — Electron custom protocol doesn't support URL params
@@ -164,16 +157,9 @@ function SearchContent() {
         fileSizeBytes: book.filesize_bytes,
         status: "started",
       });
-      // Mark the book as downloaded in the local results so the green check shows
-      setData((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          results: prev.results.map((b) =>
-            b.md5 === book.md5 ? { ...b, is_downloaded: true } : b
-          ),
-        };
-      });
+      // Do NOT optimistically mark as downloaded — the download was only just
+      // enqueued, not completed. is_downloaded reflects real completion (from
+      // history) on the next search; live progress lives on the Downloads page.
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Download failed";
@@ -262,28 +248,6 @@ function SearchContent() {
             </Select>
           </div>
 
-          <Input
-            type="number"
-            value={yearMin}
-            onChange={(e) => setYearMin(e.target.value)}
-            placeholder="Year from"
-            className="w-28"
-            aria-label="Year from"
-            min={1800}
-            max={new Date().getFullYear() + 1}
-            step={1}
-          />
-          <Input
-            type="number"
-            value={yearMax}
-            onChange={(e) => setYearMax(e.target.value)}
-            placeholder="Year to"
-            className="w-28"
-            aria-label="Year to"
-            min={1800}
-            max={new Date().getFullYear() + 1}
-            step={1}
-          />
         </div>
       </form>
 
@@ -312,8 +276,8 @@ function SearchContent() {
       {data && (
         <>
           <div className="text-sm text-muted-foreground">
-            {data.total_count.toLocaleString()} results found (page {data.page}{" "}
-            of {data.total_pages})
+            Showing {data.results.length.toLocaleString()} result
+            {data.results.length === 1 ? "" : "s"} · page {data.page}
           </div>
 
           <div className="rounded-lg border overflow-x-auto">
@@ -392,7 +356,7 @@ function SearchContent() {
           </div>
 
           {/* Pagination */}
-          {data.total_pages > 1 && (
+          {(data.has_prev || data.has_next) && (
             <Pagination>
               <PaginationContent>
                 <PaginationItem>
@@ -408,7 +372,7 @@ function SearchContent() {
                 </PaginationItem>
                 <PaginationItem>
                   <span className="flex h-8 items-center px-3 text-sm text-muted-foreground">
-                    Page {data.page} of {data.total_pages}
+                    Page {data.page}
                   </span>
                 </PaginationItem>
                 <PaginationItem>

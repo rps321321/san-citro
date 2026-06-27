@@ -22,11 +22,8 @@ function ipc(): SanCitroApi {
 export interface SearchParams {
   query: string;
   page?: number;
-  per_page?: number;
   extension?: string;
   language?: string;
-  year_min?: number;
-  year_max?: number;
 }
 
 export async function search(params: SearchParams): Promise<SearchResponse> {
@@ -34,10 +31,7 @@ export async function search(params: SearchParams): Promise<SearchResponse> {
     query: params.query,
     extension: params.extension,
     language: params.language,
-    year_min: params.year_min,
-    year_max: params.year_max,
     page: params.page,
-    per_page: params.per_page,
   });
 }
 

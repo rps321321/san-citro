@@ -1,32 +1,36 @@
 import argparse
-import sqlite3
-import sys
 import os
 import re
-import time
+import sqlite3
+import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any, Optional, List
+from typing import Any
+
+from rich import box
 from rich.console import Console
 from rich.table import Table
-from rich import box
 
 from .annas_archive_tool import AnnasArchiveTool
-from .scraper import scrape_annas_archive
-from .config_manager import get_config, set_config_path, clamp_concurrency
-from .logger import setup_logging, get_logger
+from .config_manager import clamp_concurrency, get_config, set_config_path
 from .diagnostics import run_diagnostics
+from .download_history import (
+    get_download_history,
+    init_downloads_table,
+)
+from .download_job import run_download
 from .download_strategy import create_strategy
+from .logger import get_logger, setup_logging
+from .scraper import scrape_annas_archive
 from .shutdown import install_signal_handlers, is_cancelled
 from .utils import format_filesize
-from .download_job import run_download
-from .download_history import (
-    init_downloads_table,
-    get_download_history,
-)
 
 MD5_LINE_PATTERN = re.compile(r"^[a-fA-F0-9]{32}$")
+
+# A full scraped page is 20 results; used to infer "there may be a next page".
+SCRAPE_PAGE_SIZE = 20
 
 console = Console()
 
@@ -35,15 +39,17 @@ console = Console()
 # Dataclass for concurrent download results
 # ------------------------------------------------------------------
 
+
 @dataclass
 class DownloadResult:
     """Tracks the outcome of a single download attempt."""
+
     md5: str
     filename: str
     status: str  # "success", "failed", "error"
     title: str = ""
-    path: Optional[str] = None
-    error: Optional[str] = None
+    path: str | None = None
+    error: str | None = None
     elapsed_seconds: float = 0.0
 
 
@@ -51,7 +57,8 @@ class DownloadResult:
 # Helper utilities
 # ------------------------------------------------------------------
 
-def get_filename_from_db(db_path: str, md5: str) -> Optional[str]:
+
+def get_filename_from_db(db_path: str | None, md5: str) -> str | None:
     """Helper to get a clean filename from the DB."""
     if not db_path or not os.path.exists(db_path):
         return None
@@ -62,7 +69,7 @@ def get_filename_from_db(db_path: str, md5: str) -> Optional[str]:
             result = cursor.fetchone()
         if result:
             title, ext = result
-            clean_title = re.sub(r'[^a-zA-Z0-9_\-\. ]', '_', title)
+            clean_title = re.sub(r"[^a-zA-Z0-9_\-\. ]", "_", title)
             return f"{clean_title}.{ext}" if ext else f"{clean_title}.file"
     except sqlite3.Error as e:
         get_logger().debug(f"Failed to get filename from DB: {e}")
@@ -73,7 +80,8 @@ def get_filename_from_db(db_path: str, md5: str) -> Optional[str]:
 # Download history display
 # ------------------------------------------------------------------
 
-def print_download_history(history_db: Optional[str], limit: int = 20) -> None:
+
+def print_download_history(history_db: str | None, limit: int = 20) -> None:
     """Display recent download history in a Rich table."""
     from rich import box
 
@@ -131,12 +139,13 @@ def print_download_history(history_db: Optional[str], limit: int = 20) -> None:
 # Concurrent downloads
 # ------------------------------------------------------------------
 
+
 def _download_one(
     tool: AnnasArchiveTool,
     md5: str,
     output_dir: str,
-    db_path: Optional[str],
-    history_db: Optional[str],
+    db_path: str | None,
+    history_db: str | None,
 ) -> DownloadResult:
     """Download a single file and return a structured result. Never raises.
 
@@ -154,12 +163,16 @@ def _download_one(
         last_status.update(payload)
 
     start = time.monotonic()
+    # Honor the user's --strategy / --direct choice: the tool was built in
+    # _dispatch with the selected strategy and resolved proxies. Previously this
+    # hardcoded create_strategy("direct"), silently ignoring both flags.
     path = run_download(
         md5=md5,
         title=title,
         out_dir=output_dir,
         history_db=history_db,
-        strategy=create_strategy("direct"),
+        strategy=tool.strategy,
+        proxies=tool.proxies,
         on_status=on_status,
         cancel=cancel,
     )
@@ -167,14 +180,22 @@ def _download_one(
 
     if path:
         return DownloadResult(
-            md5=md5, filename=filename, title=title, status="success",
-            path=path, elapsed_seconds=elapsed,
+            md5=md5,
+            filename=filename,
+            title=title,
+            status="success",
+            path=path,
+            elapsed_seconds=elapsed,
         )
 
     error = last_status.get("error") or "No file returned"
     return DownloadResult(
-        md5=md5, filename=filename, title=title, status="failed",
-        error=error, elapsed_seconds=elapsed,
+        md5=md5,
+        filename=filename,
+        title=title,
+        status="failed",
+        error=error,
+        elapsed_seconds=elapsed,
     )
 
 
@@ -182,30 +203,32 @@ def _run_concurrent_downloads(
     tool: AnnasArchiveTool,
     targets: list,
     output_dir: str,
-    db_path: Optional[str],
-    history_db: Optional[str],
+    db_path: str | None,
+    history_db: str | None,
     concurrency: int,
-) -> List[DownloadResult]:
+) -> list[DownloadResult]:
     """Execute downloads in parallel using a thread pool and return all results."""
     logger = get_logger()
-    results: List[DownloadResult] = []
+    results: list[DownloadResult] = []
 
     console.print(
-        f"\n[bold magenta]Starting Download Queue:[/bold magenta] "
-        f"{len(targets)} book(s), concurrency={concurrency}"
+        f"\n[bold magenta]Starting Download Queue:[/bold magenta] " f"{len(targets)} book(s), concurrency={concurrency}"
     )
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         future_to_md5 = {}
         for item in targets:
             if is_cancelled():
-                console.print(
-                    "\n[yellow]Shutdown requested — skipping remaining downloads.[/yellow]"
-                )
+                console.print("\n[yellow]Shutdown requested — skipping remaining downloads.[/yellow]")
                 break
             md5 = item[4]
             future = executor.submit(
-                _download_one, tool, md5, output_dir, db_path, history_db,
+                _download_one,
+                tool,
+                md5,
+                output_dir,
+                db_path,
+                history_db,
             )
             future_to_md5[future] = md5
 
@@ -215,14 +238,12 @@ def _run_concurrent_downloads(
             if result.status == "success":
                 logger.info(f"[{result.md5[:6]}] Completed: {result.filename}")
             else:
-                logger.warning(
-                    f"[{result.md5[:6]}] {result.status.upper()}: {result.error}"
-                )
+                logger.warning(f"[{result.md5[:6]}] {result.status.upper()}: {result.error}")
 
     return results
 
 
-def _print_summary_table(results: List[DownloadResult]) -> None:
+def _print_summary_table(results: list[DownloadResult]) -> None:
     """Print a rich summary table of all download outcomes."""
     table = Table(title="Download Summary", show_lines=True)
     table.add_column("#", style="dim", width=4)
@@ -255,14 +276,13 @@ def _print_summary_table(results: List[DownloadResult]) -> None:
 
     succeeded = sum(1 for r in results if r.status == "success")
     total = len(results)
-    console.print(
-        f"\n[bold]Result:[/bold] {succeeded}/{total} downloads succeeded."
-    )
+    console.print(f"\n[bold]Result:[/bold] {succeeded}/{total} downloads succeeded.")
 
 
 # ------------------------------------------------------------------
 # Live search result display
 # ------------------------------------------------------------------
+
 
 def _print_live_results(results: list[dict], page: int = 1) -> None:
     """Display live scrape results in a Rich table."""
@@ -304,6 +324,7 @@ def _print_live_results(results: list[dict], page: int = 1) -> None:
 # Shared filter argument helper
 # ------------------------------------------------------------------
 
+
 def _add_filter_args(p: argparse.ArgumentParser) -> None:
     """Add common search filter arguments to a subparser."""
     p.add_argument("--ext", type=str, default=None, help="Filter by file extension (e.g. pdf, epub)")
@@ -328,6 +349,7 @@ def _build_filter_kwargs(args: argparse.Namespace) -> dict:
 # Main entry point
 # ------------------------------------------------------------------
 
+
 def main() -> None:
     install_signal_handlers()
 
@@ -337,14 +359,12 @@ def main() -> None:
     )
     # Global flags
     parser.add_argument("--verbose", action="store_true", help="Enable detailed verbose logging")
+    parser.add_argument("--direct", action="store_true", help="Bypass all proxy logic and connect directly")
+    parser.add_argument("--config", metavar="PATH", help="Override config file path (default: platform XDG location)")
     parser.add_argument(
-        "--direct", action="store_true", help="Bypass all proxy logic and connect directly"
-    )
-    parser.add_argument(
-        "--config", metavar="PATH", help="Override config file path (default: platform XDG location)"
-    )
-    parser.add_argument(
-        "--concurrency", type=int, default=None,
+        "--concurrency",
+        type=int,
+        default=None,
         help="Max parallel downloads (overrides config, default: config value or 2)",
     )
     parser.add_argument(
@@ -385,9 +405,7 @@ def main() -> None:
 
     # --- History command ---
     history_p = subparsers.add_parser("history", help="Show recent download history")
-    history_p.add_argument(
-        "-n", "--limit", type=int, default=20, help="Number of entries to show (default: 20)"
-    )
+    history_p.add_argument("-n", "--limit", type=int, default=20, help="Number of entries to show (default: 20)")
 
     args = parser.parse_args()
 
@@ -421,7 +439,9 @@ def _dispatch(args: argparse.Namespace) -> None:
     setup_logging(verbose=args.verbose)
 
     active_out = config.get("out_dir", "downloads")
-    active_proxies = config.get("proxies", [])
+    # --direct bypasses all proxy logic: zero out proxies so neither the
+    # strategy nor the per-download tool sessions route through a proxy.
+    active_proxies = [] if args.direct else config.get("proxies", [])
     active_concurrency = clamp_concurrency(args.concurrency or config.get("concurrency", 2))
     history_db = config.get("history_db")  # None -> resolved to platform data dir
 
@@ -443,9 +463,7 @@ def _dispatch(args: argparse.Namespace) -> None:
     # ------------------------------------------------------------------
     try:
         strategy = create_strategy(args.strategy, proxies=active_proxies)
-        tool = AnnasArchiveTool(
-            proxies=active_proxies, direct_mode=args.direct, strategy=strategy
-        )
+        tool = AnnasArchiveTool(proxies=active_proxies, direct_mode=args.direct, strategy=strategy)
     except ConnectionError as e:
         console.print(f"\n[bold red]HALT:[/bold red] {e}")
         sys.exit(1)
@@ -474,10 +492,10 @@ def _dict_to_tuple(d: dict) -> tuple:
 def _run_network_commands(
     args: argparse.Namespace,
     tool: AnnasArchiveTool,
-    active_db: Optional[str],
+    active_db: str | None,
     active_out: str,
     active_concurrency: int,
-    history_db: Optional[str],
+    history_db: str | None,
 ) -> None:
     """Execute commands that require the network tool."""
     logger = get_logger()
@@ -485,7 +503,7 @@ def _run_network_commands(
     if args.command == "search":
         filter_kwargs = _build_filter_kwargs(args)
         page = args.page
-        results = scrape_annas_archive(
+        search_results = scrape_annas_archive(
             args.query,
             ext=filter_kwargs.get("ext"),
             lang=filter_kwargs.get("lang"),
@@ -493,8 +511,8 @@ def _run_network_commands(
         )
         limit = getattr(args, "limit", None)
         if limit is not None:
-            results = results[:limit]
-        _print_live_results(results, page=page)
+            search_results = search_results[:limit]
+        _print_live_results(search_results, page=page)
 
     elif args.command in ("batch-snatch", "snatch"):
         filter_kwargs = _build_filter_kwargs(args)
@@ -520,15 +538,12 @@ def _run_network_commands(
                 if current_page > 1:
                     nav_hints.append("[bold yellow]P[/bold yellow]=Prev page")
                 # Assume there's a next page if we got a full page of results
-                SCRAPE_PAGE_SIZE = 20
                 if len(live_results) >= SCRAPE_PAGE_SIZE:
                     nav_hints.append("[bold yellow]N[/bold yellow]=Next page")
                 nav_hints.append("[bold yellow]Q[/bold yellow]=Quit")
                 nav_line = "  ".join(nav_hints)
 
-                choice = console.input(
-                    f"\n[bold cyan]Select numbers (e.g. 1,3) or navigate ({nav_line}):[/bold cyan] "
-                )
+                choice = console.input(f"\n[bold cyan]Select numbers (e.g. 1,3) or navigate ({nav_line}):[/bold cyan] ")
                 choice_stripped = choice.strip().upper()
 
                 if choice_stripped == "N" and len(live_results) >= SCRAPE_PAGE_SIZE:
@@ -543,23 +558,19 @@ def _run_network_commands(
                 # Parse numeric selection (1-indexed into current page)
                 try:
                     indices = [int(i.strip()) - 1 for i in choice.split(",")]
-                    targets = [
-                        _dict_to_tuple(live_results[i])
-                        for i in indices
-                        if 0 <= i < len(live_results)
-                    ]
+                    targets = [_dict_to_tuple(live_results[i]) for i in indices if 0 <= i < len(live_results)]
                 except (ValueError, IndexError) as e:
                     logger.error(f"Invalid selection: {e}")
                     return
                 break  # selection made, exit pagination loop
 
         else:  # batch-snatch
-            with open(args.file_path, "r") as f:
+            with open(args.file_path) as f:
                 lines = [line.strip() for line in f if line.strip()]
 
             # Support MD5 hashes directly in the batch file
-            md5_lines: List[str] = []
-            query_lines: List[str] = []
+            md5_lines: list[str] = []
+            query_lines: list[str] = []
             for line in lines:
                 if MD5_LINE_PATTERN.match(line):
                     md5_lines.append(line)
@@ -582,7 +593,12 @@ def _run_network_commands(
 
         if targets:
             results = _run_concurrent_downloads(
-                tool, targets, active_out, active_db, history_db, active_concurrency,
+                tool,
+                targets,
+                active_out,
+                active_db,
+                history_db,
+                active_concurrency,
             )
             _print_summary_table(results)
 
@@ -598,15 +614,17 @@ def _run_network_commands(
     elif args.command == "download":
         md5 = args.md5
         if not MD5_LINE_PATTERN.match(md5):
-            console.print(
-                "[bold red]Error:[/bold red] Invalid MD5 hash. "
-                "Expected 32 hexadecimal characters."
-            )
+            console.print("[bold red]Error:[/bold red] Invalid MD5 hash. " "Expected 32 hexadecimal characters.")
             sys.exit(1)
         # Single download also uses the concurrent infrastructure for consistency
         single_target = (None, None, None, None, md5)
         results = _run_concurrent_downloads(
-            tool, [single_target], active_out, active_db, history_db, 1,
+            tool,
+            [single_target],
+            active_out,
+            active_db,
+            history_db,
+            1,
         )
         _print_summary_table(results)
 

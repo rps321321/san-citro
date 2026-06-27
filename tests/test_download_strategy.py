@@ -1,7 +1,6 @@
 """Tests for download_strategy.py -- all network calls mocked."""
-import re
-from pathlib import Path
-from unittest.mock import patch, MagicMock, PropertyMock
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -44,6 +43,7 @@ class TestDirectHTTPStrategyExtractCountdown:
 
     def _make_soup(self, html: str):
         from bs4 import BeautifulSoup
+
         return BeautifulSoup(html, "html.parser")
 
     def test_extracts_js_countdown_variable(self):
@@ -60,7 +60,7 @@ class TestDirectHTTPStrategyExtractCountdown:
 
     def test_extracts_settimeout_milliseconds(self):
         strategy = self._make_strategy()
-        html = '<script>setTimeout(function(){ reveal(); }, 5000);</script>'
+        html = "<script>setTimeout(function(){ reveal(); }, 5000);</script>"
         soup = self._make_soup(html)
         assert strategy._extract_countdown(soup, html) == 5
 
@@ -103,6 +103,7 @@ class TestDirectHTTPStrategyExtractDownloadLink:
 
     def _make_soup(self, html: str):
         from bs4 import BeautifulSoup
+
         return BeautifulSoup(html, "html.parser")
 
     def test_extracts_link_with_download_text(self):
@@ -186,9 +187,9 @@ class TestDirectHTTPStrategyGetDownloadUrl:
         html_no_link = "<html><body><p>Please wait...</p></body></html>"
         # Second fetch: download link appears
         html_with_link = (
-            '<html><body>'
+            "<html><body>"
             '<a href="https://cdn.example.com/d3/y/1774443509/g4/libgens/file.epub">Download</a>'
-            '</body></html>'
+            "</body></html>"
         )
 
         resp1 = MagicMock()
@@ -215,6 +216,16 @@ class TestDirectHTTPStrategyGetDownloadUrl:
         strategy = DirectHTTPStrategy()
         session = MagicMock()
         session.get.side_effect = requests.ConnectionError("timeout")
+
+        result = strategy.get_download_url(SLOW_URL, VALID_MD5, session, BASE_URL)
+        assert result is None
+
+    def test_should_return_none_on_curl_cffi_network_error(self):
+        curl_exc = pytest.importorskip("curl_cffi.requests.exceptions")
+
+        strategy = DirectHTTPStrategy()
+        session = MagicMock()
+        session.get.side_effect = curl_exc.RequestException("timeout")
 
         result = strategy.get_download_url(SLOW_URL, VALID_MD5, session, BASE_URL)
         assert result is None
@@ -268,17 +279,14 @@ class TestToolStrategyIntegration:
         strategy = DirectHTTPStrategy()
         tool = AnnasArchiveTool(strategy=strategy)
 
-        # Mock get_slow_download_link to return a URL
-        with patch.object(tool, "get_slow_download_link", return_value=SLOW_URL):
-            # DirectHTTPStrategy returns None (failure)
-            with patch.object(
-                strategy, "get_download_url", return_value=None
-            ) as mock_direct:
-                # ChromeStrategy also returns None (we don't have Chrome in test)
-                with patch.object(
-                    ChromeStrategy, "get_download_url", return_value=None
-                ) as mock_chrome:
-                    result = tool.automated_slow_download(VALID_MD5)
+        # Mock get_slow_download_link to return a URL; both strategies return
+        # None (failure) — DirectHTTP first, then the Chrome fallback.
+        with (
+            patch.object(tool, "get_slow_download_link", return_value=SLOW_URL),
+            patch.object(strategy, "get_download_url", return_value=None) as mock_direct,
+            patch.object(ChromeStrategy, "get_download_url", return_value=None) as mock_chrome,
+        ):
+            result = tool.automated_slow_download(VALID_MD5)
 
         assert result is None
         mock_direct.assert_called_once()

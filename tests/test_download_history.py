@@ -6,14 +6,15 @@ from pathlib import Path
 import pytest
 
 from src.download_history import (
-    init_downloads_table,
-    record_download_start,
-    record_download_complete,
-    record_download_failed,
-    record_download_cancelled,
+    get_completed_md5s,
     get_download_history,
     get_download_stats,
+    init_downloads_table,
     is_downloaded,
+    record_download_cancelled,
+    record_download_complete,
+    record_download_failed,
+    record_download_start,
 )
 
 
@@ -28,9 +29,7 @@ class TestInitDownloadsTable:
         init_downloads_table(history_db)
 
         with sqlite3.connect(history_db) as conn:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'")
             assert cursor.fetchone() is not None
 
     def test_should_have_expected_columns_when_table_created(self, history_db: str) -> None:
@@ -41,8 +40,14 @@ class TestInitDownloadsTable:
             columns = {row[1] for row in cursor.fetchall()}
 
         expected = {
-            "md5", "title", "filename", "status",
-            "started_at", "completed_at", "filesize_bytes", "error",
+            "md5",
+            "title",
+            "filename",
+            "status",
+            "started_at",
+            "completed_at",
+            "filesize_bytes",
+            "error",
         }
         assert columns == expected
 
@@ -65,9 +70,7 @@ class TestRecordDownloadStart:
         assert row["status"] == "started"
         assert row["started_at"] is not None
 
-    def test_should_preserve_prior_success_metadata_when_restarting_completed_md5(
-        self, history_db: str
-    ) -> None:
+    def test_should_preserve_prior_success_metadata_when_restarting_completed_md5(self, history_db: str) -> None:
         record_download_start(history_db, md5="abc123", title="First Try")
         record_download_complete(history_db, md5="abc123", filename="f.pdf", filesize_bytes=100)
         # Re-start the same already-completed download
@@ -189,8 +192,14 @@ class TestGetDownloadHistory:
         row = history[0]
 
         expected_keys = {
-            "md5", "title", "filename", "status",
-            "started_at", "completed_at", "filesize_bytes", "error",
+            "md5",
+            "title",
+            "filename",
+            "status",
+            "started_at",
+            "completed_at",
+            "filesize_bytes",
+            "error",
         }
         assert set(row.keys()) == expected_keys
 
@@ -247,3 +256,17 @@ class TestGetDownloadStats:
             "failed": 1,
             "started": 1,
         }
+
+
+class TestGetCompletedMd5s:
+    def test_should_return_only_completed_md5s(self, history_db: str) -> None:
+        record_download_start(history_db, md5="a" * 32, title="A")
+        record_download_complete(history_db, md5="a" * 32, filename="a.epub", filesize_bytes=10)
+        record_download_start(history_db, md5="b" * 32, title="B")  # started, not completed
+
+        result = get_completed_md5s(history_db, ["a" * 32, "b" * 32, "c" * 32])
+
+        assert result == {"a" * 32}
+
+    def test_should_return_empty_set_for_empty_input(self, history_db: str) -> None:
+        assert get_completed_md5s(history_db, []) == set()

@@ -26,9 +26,12 @@ import { startFrustrationDetection, stopFrustrationDetection } from "@/lib/frust
  * Mount once in the root layout.
  */
 export function TelemetryProvider({ children }: { children: React.ReactNode }) {
-  const startTime = useRef(Date.now());
+  const startTime = useRef(0);
 
   useEffect(() => {
+    // Stamp the mount time here (not during render — Date.now() is impure).
+    startTime.current = Date.now();
+
     // 1. Start session + basic telemetry
     startSession();
     trackPageView(window.location.pathname);

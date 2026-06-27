@@ -4,9 +4,12 @@ import logging
 import random
 import threading
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
+
+if TYPE_CHECKING:
+    import requests
 
 _utils_logger = logging.getLogger(__name__)
 
@@ -28,6 +31,16 @@ TRUSTED_DOMAINS = {
     "annas-archive.org",
     "annas-archive.li",
 }
+
+
+def attr_str(value: object) -> str | None:
+    """Return a single-valued BeautifulSoup tag attribute as ``str`` or ``None``.
+
+    ``Tag.get()`` may return a ``str``, a list (for multi-valued attributes such
+    as ``class``), or ``None``. Callers that want one string (``href``, ``src``,
+    ``content``) treat anything that is not a ``str`` as missing.
+    """
+    return value if isinstance(value, str) else None
 
 
 def get_working_domain(session: Optional["requests.Session"] = None, timeout: int = 10) -> str:
@@ -60,6 +73,7 @@ def get_working_domain(session: Optional["requests.Session"] = None, timeout: in
             s.close()
 
     return ANNAS_ARCHIVE_DOMAINS[0]  # fallback to first
+
 
 # Realistic User-Agent rotation pool (updated late-2024 / early-2025 strings)
 REALISTIC_USER_AGENTS = [
@@ -150,7 +164,7 @@ class BlockType:
 class ResponseCheck:
     """Result of inspecting an HTTP response for bot-detection signals."""
 
-    __slots__ = ("is_blocked", "block_type", "message")
+    __slots__ = ("block_type", "is_blocked", "message")
 
     def __init__(self, is_blocked: bool, block_type: str, message: str) -> None:
         self.is_blocked = is_blocked
@@ -159,8 +173,7 @@ class ResponseCheck:
 
     def __repr__(self) -> str:
         return (
-            f"ResponseCheck(is_blocked={self.is_blocked}, "
-            f"block_type={self.block_type!r}, message={self.message!r})"
+            f"ResponseCheck(is_blocked={self.is_blocked}, " f"block_type={self.block_type!r}, message={self.message!r})"
         )
 
 
@@ -192,9 +205,7 @@ def check_response_for_blocks(response: "requests.Response") -> ResponseCheck:
         body_lower = response.text[:2000].lower()
         if "cloudflare" in body_lower or "cf-browser-verification" in body_lower:
             _utils_logger.warning("[anti-bot] CLOUDFLARE challenge at %s", url)
-            return ResponseCheck(
-                True, BlockType.CLOUDFLARE, "Cloudflare challenge detected (503)"
-            )
+            return ResponseCheck(True, BlockType.CLOUDFLARE, "Cloudflare challenge detected (503)")
         _utils_logger.warning("[anti-bot] RATE_LIMITED (503) at %s", url)
         return ResponseCheck(True, BlockType.RATE_LIMITED, "Service unavailable (503)")
 
@@ -235,9 +246,7 @@ def check_response_for_blocks(response: "requests.Response") -> ResponseCheck:
 
         # Cloudflare JS challenge delivered with a 200 status
         if "cf-browser-verification" in body_lower or "jschl-answer" in body_lower:
-            _utils_logger.warning(
-                "[anti-bot] CLOUDFLARE JS challenge (200) at %s", url
-            )
+            _utils_logger.warning("[anti-bot] CLOUDFLARE JS challenge (200) at %s", url)
             return ResponseCheck(
                 True,
                 BlockType.CLOUDFLARE,
@@ -247,7 +256,7 @@ def check_response_for_blocks(response: "requests.Response") -> ResponseCheck:
     return ResponseCheck(False, BlockType.NONE, "OK")
 
 
-def format_filesize(size_bytes: Optional[int]) -> str:
+def format_filesize(size_bytes: int | None) -> str:
     """Convert a byte count to a human-readable string.
 
     Returns ``"N/A"`` when *size_bytes* is ``None`` or zero.
@@ -268,9 +277,9 @@ def format_filesize(size_bytes: Optional[int]) -> str:
     """
     if not size_bytes:
         return "N/A"
-    if size_bytes >= 1024 ** 3:
+    if size_bytes >= 1024**3:
         return f"{size_bytes / (1024 ** 3):.2f} GB"
-    if size_bytes >= 1024 ** 2:
+    if size_bytes >= 1024**2:
         return f"{size_bytes / (1024 ** 2):.1f} MB"
     if size_bytes >= 1024:
         return f"{size_bytes / 1024:.1f} KB"

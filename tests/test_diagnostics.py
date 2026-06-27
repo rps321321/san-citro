@@ -1,15 +1,12 @@
 """Tests for diagnostics.py."""
-import sqlite3
-from unittest.mock import patch, MagicMock
 
-import pytest
+from unittest.mock import MagicMock, patch
 
 from src.diagnostics import (
+    check_chrome_automation,
     check_internet,
     check_ip_address,
     check_site_reachability,
-    check_database,
-    check_chrome_automation,
     run_diagnostics,
 )
 
@@ -37,6 +34,7 @@ class TestCheckIpAddress:
 
     def test_failure(self):
         import requests
+
         with patch("src.diagnostics.requests.get", side_effect=requests.ConnectionError):
             success, msg = check_ip_address()
         assert success is False
@@ -52,24 +50,10 @@ class TestCheckSiteReachability:
 
     def test_unreachable(self):
         import requests
+
         with patch("src.diagnostics.requests.get", side_effect=requests.ConnectionError):
             success, msg = check_site_reachability("https://example.com")
         assert success is False
-
-
-class TestCheckDatabase:
-    def test_healthy_db(self, test_db):
-        success, msg = check_database(str(test_db))
-        assert success is True
-        assert "HEALTHY" in msg
-
-    def test_missing_db(self, tmp_path):
-        success, msg = check_database(str(tmp_path / "nope.db"))
-        assert success is None
-
-    def test_none_path(self):
-        success, msg = check_database(None)
-        assert success is None
 
 
 class TestCheckChromeAutomation:
@@ -82,6 +66,7 @@ class TestCheckChromeAutomation:
         with patch.dict("sys.modules", {"undetected_chromedriver": None}):
             # Force ImportError
             import builtins
+
             real_import = builtins.__import__
 
             def mock_import(name, *args, **kwargs):
@@ -96,10 +81,15 @@ class TestCheckChromeAutomation:
 
 class TestRunDiagnostics:
     def test_no_crash(self):
-        config = {"db_path": None}
-        with patch("src.diagnostics.check_internet", return_value=(True, "OK")), \
-             patch("src.diagnostics.check_ip_address", return_value=(True, "OK")), \
-             patch("src.diagnostics.check_site_reachability", return_value=(True, "OK")), \
-             patch("src.diagnostics.check_database", return_value=(None, "N/A")), \
-             patch("src.diagnostics.check_chrome_automation", return_value=(True, "OK")):
+        # base_url is provided so run_diagnostics does not hit the network via
+        # get_working_domain(); all network checks are mocked.
+        config = {"base_url": "https://example.com", "proxies": []}
+        with (
+            patch("src.diagnostics.check_internet", return_value=(True, "OK")),
+            patch("src.diagnostics.check_ip_address", return_value=(True, "OK")),
+            patch("src.diagnostics.check_site_reachability", return_value=(True, "OK")),
+            patch("src.diagnostics.check_chrome_automation", return_value=(True, "OK")),
+            patch("src.diagnostics.check_tls_fingerprint", return_value=(True, "OK")),
+            patch("src.diagnostics.check_proxies", return_value=(None, "N/A")),
+        ):
             run_diagnostics(config)

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useTheme } from "next-themes";
-import { trackPageView, trackInteraction } from "@/lib/telemetry";
+import { trackInteraction } from "@/lib/telemetry";
 import {
   SearchIcon,
   DownloadIcon,
@@ -35,12 +35,15 @@ const NAV_ITEMS = [
 ] as const;
 
 export function AppSidebar() {
-  // Read pathname via useEffect to avoid SSR hydration mismatch.
-  // next/navigation hooks are unreliable in Electron's san-citro:// custom protocol.
-  const [pathname, setPathname] = useState("");
-  useEffect(() => {
-    setPathname(window.location.pathname);
-  }, []);
+  // Read pathname via useSyncExternalStore to avoid SSR hydration mismatch
+  // without calling setState in an effect. next/navigation hooks are unreliable
+  // in Electron's san-citro:// custom protocol. The location never changes
+  // without a full reload here, so subscribe is a no-op.
+  const pathname = useSyncExternalStore(
+    () => () => {},
+    () => window.location.pathname,
+    () => ""
+  );
   const { resolvedTheme, setTheme } = useTheme();
 
   return (

@@ -9,9 +9,9 @@ status transitions, records history, and emits the shared ``on_status`` payload.
 from __future__ import annotations
 
 import os
-import threading
 import time
-from typing import Any, Callable, Dict, Optional
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from .annas_archive_tool import AnnasArchiveTool
 from .config_manager import get_config
@@ -21,35 +21,38 @@ from .download_history import (
     record_download_failed,
     record_download_start,
 )
-from .download_strategy import DownloadStrategy
+
+if TYPE_CHECKING:
+    import threading
+
+    from .download_strategy import DownloadStrategy
 
 # Retention constant lifted here (single source of truth, was duplicated in
 # download_manager).
 TERMINAL_RETENTION_S: float = 300.0
 
 # Terminal statuses (importable by callers for pruning/guards).
-TERMINAL_STATES: frozenset[str] = frozenset(
-    {"completed", "failed", "cancelled", "interrupted"}
-)
+TERMINAL_STATES: frozenset[str] = frozenset({"completed", "failed", "cancelled", "interrupted"})
 
-StatusSink = Callable[[Dict[str, Any]], None]  # receives the §0 payload dict
+StatusSink = Callable[[dict[str, Any]], None]  # receives the §0 payload dict
 
 
 def run_download(
     md5: str,
     title: str,
     out_dir: str,
-    history_db: Optional[str],
+    history_db: str | None,
     strategy: DownloadStrategy,
     on_status: StatusSink,
     cancel: threading.Event,
-) -> Optional[str]:
+    proxies: list[str] | None = None,
+) -> str | None:
     """Full tracked download lifecycle for ONE book. Returns the final file
     path on success, else None. Never raises for normal download failure —
     converts exceptions to a 'failed' terminal status + on_status emit, and
     returns None. Re-raises nothing to the caller.
     """
-    status: Dict[str, Any] = {
+    status: dict[str, Any] = {
         "md5": md5,
         "title": title,
         "status": "queued",
@@ -77,15 +80,15 @@ def run_download(
     emit("started")
     emit("downloading")
 
-    result_path: Optional[str] = None
+    # An explicit proxies list (incl. an empty one, e.g. CLI --direct) overrides
+    # the config; None means "read config" so existing callers are unchanged.
+    tool_proxies = proxies if proxies is not None else get_config().get("proxies")
+
+    result_path: str | None = None
     try:
-        with AnnasArchiveTool(
-            proxies=get_config().get("proxies"), strategy=strategy
-        ) as tool:
-            result_path = tool.automated_slow_download(
-                md5=md5, output_dir=out_dir, cancel=cancel
-            )
-    except Exception as exc:  # noqa: BLE001 — normal failures must not propagate
+        with AnnasArchiveTool(proxies=tool_proxies, strategy=strategy) as tool:
+            result_path = tool.automated_slow_download(md5=md5, output_dir=out_dir, cancel=cancel)
+    except Exception as exc:
         if cancel.is_set():
             record_download_cancelled(db_path=history_db, md5=md5)
             emit("cancelled")

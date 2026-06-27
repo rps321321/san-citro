@@ -19,10 +19,9 @@ export interface BookRecord {
 
 export interface SearchResponse {
   results: BookRecord[];
+  /** Number of results on this page (a live scrape has no grand total). */
   total_count: number;
   page: number;
-  per_page: number;
-  total_pages: number;
   has_next: boolean;
   has_prev: boolean;
 }
@@ -71,11 +70,8 @@ export interface SanCitroApi {
   search(params: {
     query: string;
     page?: number;
-    per_page?: number;
     extension?: string;
     language?: string;
-    year_min?: number;
-    year_max?: number;
   }): Promise<SearchResponse>;
   startDownload(params: { md5: string; title?: string }): Promise<DownloadStatus>;
   cancelDownload(md5: string): Promise<{ status?: string; error?: string }>;

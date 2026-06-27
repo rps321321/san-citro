@@ -1,50 +1,76 @@
-import random
+import hashlib
 import json
 import os
+import random
 import re
 import threading
 import time
-import hashlib
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional, List, Dict, Any
-from urllib.parse import urlparse, unquote
+from typing import Any
+from urllib.parse import unquote, urlparse
 
 from bs4 import BeautifulSoup
 from tqdm import tqdm
 
-from .logger import get_logger
-from .shutdown import is_cancelled, register_driver, unregister_driver
-from .utils import TRUSTED_DOMAINS, RateLimiter, get_browser_headers, get_working_domain
-
 from .download_strategy import (
-    DownloadStrategy,
     ChromeStrategy,
     DirectHTTPStrategy,
-    create_strategy,
+    DownloadStrategy,
 )
+from .logger import get_logger
+from .shutdown import is_cancelled
+from .utils import TRUSTED_DOMAINS, RateLimiter, attr_str, get_browser_headers, get_working_domain
 
 # TLS fingerprint impersonation: prefer curl_cffi when available
 try:
-    from curl_cffi import requests as stealth_requests
     import requests as std_requests  # keep standard requests for retry adapter
+    from curl_cffi import requests as stealth_requests
+
     HAS_CURL_CFFI = True
 except ImportError:
     import requests as std_requests
+
     stealth_requests = None  # type: ignore[assignment]
     HAS_CURL_CFFI = False
+
+# Shared exception tuples so retry/error handling catches BOTH std-requests and
+# curl_cffi exceptions. curl_cffi's exceptions do NOT subclass requests', so
+# catching only requests.* would let genuine network errors escape unhandled
+# whenever the stealth (curl_cffi) session is the active transport.
+if HAS_CURL_CFFI:
+    from curl_cffi.requests import exceptions as _cffi_exc
+
+    REQUEST_EXCEPTIONS: tuple[type[Exception], ...] = (
+        std_requests.RequestException,
+        _cffi_exc.RequestException,
+    )
+    HTTP_ERRORS: tuple[type[Exception], ...] = (
+        std_requests.HTTPError,
+        _cffi_exc.HTTPError,
+    )
+    SSL_ERRORS: tuple[type[Exception], ...] = (
+        std_requests.exceptions.SSLError,
+        _cffi_exc.SSLError,
+    )
+else:
+    REQUEST_EXCEPTIONS = (std_requests.RequestException,)
+    HTTP_ERRORS = (std_requests.HTTPError,)
+    SSL_ERRORS = (std_requests.exceptions.SSLError,)
+
+import contextlib
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 logger = get_logger()
 
-MD5_PATTERN = re.compile(r'^[a-f0-9]{32}$', re.IGNORECASE)
+MD5_PATTERN = re.compile(r"^[a-f0-9]{32}$", re.IGNORECASE)
 
 
-def _is_cancelled(cancel: Optional[threading.Event]) -> bool:
+def _is_cancelled(cancel: threading.Event | None) -> bool:
     """True if either the process-global shutdown or the per-job cancel is set."""
     return is_cancelled() or (cancel is not None and cancel.is_set())
+
 
 # File magic bytes -> extension mapping
 MAGIC_BYTES = {
@@ -81,17 +107,23 @@ def _detect_filename(md5: str, file_path: str, content_disposition: str = "", do
             url_basename = url_basename.replace("+", " ").replace("%20", " ")
             name, ext = os.path.splitext(url_basename)
             if ext and len(ext) <= 6:
-                # Strip "Anna's Archive" suffix (various separator styles)
-                name = re.sub(r'\s*[-–—]+\s*Anna.s?\s*Archive\s*$', '', name, flags=re.IGNORECASE)
+                # Strip "Anna's Archive" suffix. The dash character classes
+                # deliberately include en/em dashes to match real CDN filename
+                # separators; the RUF001 noqa markers below are intentional.
+                name = re.sub(r"\s*[-–—]+\s*Anna.s?\s*Archive\s*$", "", name, flags=re.IGNORECASE)  # noqa: RUF001
                 # Strip MD5 hash (with various separators: --, —, spaces)
-                name = re.sub(r'\s*[-–—]+\s*[a-f0-9]{32}\s*[-–—]*\s*$', '', name, flags=re.IGNORECASE)
+                name = re.sub(r"\s*[-–—]+\s*[a-f0-9]{32}\s*[-–—]*\s*$", "", name, flags=re.IGNORECASE)  # noqa: RUF001
                 # Strip trailing dashes/spaces
-                name = name.rstrip(' -–—')
+                name = name.rstrip(" -–—")  # noqa: RUF001
                 # Clean up double-dash separators: "Title -- Author -- Year" -> "Title - Author - Year"
-                name = re.sub(r'\s*--\s*', ' - ', name)
+                name = re.sub(r"\s*--\s*", " - ", name)
                 # Strip publisher/source suffixes like "Feedbooks", "Project Gutenberg"
-                name = re.sub(r'\s*-\s*(?:Feedbooks|Project Gutenberg|Gutenberg|Internet Archive)\s*$',
-                               '', name, flags=re.IGNORECASE)
+                name = re.sub(
+                    r"\s*-\s*(?:Feedbooks|Project Gutenberg|Gutenberg|Internet Archive)\s*$",
+                    "",
+                    name,
+                    flags=re.IGNORECASE,
+                )
                 if name.strip():
                     return _sanitize_filename(name.strip() + ext)
 
@@ -101,10 +133,10 @@ def _detect_filename(md5: str, file_path: str, content_disposition: str = "", do
         with open(file_path, "rb") as f:
             header = f.read(8)
         for magic, magic_ext in MAGIC_BYTES.items():
-            if header[:len(magic)] == magic:
+            if header[: len(magic)] == magic:
                 ext = magic_ext
                 break
-    except (OSError, IOError) as e:
+    except OSError as e:
         logger.debug("Failed to read magic bytes for %s: %s", file_path, e)
 
     return f"{md5}{ext}"
@@ -119,19 +151,20 @@ def _sanitize_filename(name: str) -> str:
     name = name.replace("/", "_")
     name = name.replace("\\", "_")
     # Replace invalid filename characters
-    name = re.sub(r'[<>:"/\\|?*]', '_', name)
+    name = re.sub(r'[<>:"/\\|?*]', "_", name)
     # Collapse multiple spaces/underscores
-    name = re.sub(r'[_ ]{2,}', ' ', name)
+    name = re.sub(r"[_ ]{2,}", " ", name)
     # Reject Windows reserved device names (CON, PRN, NUL, COM1-9, LPT1-9)
-    _RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
+    reserved = {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(1, 10)} | {f"LPT{i}" for i in range(1, 10)}
     stem = os.path.splitext(name)[0].upper().strip()
-    if stem in _RESERVED:
+    if stem in reserved:
         name = f"_{name}"
     # Trim to reasonable length
     if len(name) > 200:
         base, ext = os.path.splitext(name)
-        name = base[:200 - len(ext)] + ext
+        name = base[: 200 - len(ext)] + ext
     return name.strip()
+
 
 # Retry / polling constants
 DOWNLOAD_MAX_RETRIES = 3
@@ -144,12 +177,12 @@ class DownloadMeta:
     """Cached download metadata stored as a .part.meta JSON sidecar."""
 
     download_url: str
-    cookies: Dict[str, str]
+    cookies: dict[str, str]
     user_agent: str
     slow_link: str
     timestamp: float
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "download_url": self.download_url,
             "cookies": self.cookies,
@@ -159,7 +192,7 @@ class DownloadMeta:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "DownloadMeta":
+    def from_dict(cls, data: dict[str, Any]) -> "DownloadMeta":
         return cls(
             download_url=data["download_url"],
             cookies=data.get("cookies", {}),
@@ -172,10 +205,10 @@ class DownloadMeta:
         return (time.time() - self.timestamp) > META_MAX_AGE
 
 
-def _load_meta(meta_path: str) -> Optional[DownloadMeta]:
+def _load_meta(meta_path: str) -> DownloadMeta | None:
     """Load a .part.meta sidecar file, returning None if missing or corrupt."""
     try:
-        with open(meta_path, "r", encoding="utf-8") as f:
+        with open(meta_path, encoding="utf-8") as f:
             return DownloadMeta.from_dict(json.load(f))
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
         logger.debug("Failed to load meta cache %s: %s", meta_path, e)
@@ -193,10 +226,8 @@ def _save_meta(meta_path: str, meta: DownloadMeta) -> None:
 
 def _remove_meta(meta_path: str) -> None:
     """Delete the sidecar file if it exists."""
-    try:
+    with contextlib.suppress(OSError):
         os.remove(meta_path)
-    except OSError:
-        pass
 
 
 class AnnasArchiveTool:
@@ -212,10 +243,10 @@ class AnnasArchiveTool:
 
     def __init__(
         self,
-        proxies: Optional[List[str]] = None,
+        proxies: list[str] | None = None,
         direct_mode: bool = False,
-        strategy: Optional[DownloadStrategy] = None,
-        base_url: Optional[str] = None,
+        strategy: DownloadStrategy | None = None,
+        base_url: str | None = None,
     ) -> None:
         self.proxies = proxies or []
         self.direct_mode = direct_mode
@@ -227,6 +258,7 @@ class AnnasArchiveTool:
             self.base_url = base_url.rstrip("/")
         else:
             from .config_manager import get_config
+
             configured_url = get_config().get("base_url")
             if configured_url:
                 self.base_url = configured_url.rstrip("/")
@@ -253,14 +285,14 @@ class AnnasArchiveTool:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         self.close()
 
-    def get_random_proxy(self) -> Dict[str, str]:
+    def get_random_proxy(self) -> dict[str, str]:
         """Return a random proxy dict for requests, or empty dict if no proxies configured."""
         if self.proxies:
             proxy_url = random.choice(self.proxies)
             return {"http": proxy_url, "https": proxy_url}
         return {}
 
-    def _setup_resilient_session(self) -> std_requests.Session:
+    def _setup_resilient_session(self) -> Any:
         """Create a session with automatic retries for metadata/search requests.
 
         When ``curl_cffi`` is installed, the session impersonates a real Chrome
@@ -268,6 +300,9 @@ class AnnasArchiveTool:
         from genuine browser traffic.  Falls back to standard ``requests``
         otherwise (which has a recognisable Python TLS fingerprint).
         """
+        # Transport is either curl_cffi or std requests; their Session types are
+        # unrelated, so this is intentionally Any (see _setup_download_session).
+        session: Any
         if HAS_CURL_CFFI:
             session = stealth_requests.Session(impersonate="chrome131")
             logger.debug("Using curl_cffi session (TLS fingerprint: chrome131)")
@@ -284,7 +319,7 @@ class AnnasArchiveTool:
             session.proxies = {"http": proxy_url, "https": proxy_url}
         return session
 
-    def _setup_download_session(self) -> std_requests.Session:
+    def _setup_download_session(self) -> Any:
         """Create a session with NO automatic retries for file downloads.
 
         The outer retry loop in _download_file_with_retry handles retries,
@@ -292,6 +327,8 @@ class AnnasArchiveTool:
 
         Uses ``curl_cffi`` when available for TLS fingerprint impersonation.
         """
+        # Transport is either curl_cffi or std requests (unrelated Session types).
+        session: Any
         if HAS_CURL_CFFI:
             session = stealth_requests.Session(impersonate="chrome131")
         else:
@@ -306,7 +343,7 @@ class AnnasArchiveTool:
             session.proxies = {"http": proxy_url, "https": proxy_url}
         return session
 
-    def get_slow_download_link(self, md5: str) -> Optional[str]:
+    def get_slow_download_link(self, md5: str) -> str | None:
         if not MD5_PATTERN.match(md5):
             logger.error(f"Invalid MD5 hash: {md5!r}")
             return None
@@ -322,7 +359,7 @@ class AnnasArchiveTool:
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
             for a in soup.find_all("a"):
-                href = a.get("href", "")
+                href = attr_str(a.get("href")) or ""
                 if "/slow_download/" in href:
                     if href.startswith("/"):
                         return self.base_url + href
@@ -332,7 +369,7 @@ class AnnasArchiveTool:
                         return href
                     logger.warning(f"Untrusted download domain: {parsed.hostname}")
                     return None
-        except std_requests.RequestException as e:
+        except REQUEST_EXCEPTIONS as e:
             logger.error(f"Failed to get download link: {e}")
         return None
 
@@ -344,9 +381,9 @@ class AnnasArchiveTool:
         self,
         md5: str,
         output_dir: str = "downloads",
-        custom_filename: Optional[str] = None,
-        cancel: Optional[threading.Event] = None,
-    ) -> Optional[str]:
+        custom_filename: str | None = None,
+        cancel: threading.Event | None = None,
+    ) -> str | None:
         if not MD5_PATTERN.match(md5):
             logger.error(f"Invalid MD5 hash: {md5!r}")
             return None
@@ -372,9 +409,7 @@ class AnnasArchiveTool:
             logger.info(f"[{md5[:6]}] Found cached download URL, validating...")
             if self._is_cached_url_valid(cached_meta):
                 logger.info(f"[{md5[:6]}] Cached URL is still valid, skipping strategy phase")
-                result = self._download_file_with_retry(
-                    cached_meta, md5, output_dir, custom_filename, cancel=cancel
-                )
+                result = self._download_file_with_retry(cached_meta, md5, output_dir, custom_filename, cancel=cancel)
                 if result:
                     _remove_meta(meta_path)
                 return result
@@ -387,20 +422,13 @@ class AnnasArchiveTool:
             return None
 
         # --- Strategy phase: try primary then fallback ---
-        strategy_result = self.strategy.get_download_url(
-            slow_link, md5, self.session, self.base_url
-        )
+        strategy_result = self.strategy.get_download_url(slow_link, md5, self.session, self.base_url)
 
         if strategy_result is None:
             fallback = self._get_fallback_strategy()
             if fallback is not None:
-                logger.info(
-                    f"[{md5[:6]}] Primary strategy failed, "
-                    f"falling back to {type(fallback).__name__}"
-                )
-                strategy_result = fallback.get_download_url(
-                    slow_link, md5, self.session, self.base_url
-                )
+                logger.info(f"[{md5[:6]}] Primary strategy failed, " f"falling back to {type(fallback).__name__}")
+                strategy_result = fallback.get_download_url(slow_link, md5, self.session, self.base_url)
 
         if strategy_result is None:
             logger.error(f"[{md5[:6]}] All download strategies failed")
@@ -421,14 +449,12 @@ class AnnasArchiveTool:
         _save_meta(meta_path, meta)
 
         # --- Download phase with retry ---
-        result = self._download_file_with_retry(
-            meta, md5, output_dir, custom_filename, cancel=cancel
-        )
+        result = self._download_file_with_retry(meta, md5, output_dir, custom_filename, cancel=cancel)
         if result:
             _remove_meta(meta_path)
         return result
 
-    def _get_fallback_strategy(self) -> Optional[DownloadStrategy]:
+    def _get_fallback_strategy(self) -> DownloadStrategy | None:
         """Return the opposite strategy for fallback, or None if no fallback is available."""
         if isinstance(self.strategy, DirectHTTPStrategy):
             return ChromeStrategy(proxies=self.proxies)
@@ -456,8 +482,8 @@ class AnnasArchiveTool:
                 verify=True,
             )
             # Accept 200-399 as "still valid"
-            return head_resp.status_code < 400
-        except std_requests.RequestException:
+            return bool(head_resp.status_code < 400)
+        except REQUEST_EXCEPTIONS:
             return False
         finally:
             session.close()
@@ -471,9 +497,9 @@ class AnnasArchiveTool:
         meta: DownloadMeta,
         md5: str,
         output_dir: str,
-        custom_filename: Optional[str] = None,
-        cancel: Optional[threading.Event] = None,
-    ) -> Optional[str]:
+        custom_filename: str | None = None,
+        cancel: threading.Event | None = None,
+    ) -> str | None:
         """
         Download the file from *meta.download_url* into *output_dir*.
 
@@ -498,7 +524,7 @@ class AnnasArchiveTool:
 
         part_path = final_path + ".part"
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(1, DOWNLOAD_MAX_RETRIES + 1):
             if _is_cancelled(cancel):
                 logger.info(f"[{md5[:6]}] Download skipped — shutdown in progress")
@@ -518,17 +544,20 @@ class AnnasArchiveTool:
                     return result
                 # result is None but no exception -- MD5 mismatch, don't retry
                 return None
-            except std_requests.exceptions.SSLError as e:
+            except SSL_ERRORS as e:
                 # SSL errors (expired cert, MITM) never fix themselves on retry
                 logger.error(f"[{md5[:6]}] SSL certificate error — not retrying: {e}")
                 return None
-            except std_requests.HTTPError as e:
-                # Don't retry on permanent HTTP errors
-                if e.response is not None and e.response.status_code in (401, 403, 404, 410):
-                    logger.error(f"[{md5[:6]}] HTTP {e.response.status_code} — not retrying: {e}")
+            except HTTP_ERRORS as e:
+                # Don't retry on permanent HTTP errors. Both requests' and
+                # curl_cffi's HTTPError carry a .response; getattr keeps this
+                # type-safe across the shared (std + curl_cffi) tuple.
+                resp = getattr(e, "response", None)
+                if resp is not None and resp.status_code in (401, 403, 404, 410):
+                    logger.error(f"[{md5[:6]}] HTTP {resp.status_code} — not retrying: {e}")
                     return None
                 last_error = e
-            except std_requests.RequestException as e:
+            except REQUEST_EXCEPTIONS as e:
                 last_error = e
 
             # Retry logic for transient errors (shared by HTTPError and RequestException)
@@ -543,10 +572,7 @@ class AnnasArchiveTool:
                         return None
                     time.sleep(1)
             elif last_error is not None:
-                logger.error(
-                    f"[{md5[:6]}] Download failed after {DOWNLOAD_MAX_RETRIES} "
-                    f"attempts: {last_error}"
-                )
+                logger.error(f"[{md5[:6]}] Download failed after {DOWNLOAD_MAX_RETRIES} " f"attempts: {last_error}")
         return None
 
     def _attempt_download(
@@ -557,8 +583,8 @@ class AnnasArchiveTool:
         final_path: str,
         filename: str,
         output_dir: str = "downloads",
-        cancel: Optional[threading.Event] = None,
-    ) -> Optional[str]:
+        cancel: threading.Event | None = None,
+    ) -> str | None:
         """
         Single download attempt.  Raises requests.RequestException on
         transient failures so the caller can retry.
@@ -568,7 +594,7 @@ class AnnasArchiveTool:
         session = self._setup_download_session()
         try:
             session.cookies.update(meta.cookies)
-            headers: Dict[str, str] = {
+            headers: dict[str, str] = {
                 "User-Agent": meta.user_agent,
                 "Referer": meta.slow_link,
             }
@@ -577,9 +603,11 @@ class AnnasArchiveTool:
                 headers["Range"] = f"bytes={existing_size}-"
 
             res = session.get(
-                meta.download_url, headers=headers, stream=True,
+                meta.download_url,
+                headers=headers,
+                stream=True,
                 timeout=(15, 120),  # (connect_timeout, read_timeout)
-                verify=True
+                verify=True,
             )
 
             if res.status_code != 416:
@@ -597,19 +625,21 @@ class AnnasArchiveTool:
                         pass
 
                 cancelled = False
-                with open(part_path, "ab" if existing_size else "wb") as f, tqdm(
-                    desc=f"Downloading {filename[:25]}",
-                    total=total,
-                    initial=existing_size,
-                    unit="iB",
-                    unit_scale=True,
-                ) as bar:
+                with (
+                    open(part_path, "ab" if existing_size else "wb") as f,
+                    tqdm(
+                        desc=f"Downloading {filename[:25]}",
+                        total=total,
+                        initial=existing_size,
+                        unit="iB",
+                        unit_scale=True,
+                    ) as bar,
+                ):
                     for chunk in res.iter_content(chunk_size=16384):
                         if _is_cancelled(cancel):
                             cancelled = True
                             logger.info(
-                                f"[{md5[:6]}] Download interrupted — "
-                                f".part file kept for resume ({part_path})"
+                                f"[{md5[:6]}] Download interrupted — " f".part file kept for resume ({part_path})"
                             )
                             break
                         if chunk:
@@ -664,14 +694,14 @@ class AnnasArchiveTool:
         res.raise_for_status()
         return res.json()
 
-    def get_metadata_dumps(self) -> List[Dict[str, Any]]:
+    def get_metadata_dumps(self) -> list[dict[str, Any]]:
         try:
             data = self.get_torrents_json()
             return sorted(
                 [i for i in data if i.get("group_name") == "aa_derived_mirror_metadata"],
                 key=lambda x: x.get("added_to_torrents_list_at", ""),
             )
-        except std_requests.RequestException as e:
+        except REQUEST_EXCEPTIONS as e:
             logger.error(f"Failed to fetch metadata dumps: {e}")
             return []
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:

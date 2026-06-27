@@ -1,9 +1,23 @@
 """Tests for annas_archive_tool.py -- all network calls mocked."""
-from unittest.mock import patch, MagicMock
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.annas_archive_tool import AnnasArchiveTool, MD5_PATTERN
+from src.annas_archive_tool import MD5_PATTERN, AnnasArchiveTool
+
+
+@pytest.fixture(autouse=True)
+def _offline_domain():
+    """Keep these tests fully offline: AnnasArchiveTool.__init__ auto-detects the
+    working domain over the network when no base_url is configured. Stub it so
+    construction never makes a real request (and a bogus proxy can't time out).
+    """
+    with patch(
+        "src.annas_archive_tool.get_working_domain",
+        return_value="https://annas-archive.gl",
+    ):
+        yield
 
 
 class TestAnnasArchiveToolInit:
@@ -48,6 +62,7 @@ class TestGetSlowDownloadLink:
     def test_returns_none_on_network_error(self):
         tool = AnnasArchiveTool()
         import requests
+
         with patch.object(tool._search_session, "get", side_effect=requests.ConnectionError("timeout")):
             assert tool.get_slow_download_link("72a7e9cb2b7a5c9d03f6ae095745a1fa") is None
 
@@ -66,8 +81,16 @@ class TestGetMetadataDumps:
     def test_returns_sorted_dumps(self):
         tool = AnnasArchiveTool()
         mock_data = [
-            {"group_name": "aa_derived_mirror_metadata", "added_to_torrents_list_at": "2024-01-01", "display_name": "A"},
-            {"group_name": "aa_derived_mirror_metadata", "added_to_torrents_list_at": "2024-06-01", "display_name": "B"},
+            {
+                "group_name": "aa_derived_mirror_metadata",
+                "added_to_torrents_list_at": "2024-01-01",
+                "display_name": "A",
+            },
+            {
+                "group_name": "aa_derived_mirror_metadata",
+                "added_to_torrents_list_at": "2024-06-01",
+                "display_name": "B",
+            },
             {"group_name": "other_group", "added_to_torrents_list_at": "2024-12-01", "display_name": "C"},
         ]
         with patch.object(tool, "get_torrents_json", return_value=mock_data):
@@ -78,6 +101,7 @@ class TestGetMetadataDumps:
     def test_returns_empty_on_network_error(self):
         tool = AnnasArchiveTool()
         import requests
+
         with patch.object(tool, "get_torrents_json", side_effect=requests.ConnectionError):
             assert tool.get_metadata_dumps() == []
 
@@ -85,3 +109,13 @@ class TestGetMetadataDumps:
         tool = AnnasArchiveTool()
         with patch.object(tool, "get_torrents_json", side_effect=ValueError("bad json")):
             assert tool.get_metadata_dumps() == []
+
+
+class TestCurlCffiExceptionHandling:
+    """curl_cffi exceptions do NOT subclass requests' — they must still be caught."""
+
+    def test_get_slow_download_link_catches_curl_cffi_error(self):
+        cffi_exc = pytest.importorskip("curl_cffi.requests.exceptions")
+        tool = AnnasArchiveTool()
+        with patch.object(tool._search_session, "get", side_effect=cffi_exc.RequestException("boom")):
+            assert tool.get_slow_download_link("72a7e9cb2b7a5c9d03f6ae095745a1fa") is None
