@@ -10,7 +10,6 @@ import {
   SettingsIcon,
   SunIcon,
   MoonIcon,
-  BookOpenIcon,
 } from "lucide-react";
 
 import {
@@ -66,9 +65,14 @@ export function AppSidebar() {
             aria-label="San Citro — home"
             className="app-region-no-drag flex items-center gap-2 overflow-hidden group-data-[collapsible=icon]:hidden"
           >
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <BookOpenIcon className="size-4" />
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/logo.png"
+              alt="San Citro logo"
+              width={32}
+              height={32}
+              className="size-8 shrink-0 rounded-lg"
+            />
             <TextRepel text="San Citro" className="text-sm font-semibold" radius={70} strength={16} />
           </a>
           <SidebarTrigger className="app-region-no-drag" />
