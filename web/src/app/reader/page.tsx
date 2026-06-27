@@ -14,7 +14,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { readBookFile } from "@/lib/api-client";
-import { trackError, trackFeatureDiscovery } from "@/lib/telemetry";
+import { trackError, trackFeatureDiscovery, trackReadingProgress } from "@/lib/telemetry";
 
 interface TocItem {
   href: string;
@@ -35,6 +35,9 @@ export default function ReaderPage() {
   const bookRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const renditionRef = useRef<any>(null);
+  const openedAtRef = useRef(0);
+  const lastBucketRef = useRef(-1);
+  const lastPctRef = useRef(0);
   const { resolvedTheme } = useTheme();
 
   // undefined = sessionStorage not read yet; "" / null = nothing selected
@@ -91,6 +94,8 @@ export default function ReaderPage() {
         await rendition.display();
         if (cancelled) return;
         setIsLoading(false);
+        openedAtRef.current = Date.now() / 1000;
+        trackReadingProgress({ event: "open", md5, title });
 
         const nav = await book.loaded.navigation;
         if (!cancelled) {
@@ -108,10 +113,24 @@ export default function ReaderPage() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         rendition.on("relocated", (location: any) => {
           if (cancelled) return;
-          setProgress(Math.round((location?.start?.percentage ?? 0) * 100));
+          const pctInt = Math.round((location?.start?.percentage ?? 0) * 100);
+          setProgress(pctInt);
+          lastPctRef.current = pctInt;
           const href: string | undefined = location?.start?.href;
           const match = href ? book.navigation?.get?.(href) : null;
           if (match?.label) setChapter(match.label.trim());
+          // Throttle progress telemetry to one row per 5% bucket.
+          const bucket = Math.floor(pctInt / 5);
+          if (bucket !== lastBucketRef.current) {
+            lastBucketRef.current = bucket;
+            trackReadingProgress({
+              event: "progress",
+              md5,
+              progressPercent: pctInt,
+              chapter: match?.label?.trim(),
+              elapsedSeconds: Math.round(Date.now() / 1000 - openedAtRef.current),
+            });
+          }
         });
 
         // Locations enable an accurate percentage; generate in the background.
@@ -129,6 +148,14 @@ export default function ReaderPage() {
 
     return () => {
       cancelled = true;
+      if (openedAtRef.current > 0) {
+        trackReadingProgress({
+          event: "closed",
+          md5,
+          progressPercent: lastPctRef.current,
+          elapsedSeconds: Math.round(Date.now() / 1000 - openedAtRef.current),
+        });
+      }
       try {
         book?.destroy();
       } catch {

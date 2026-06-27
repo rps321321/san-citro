@@ -265,6 +265,25 @@ export function trackInteraction(
   });
 }
 
+/** Track an in-app reading session event (open / progress / closed). */
+export function trackReadingProgress(opts: {
+  md5: string;
+  title?: string;
+  event: "open" | "progress" | "closed";
+  progressPercent?: number;
+  chapter?: string;
+  elapsedSeconds?: number;
+}): void {
+  enqueue("reading_progress", {
+    md5: opts.md5,
+    title: opts.title ?? null,
+    event: opts.event,
+    progress_percent: opts.progressPercent ?? null,
+    chapter: opts.chapter ?? null,
+    elapsed_seconds: opts.elapsedSeconds ?? null,
+  });
+}
+
 /** Track system info snapshot (call once per session) */
 export function trackSystemSnapshot(info: {
   ramTotalMb?: number;
