@@ -238,7 +238,7 @@ def _m4(cursor: sqlite3.Cursor) -> None:
         ("added_at", "TEXT"),
     ]
 
-    _VALID_COL_NAME = re.compile(r"^[a-z_]+$")
+    _VALID_COL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
     _VALID_COL_TYPE = re.compile(r"^[A-Z]+$")
     for col_name, col_type in expected_columns:
         if col_name not in existing_columns:
