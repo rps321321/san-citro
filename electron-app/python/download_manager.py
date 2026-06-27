@@ -261,7 +261,12 @@ def _download_worker_inner(md5: str, send_event) -> None:
             title=entry.title,
             out_dir=out_dir,
             history_db=history_db,
-            strategy=create_strategy("direct", proxies=config.get("proxies")),
+            # Chrome strategy drives a real browser through the slow_download JS
+            # countdown, which is what gets past Anna's Archive's anti-bot 403 on
+            # the download endpoint WITHOUT a VPN. It auto-falls back to direct
+            # HTTP if no browser/driver is available. (Supersedes the earlier
+            # 'direct' default — see H5; the bundle now ships the driver.)
+            strategy=create_strategy("chrome", proxies=config.get("proxies")),
             on_status=on_status,
             cancel=entry.cancel_flag,
         )

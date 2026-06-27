@@ -13,11 +13,15 @@ dependencies = [
     "zstandard~=0.21.0",
     "rich~=13.0.0",
     "tqdm~=4.65.0",
+    # Anti-bot: Chrome strategy (real browser) + TLS impersonation are required
+    # to download from Anna's Archive without a VPN — the slow_download endpoint
+    # 403s plain HTTP. Promoted from optional extras so downloads work by default.
+    "undetected-chromedriver~=3.5.0",
+    "selenium~=4.0",
+    "curl_cffi>=0.7",
 ]
 
 [project.optional-dependencies]
-download = ["undetected-chromedriver~=3.5.0"]
-stealth = ["curl_cffi~=0.7.0"]
 dev = [
     "pytest~=7.4.0",
     "pytest-mock~=3.12.0",
