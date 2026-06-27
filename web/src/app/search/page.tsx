@@ -286,8 +286,8 @@ function SearchContent() {
       {/* Search form */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex gap-2">
-          <div className="relative flex-1">
-            <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="relative flex-1 rounded-lg transition-shadow duration-200 ease-out focus-within:ring-[3px] focus-within:ring-ring/30">
+            <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-foreground" />
             <Input
               ref={searchInputRef}
               value={query}
