@@ -139,16 +139,25 @@ function DownloadCard({
               aria-valuemin={0}
               aria-valuemax={isIndeterminate ? undefined : 100}
               aria-label={`Download progress for ${dl.title || "file"}`}
-              className="h-1.5 w-full rounded-full bg-muted overflow-hidden"
+              className="relative h-1.5 w-full rounded-full bg-muted"
             >
               {isIndeterminate ? (
                 /* Indeterminate pulse during queued->started ramp-up */
-                <div className="h-full w-full rounded-full bg-primary/40 motion-safe:animate-pulse" />
+                <div className="h-full w-full overflow-hidden rounded-full bg-primary/40 motion-safe:animate-pulse" />
               ) : (
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
-                  style={{ width: `${dl.progress_percent ?? 0}%` }}
-                />
+                <>
+                  <div
+                    className="h-full rounded-full bg-primary transition-[width] duration-300 ease-out"
+                    style={{ width: `${dl.progress_percent ?? 0}%` }}
+                  />
+                  {/* Traveling indicator — the flight-status "journey" feel, themed to tokens */}
+                  <div
+                    className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary ring-2 ring-card transition-[left] duration-300 ease-out"
+                    style={{ left: `${dl.progress_percent ?? 0}%` }}
+                  >
+                    <span className="absolute inset-0 rounded-full bg-primary/40 motion-safe:animate-ping" />
+                  </div>
+                </>
               )}
             </div>
             {!isIndeterminate && (

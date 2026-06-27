@@ -29,6 +29,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { TextRepel } from "@/components/ui/text-repel";
 import { useThemeToggle } from "@/components/ui/skiper-ui/skiper26";
+import { ArrowIcon } from "@/components/ui/skiper-ui/skiper99";
 import {
   Tooltip,
   TooltipContent,
@@ -92,6 +93,7 @@ export function AppSidebar() {
                     >
                       <item.icon />
                       <span>{item.label}</span>
+                      <ArrowIcon className="ml-auto size-4 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/menu-item:opacity-100 group-data-[collapsible=icon]:hidden" />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

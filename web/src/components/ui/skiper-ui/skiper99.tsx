@@ -31,7 +31,7 @@ const Skiper99 = () => {
 
 export { Skiper99 };
 
-const ArrowIcon = ({ className }: { className?: string }) => {
+export const ArrowIcon = ({ className }: { className?: string }) => {
   return (
     <div
       className={cn(
