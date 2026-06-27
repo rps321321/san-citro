@@ -1,9 +1,29 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS } from './types';
 
 // The preload is a thin pass-through layer. It does NOT own domain types —
 // the frontend (web/src/types) is the single source of truth. All return
 // types are typed as `Promise<unknown>` here; the renderer casts them.
+//
+// NOTE: with sandbox:true a preload may only require `electron` + a tiny
+// allowlist (events/timers/url) — a local `require('./types')` throws and
+// silently breaks contextBridge. So the channel strings are inlined here;
+// they MUST stay in sync with IPC_CHANNELS in ./types.ts.
+const IPC_CHANNELS = {
+  SEARCH: 'san-citro:search',
+  START_DOWNLOAD: 'san-citro:startDownload',
+  CANCEL_DOWNLOAD: 'san-citro:cancelDownload',
+  GET_DOWNLOADS: 'san-citro:getDownloads',
+  GET_HISTORY: 'san-citro:getHistory',
+  GET_STATS: 'san-citro:getStats',
+  GET_SETTINGS: 'san-citro:getSettings',
+  UPDATE_SETTINGS: 'san-citro:updateSettings',
+  RELOAD_CONFIG: 'san-citro:reloadConfig',
+  RUN_DIAGNOSTICS: 'san-citro:runDiagnostics',
+  DOWNLOAD_PROGRESS: 'san-citro:downloadProgress',
+  GET_APP_VERSION: 'san-citro:getAppVersion',
+  OPEN_EXTERNAL: 'san-citro:openExternal',
+  SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
+} as const;
 
 const api = {
   // --- Request/response methods ---
