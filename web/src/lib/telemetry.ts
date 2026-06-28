@@ -66,7 +66,7 @@ function getAppVersion(): string {
   // Read version from Electron's preload-injected API, fall back gracefully
   const api = window.sanCitro;
   if (api && "appVersion" in api) {
-    return (api as unknown as { appVersion: string }).appVersion;
+    return (api as unknown as { appVersion: string }).appVersion || "unknown";
   }
   return "unknown";
 }

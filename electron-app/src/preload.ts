@@ -21,6 +21,7 @@ const IPC_CHANNELS = {
   RUN_DIAGNOSTICS: 'san-citro:runDiagnostics',
   DOWNLOAD_PROGRESS: 'san-citro:downloadProgress',
   GET_APP_VERSION: 'san-citro:getAppVersion',
+  GET_APP_VERSION_SYNC: 'san-citro:getAppVersionSync',
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
   READ_BOOK_FILE: 'san-citro:readBookFile',
@@ -83,6 +84,16 @@ const api = {
   // --- Utilities ---
 
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IPC_CHANNELS.GET_APP_VERSION),
+
+  // Synchronous app version (resolved once at preload load) — telemetry reads this
+  // property synchronously, before any async round-trip.
+  appVersion: ((): string => {
+    try {
+      return ipcRenderer.sendSync(IPC_CHANNELS.GET_APP_VERSION_SYNC) as string;
+    } catch {
+      return '';
+    }
+  })(),
 
   // Shell access lives in the main process (sandboxed preload cannot import shell).
   openExternal: (url: string): Promise<void> =>

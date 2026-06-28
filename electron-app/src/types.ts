@@ -42,6 +42,7 @@ export const IPC_CHANNELS = {
   RUN_DIAGNOSTICS: 'san-citro:runDiagnostics',
   DOWNLOAD_PROGRESS: 'san-citro:downloadProgress',
   GET_APP_VERSION: 'san-citro:getAppVersion',
+  GET_APP_VERSION_SYNC: 'san-citro:getAppVersionSync',
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
   RESOLVE_DOWNLOAD_PATH: 'san-citro:resolveDownloadPath',

@@ -121,6 +121,12 @@ export function registerIpcHandlers(
     quitAndInstall();
   });
 
+  // Synchronous app version — exposed as a preload property so telemetry can read
+  // it before any async round-trip (it stamps every row, incl. the startup handshake).
+  ipcMain.on(IPC_CHANNELS.GET_APP_VERSION_SYNC, (event) => {
+    event.returnValue = app.getVersion();
+  });
+
   // --- Forward push-events from bridge to renderer ---
 
   bridge.on('download_progress', (params) => {

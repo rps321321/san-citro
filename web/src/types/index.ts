@@ -103,6 +103,8 @@ export interface SanCitroApi {
   showOpenDialog(): Promise<string | null>;
   /** Current app version string. */
   getAppVersion(): Promise<string>;
+  /** Synchronous app version, exposed as a property for telemetry stamping. */
+  appVersion: string;
   /** Open a URL in the user's default browser. */
   openExternal(url: string): Promise<void>;
   /** Trigger an electron-updater check; resolves the current update state. */
