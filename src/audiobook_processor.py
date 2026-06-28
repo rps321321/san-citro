@@ -349,12 +349,19 @@ def process_audiobook(md5: str, file_path: str, out_dir: str) -> str:
     and NEVER touches the downloads table.
     """
     try:
-        if classify(file_path) != "audiobook":
-            return "skipped"
-
         audiobooks_root = os.path.join(out_dir, "audiobooks")
         tmp = os.path.join(audiobooks_root, f"{md5}.tmp")
         final = os.path.join(audiobooks_root, md5)
+
+        # Already processed. The source archive is deleted on success, so a stray
+        # re-enqueue must NOT re-classify a now-missing file and flip ready -> error.
+        existing = audiobook_db.get_audiobook(md5=md5)
+        if existing and existing.get("status") == "ready" and os.path.isdir(final):
+            return "ready"
+
+        if classify(file_path) != "audiobook":
+            return "skipped"
+
         os.makedirs(audiobooks_root, exist_ok=True)
         _cleanup(tmp)  # stale temp from a crashed prior run
 
@@ -407,6 +414,14 @@ def process_audiobook(md5: str, file_path: str, out_dir: str) -> str:
             status="ready",
         )
         audiobook_db.replace_chapters(md5=md5, chapters=chapters)
+
+        # The source archive is now redundant (content lives under the audiobook
+        # folder). Best-effort delete; a failure must not undo the ready status.
+        try:
+            os.remove(file_path)
+        except OSError as exc:
+            logger.warning("audiobook %s: could not remove source archive: %s", md5[:8], exc)
+
         logger.info("audiobook %s ready (%d chapter(s))", md5[:8], track_count)
         return "ready"
     except Exception as exc:  # last-resort: must never raise to the caller

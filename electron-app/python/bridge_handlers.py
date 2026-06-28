@@ -329,6 +329,11 @@ def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
     if not file_path.startswith(out_dir_abs + os.sep):
         return None
     if not os.path.exists(file_path):
+        # An extracted audiobook deletes its source archive — reveal the extracted
+        # folder instead so "Show in folder" still resolves to something.
+        ab_dir = os.path.realpath(os.path.join(out_dir_abs, "audiobooks", md5))
+        if ab_dir.startswith(out_dir_abs + os.sep) and os.path.isdir(ab_dir):
+            return ab_dir
         return None
     return file_path
 

@@ -241,6 +241,8 @@ class TestProcessEndToEnd:
         assert (out_dir / "audiobooks" / _MD5 / "track.mp3").is_file()
         assert chapters[0]["rel_path"] == f"audiobooks/{_MD5}/track.mp3"
         assert not (out_dir / "audiobooks" / f"{_MD5}.tmp").exists()
+        # Source archive is deleted once extraction succeeds.
+        assert not archive.exists()
 
     def test_should_order_multi_file_chapters_naturally(self, tmp_path: Path, db_redirect: str) -> None:
         out_dir = tmp_path / "out"

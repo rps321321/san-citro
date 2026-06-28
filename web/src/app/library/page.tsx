@@ -191,15 +191,25 @@ function StatusBadge({ book }: { book: Audiobook }) {
       : isError
         ? CircleAlertIcon
         : BanIcon;
+  // Dark-glass pill: a translucent scrim + white text keeps the badge legible
+  // over ANY cover art (a static badge color blends into bright covers). The
+  // status is carried by the icon color, which stays vivid on the dark backing.
+  const iconColor =
+    variant === "success"
+      ? "text-emerald-400"
+      : isError
+        ? "text-red-400"
+        : variant === "warning"
+          ? "text-amber-300"
+          : "text-zinc-200";
   return (
-    <Badge
-      variant={variant}
-      className="gap-1"
+    <span
+      className="inline-flex items-center gap-1 rounded-md bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm ring-1 ring-white/15 backdrop-blur-sm"
       title={isError && book.error_message ? book.error_message : undefined}
     >
-      <Icon className={spinning ? "animate-spin" : undefined} />
+      <Icon className={`size-3.5 ${iconColor}${spinning ? " animate-spin" : ""}`} />
       {label}
-    </Badge>
+    </span>
   );
 }
 
