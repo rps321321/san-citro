@@ -23,6 +23,7 @@ _META_COLUMNS: dict[str, str] = {
     "language": "TEXT",
     "publisher": "TEXT",
     "cover_url": "TEXT",
+    "media_type": "TEXT",
 }
 
 
@@ -38,6 +39,7 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA foreign_keys = ON")
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -360,3 +362,18 @@ def get_download_stats(db_path: str | None = None) -> dict[str, Any]:
         "total_size_bytes": int(total_size),
         "downloads_by_status": downloads_by_status,
     }
+
+
+def backfill_media_type(db_path: str | None = None) -> int:
+    """Set media_type='book' for completed rows that predate the audiobook feature.
+
+    Safe to call repeatedly — only updates rows where media_type IS NULL and
+    status = 'completed'. Returns the number of rows updated.
+    """
+    _ensure_table(db_path)
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE downloads SET media_type = 'book' WHERE status = 'completed' AND media_type IS NULL"
+        )
+        conn.commit()
+        return cursor.rowcount

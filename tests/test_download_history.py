@@ -7,6 +7,7 @@ import pytest
 
 from src.download_history import (
     _migrate_meta_columns,
+    backfill_media_type,
     get_completed_md5s,
     get_download_history,
     get_download_stats,
@@ -82,6 +83,7 @@ class TestInitDownloadsTable:
             "language",
             "publisher",
             "cover_url",
+            "media_type",
         }
         assert columns == expected
 
@@ -475,3 +477,124 @@ class TestListLibrary:
             "filesize_bytes", "completed_at",
         }
         assert set(items[0].keys()) == expected_keys
+
+
+class TestMediaTypeColumn:
+    def test_should_have_media_type_column_after_init(self, history_db: str) -> None:
+        init_downloads_table(history_db)
+
+        with sqlite3.connect(history_db) as conn:
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(downloads)")}
+
+        assert "media_type" in cols
+
+    def test_should_be_idempotent_on_legacy_table(self, history_db: str) -> None:
+        # Build a legacy table that lacks media_type.
+        with sqlite3.connect(history_db) as conn:
+            conn.executescript(_LEGACY_SCHEMA)
+            conn.commit()
+
+        # Two runs of the migration must not raise.
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            _migrate_meta_columns(conn)
+            _migrate_meta_columns(conn)
+            conn.commit()
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
+
+        assert "media_type" in cols
+
+    def test_should_persist_media_type_value_when_set(self, history_db: str) -> None:
+        record_download_start(history_db, md5="mt1", title="Audiobook", meta={"media_type": "audiobook"})
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'mt1'").fetchone()
+
+        assert row["media_type"] == "audiobook"
+
+    def test_should_default_to_null_when_media_type_not_provided(self, history_db: str) -> None:
+        record_download_start(history_db, md5="mt2", title="Unknown")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'mt2'").fetchone()
+
+        assert row["media_type"] is None
+
+
+class TestBackfillMediaType:
+    def test_should_set_book_for_completed_rows_with_null_media_type(self, history_db: str) -> None:
+        record_download_start(history_db, md5="bf1", title="Old Book")
+        record_download_complete(history_db, md5="bf1", filename="old.pdf", filesize_bytes=1)
+
+        count = backfill_media_type(history_db)
+
+        assert count == 1
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'bf1'").fetchone()
+        assert row["media_type"] == "book"
+
+    def test_should_not_update_non_completed_rows(self, history_db: str) -> None:
+        record_download_start(history_db, md5="bf2", title="Started")  # status='started'
+        record_download_start(history_db, md5="bf3", title="Failed")
+        record_download_failed(history_db, md5="bf3", error="oops")
+
+        count = backfill_media_type(history_db)
+
+        assert count == 0
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            for md5 in ("bf2", "bf3"):
+                row = conn.execute("SELECT media_type FROM downloads WHERE md5 = ?", (md5,)).fetchone()
+                assert row["media_type"] is None
+
+    def test_should_skip_rows_already_having_media_type(self, history_db: str) -> None:
+        record_download_start(history_db, md5="bf4", title="Audiobook", meta={"media_type": "audiobook"})
+        record_download_complete(history_db, md5="bf4", filename="ab.zip", filesize_bytes=1)
+
+        count = backfill_media_type(history_db)
+
+        # Row already had media_type='audiobook' — must not be touched.
+        assert count == 0
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'bf4'").fetchone()
+        assert row["media_type"] == "audiobook"
+
+    def test_should_be_idempotent_when_called_twice(self, history_db: str) -> None:
+        record_download_start(history_db, md5="bf5", title="Repeat")
+        record_download_complete(history_db, md5="bf5", filename="r.pdf", filesize_bytes=1)
+
+        backfill_media_type(history_db)
+        count2 = backfill_media_type(history_db)
+
+        assert count2 == 0  # second run is a no-op
+
+    def test_should_update_only_completed_rows_in_mixed_table(self, history_db: str) -> None:
+        # One completed, one started — only the completed one should be backfilled.
+        record_download_start(history_db, md5="bf6", title="Complete")
+        record_download_complete(history_db, md5="bf6", filename="c.pdf", filesize_bytes=1)
+        record_download_start(history_db, md5="bf7", title="Pending")
+
+        count = backfill_media_type(history_db)
+
+        assert count == 1
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row6 = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'bf6'").fetchone()
+            row7 = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'bf7'").fetchone()
+        assert row6["media_type"] == "book"
+        assert row7["media_type"] is None
+
+
+class TestForeignKeyPragma:
+    def test_should_have_foreign_keys_enabled_on_new_connection(self, history_db: str) -> None:
+        init_downloads_table(history_db)
+
+        from src.download_history import _connect
+        with _connect(history_db) as conn:
+            result = conn.execute("PRAGMA foreign_keys").fetchone()
+        # SQLite returns 1 when foreign_keys is ON.
+        assert result[0] == 1
