@@ -364,6 +364,25 @@ def get_download_stats(db_path: str | None = None) -> dict[str, Any]:
     }
 
 
+def set_media_type(md5: str, media_type: str, db_path: str | None = None) -> None:
+    """Set media_type for the given md5.
+
+    No-op if ``md5`` is empty or the row does not exist.
+    """
+    if not md5:
+        logger.warning("set_media_type called without an md5 — skipping")
+        return
+
+    _ensure_table(db_path)
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE downloads SET media_type = ? WHERE md5 = ?",
+            (media_type, md5),
+        )
+        conn.commit()
+    logger.debug(f"Set media_type={media_type!r} for {md5[:8]}")
+
+
 def backfill_media_type(db_path: str | None = None) -> int:
     """Set media_type='book' for completed rows that predate the audiobook feature.
 

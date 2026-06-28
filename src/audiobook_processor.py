@@ -43,9 +43,7 @@ _EXTRACT_TIMEOUT = 600  # seconds
 
 # Windows reserved device names (case-insensitive, with or without extension).
 _RESERVED_NAMES = frozenset(
-    {"CON", "PRN", "AUX", "NUL"}
-    | {f"COM{i}" for i in range(0, 10)}
-    | {f"LPT{i}" for i in range(0, 10)}
+    {"CON", "PRN", "AUX", "NUL"} | {f"COM{i}" for i in range(0, 10)} | {f"LPT{i}" for i in range(0, 10)}
 )
 
 

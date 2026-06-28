@@ -203,9 +203,7 @@ class TestChapterBuilders:
         assert chapters[0]["duration_seconds"] == 12.0
         assert chapters[0]["title"] == "T-a.mp3"
 
-    def test_should_fall_back_to_filename_stem_when_no_title_tag(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_should_fall_back_to_filename_stem_when_no_title_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "src.audiobook_processor.media_tools.probe_media",
             lambda path: {"format": {"duration": "5.0"}},
@@ -220,9 +218,7 @@ class TestChapterBuilders:
 # ---------------------------------------------------------------------------
 @pytest.mark.skipif(not _have_ffmpeg() or not _have_7z(), reason="ffmpeg/7z required")
 class TestProcessEndToEnd:
-    def test_should_process_single_mp3_zip_to_one_ready_chapter(
-        self, tmp_path: Path, db_redirect: str
-    ) -> None:
+    def test_should_process_single_mp3_zip_to_one_ready_chapter(self, tmp_path: Path, db_redirect: str) -> None:
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         mp3 = tmp_path / "track.mp3"
@@ -246,9 +242,7 @@ class TestProcessEndToEnd:
         assert chapters[0]["rel_path"] == f"audiobooks/{_MD5}/track.mp3"
         assert not (out_dir / "audiobooks" / f"{_MD5}.tmp").exists()
 
-    def test_should_order_multi_file_chapters_naturally(
-        self, tmp_path: Path, db_redirect: str
-    ) -> None:
+    def test_should_order_multi_file_chapters_naturally(self, tmp_path: Path, db_redirect: str) -> None:
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         mp3 = tmp_path / "src.mp3"
@@ -269,9 +263,7 @@ class TestProcessEndToEnd:
             f"audiobooks/{_MD5}/disc/chapter 34 first half.mp3",
         ]
 
-    def test_should_reject_traversal_member_and_write_nothing_outside(
-        self, tmp_path: Path, db_redirect: str
-    ) -> None:
+    def test_should_reject_traversal_member_and_write_nothing_outside(self, tmp_path: Path, db_redirect: str) -> None:
         out_dir = tmp_path / "out"
         out_dir.mkdir()
         mp3 = tmp_path / "src.mp3"

@@ -174,6 +174,17 @@ def main() -> None:
     except Exception as exc:
         logger.warning("Could not clean up orphaned downloads: %s", exc)
 
+    # Recover stuck audiobooks and sweep stale .tmp files from a previous run
+    try:
+        import audiobook_queue
+
+        from src.config_manager import get_config as _get_config
+
+        _out_dir = _get_config().get("out_dir", "")
+        audiobook_queue.resweep(_out_dir)
+    except Exception as exc:
+        logger.warning("Could not resweep audiobook queue: %s", exc)
+
     logger.info("Bridge ready (project root: %s)", _PROJECT_ROOT)
 
     # Read from stdin in binary mode to match the binary stdout approach.

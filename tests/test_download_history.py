@@ -18,6 +18,7 @@ from src.download_history import (
     record_download_complete,
     record_download_failed,
     record_download_start,
+    set_media_type,
 )
 
 # The legacy (pre-metadata) schema, used to prove the guarded migration adds
@@ -472,9 +473,18 @@ class TestListLibrary:
 
         items = list_library(history_db)
         expected_keys = {
-            "md5", "title", "filename", "author", "year", "extension",
-            "content_type", "language", "publisher", "cover_url",
-            "filesize_bytes", "completed_at",
+            "md5",
+            "title",
+            "filename",
+            "author",
+            "year",
+            "extension",
+            "content_type",
+            "language",
+            "publisher",
+            "cover_url",
+            "filesize_bytes",
+            "completed_at",
         }
         assert set(items[0].keys()) == expected_keys
 
@@ -589,11 +599,48 @@ class TestBackfillMediaType:
         assert row7["media_type"] is None
 
 
+class TestSetMediaType:
+    def test_should_update_media_type_when_row_exists(self, history_db: str) -> None:
+        record_download_start(history_db, md5="smt1", title="Some File")
+        record_download_complete(history_db, md5="smt1", filename="some.zip", filesize_bytes=1)
+
+        set_media_type("smt1", "audiobook", history_db)
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'smt1'").fetchone()
+        assert row["media_type"] == "audiobook"
+
+    def test_should_overwrite_existing_media_type(self, history_db: str) -> None:
+        record_download_start(history_db, md5="smt2", title="Reclassified", meta={"media_type": "book"})
+        record_download_complete(history_db, md5="smt2", filename="reclassified.zip", filesize_bytes=1)
+
+        set_media_type("smt2", "audiobook", history_db)
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = 'smt2'").fetchone()
+        assert row["media_type"] == "audiobook"
+
+    def test_should_be_no_op_when_md5_is_empty(self, history_db: str) -> None:
+        init_downloads_table(history_db)
+        set_media_type("", "book", history_db)  # must not raise
+
+        with sqlite3.connect(history_db) as conn:
+            count = conn.execute("SELECT COUNT(*) FROM downloads").fetchone()[0]
+        assert count == 0
+
+    def test_should_be_no_op_when_md5_not_found(self, history_db: str) -> None:
+        init_downloads_table(history_db)
+        set_media_type("nonexistent", "book", history_db)  # must not raise
+
+
 class TestForeignKeyPragma:
     def test_should_have_foreign_keys_enabled_on_new_connection(self, history_db: str) -> None:
         init_downloads_table(history_db)
 
         from src.download_history import _connect
+
         with _connect(history_db) as conn:
             result = conn.execute("PRAGMA foreign_keys").fetchone()
         # SQLite returns 1 when foreign_keys is ON.

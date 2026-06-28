@@ -42,6 +42,7 @@ class DownloadEntry:
     file_path: str | None = None
     started_at: float | None = None  # unix timestamp
     telemetry_emitted: bool = False  # guard: download_analytics row sent once
+    audiobook_enqueued: bool = False  # guard: audiobook_queue.enqueue or media_type='book' set once
     meta: dict[str, Any] = field(default_factory=dict)  # search-result metadata; not serialised
 
     def to_dict(self) -> dict[str, Any]:
@@ -137,6 +138,43 @@ _prune_thread.start()
 _TERMINAL_STATES = ("completed", "failed", "cancelled")
 
 
+_ARCHIVE_EXTS = frozenset({".zip", ".rar", ".7z"})
+
+
+def _handle_completed_file(entry: DownloadEntry, out_dir: str) -> None:
+    """Peek-gate: enqueue archives for audiobook processing; mark others 'book'.
+
+    Must be called with ``_lock`` held.  Guards against double-execution via
+    ``entry.audiobook_enqueued``.  Failures are swallowed so the download is
+    never affected.
+    """
+    if entry.audiobook_enqueued or entry.status != "completed" or not entry.file_path:
+        return
+    if not os.path.isfile(entry.file_path):
+        return
+    entry.audiobook_enqueued = True
+
+    ext = os.path.splitext(entry.file_path)[1].lower()
+    md5 = entry.md5
+    file_path = entry.file_path
+
+    if ext in _ARCHIVE_EXTS:
+        try:
+            import audiobook_queue
+
+            audiobook_queue.enqueue(md5, file_path, out_dir)
+        except Exception:
+            logger.warning("audiobook_queue.enqueue failed for %s", md5[:8], exc_info=True)
+    else:
+        try:
+            from src.download_history import set_media_type
+
+            config = get_config()
+            set_media_type(md5, "book", db_path=config.get("history_db"))
+        except Exception:
+            logger.warning("set_media_type book failed for %s", md5[:8], exc_info=True)
+
+
 def _emit_download_terminal(entry: DownloadEntry) -> None:
     """Emit a single download_analytics row when a download reaches a terminal state.
 
@@ -151,11 +189,7 @@ def _emit_download_terminal(entry: DownloadEntry) -> None:
     ext = os.path.splitext(name)[1].lstrip(".").lower() if name else None
     file_size_bytes = entry.total_bytes or None
     duration_seconds = round(time.time() - entry.started_at, 1) if entry.started_at else None
-    avg_speed_bps = (
-        round(file_size_bytes / duration_seconds)
-        if duration_seconds and file_size_bytes
-        else None
-    )
+    avg_speed_bps = round(file_size_bytes / duration_seconds) if duration_seconds and file_size_bytes else None
 
     try:
         import telemetry_emitter
@@ -296,6 +330,7 @@ def _download_worker_inner(md5: str, send_event) -> None:
                 entry.downloaded_bytes = payload["downloaded_bytes"]
             entry.progress_percent = payload.get("progress_percent", entry.progress_percent)
             _emit_download_terminal(entry)
+            _handle_completed_file(entry, out_dir)
         send_event("download_progress", payload)
 
     # Start a progress-polling thread (transport-specific byte progress).
