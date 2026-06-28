@@ -22,32 +22,52 @@ const EXPANDED_MAX_WIDTH = 1100;
 // Minimum top offset so the expanded card clears the 36px titleBarOverlay.
 const EXPANDED_MIN_Y = 36;
 
+type Rect = { x: number; y: number; width: number; height: number };
+
 let playerView: WebContentsView | null = null;
 let ownerWindow: BrowserWindow | null = null;
 let currentMode: PlayerMode = 'hidden';
 // Bound so we can detach window listeners on destroy.
 let resyncBounds: (() => void) | null = null;
+// The body region (right of the sidebar) the renderer asks us to occupy, so the
+// player never covers the sidebar. Null until the first report (full-window fallback).
+let contentRect: Rect | null = null;
 
 export function getMode(): PlayerMode {
   return currentMode;
 }
 
-function computeBounds(
-  win: BrowserWindow,
-  mode: PlayerMode,
-): { x: number; y: number; width: number; height: number } {
-  const { width: W, height: H } = win.getContentBounds();
+function computeBounds(win: BrowserWindow, mode: PlayerMode): Rect {
+  const full = win.getContentBounds();
 
   if (mode === 'expanded') {
-    const w = Math.min(EXPANDED_MAX_WIDTH, W - EXPANDED_MARGIN * 2);
-    const x = Math.round((W - w) / 2);
-    const y = Math.max(EXPANDED_MIN_Y, EXPANDED_MARGIN);
-    const height = H - y - EXPANDED_MARGIN;
-    return { x, y, width: w, height };
+    // Fill the body region so the player covers only the content, not the sidebar.
+    if (contentRect) {
+      return { ...contentRect };
+    }
+    // Fallback before the renderer reports: a centered card clearing the titlebar.
+    const w = Math.min(EXPANDED_MAX_WIDTH, full.width - EXPANDED_MARGIN * 2);
+    const x = Math.round((full.width - w) / 2);
+    const y = EXPANDED_MIN_Y;
+    return { x, y, width: w, height: full.height - y - EXPANDED_MARGIN };
   }
 
-  // mini (also used as the layout for a hidden-but-attached view).
-  return { x: 0, y: H - MINI_HEIGHT, width: W, height: MINI_HEIGHT };
+  // mini: a bottom strip across the body region (full width as fallback).
+  if (contentRect) {
+    return {
+      x: contentRect.x,
+      y: contentRect.y + contentRect.height - MINI_HEIGHT,
+      width: contentRect.width,
+      height: MINI_HEIGHT,
+    };
+  }
+  return { x: 0, y: full.height - MINI_HEIGHT, width: full.width, height: MINI_HEIGHT };
+}
+
+/** Update the body region the player should occupy, then re-layout. */
+export function setContentRect(rect: Rect): void {
+  contentRect = rect;
+  layout();
 }
 
 /** Re-apply bounds for the current mode. Never caches window size. */
@@ -76,6 +96,9 @@ export function ensurePlayerView(win: BrowserWindow): WebContentsView {
     },
   });
 
+  // Transparent so the player UI's frosted/translucent surfaces show the body
+  // softly behind them (glassmorphic look). The page paints its own backdrop.
+  playerView.setBackgroundColor('#00000000');
   playerView.setBorderRadius(12);
   win.contentView.addChildView(playerView);
   void playerView.webContents.loadURL('san-citro://app/player.html');

@@ -203,7 +203,8 @@ export default function PlayerPage() {
   // ---- Render -------------------------------------------------------------
   if (!payload || !currentChapter || !md5) {
     // Nothing loaded yet (the view is built lazily and PLAYER_LOAD follows).
-    return <div className="h-full w-full bg-background" />;
+    // Transparent so nothing flashes before the first PLAYER_LOAD.
+    return <div className="h-full w-full" />;
   }
 
   const title = audiobook?.title || "Untitled";
@@ -230,7 +231,9 @@ export default function PlayerPage() {
         <BookOpenIcon className={`${iconClass} text-muted-foreground/40`} />
       </div>
     ) : (
-      <div className={`${sizeClass} bg-muted overflow-hidden rounded-md shrink-0`}>
+      <div
+        className={`${sizeClass} bg-muted overflow-hidden rounded-md shrink-0 shadow-lg ring-1 ring-black/10`}
+      >
         <img
           src={coverUrl}
           alt={`Cover of ${title}`}
@@ -242,10 +245,21 @@ export default function PlayerPage() {
 
   if (mode === "expanded") {
     return (
-      <div className="flex h-full w-full flex-col overflow-hidden bg-background text-foreground">
+      <div className="relative isolate flex h-full w-full flex-col overflow-hidden text-foreground">
+        {/* Frosted backdrop: blurred cover art under a translucent scrim. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+          {coverUrl && !coverFailed && (
+            <img
+              src={coverUrl}
+              alt=""
+              className="h-full w-full scale-125 object-cover blur-3xl"
+            />
+          )}
+          <div className="absolute inset-0 bg-background/75 backdrop-blur-2xl" />
+        </div>
         {sharedAudio}
         {/* Header */}
-        <div className="flex items-center justify-between border-b px-4 py-2">
+        <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
           <span className="truncate text-sm font-semibold" title={title}>
             {title}
           </span>
@@ -263,7 +277,7 @@ export default function PlayerPage() {
           {/* Chapter list */}
           <nav
             aria-label="Chapters"
-            className="min-h-0 overflow-y-auto border-r p-2"
+            className="min-h-0 overflow-y-auto border-r border-border/40 p-2"
           >
             {chapters.map((c, i) => {
               const active = i === chapterIndex;
@@ -273,10 +287,10 @@ export default function PlayerPage() {
                   type="button"
                   onClick={() => goToChapter(i)}
                   aria-current={active ? "true" : undefined}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm ${
+                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition ${
                     active
-                      ? "bg-primary/10 font-medium text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      ? "bg-primary/15 font-medium text-primary shadow-sm backdrop-blur-sm"
+                      : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
                   }`}
                 >
                   <span className="w-6 shrink-0 text-right tabular-nums text-xs opacity-60">
@@ -342,7 +356,12 @@ export default function PlayerPage() {
 
   // mini
   return (
-    <div className="flex h-full w-full items-center gap-3 border-t bg-background px-3 text-foreground">
+    <div className="relative isolate flex h-full w-full items-center gap-3 px-3 text-foreground">
+      {/* Frosted bar backdrop (translucent over the body). */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 border-t border-border/40 bg-background/80 backdrop-blur-xl"
+      />
       {sharedAudio}
       {cover("size-12", "size-5")}
 

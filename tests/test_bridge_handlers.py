@@ -144,11 +144,18 @@ def test_handle_get_audiobook_detail_returns_audiobook_and_chapters():
     with (
         patch.object(bridge_handlers, "get_audiobook", return_value=fake_audiobook),
         patch.object(bridge_handlers, "get_audiobook_chapters", return_value=fake_chapters),
+        patch.object(
+            bridge_handlers,
+            "get_completed_download",
+            return_value={"title": "HHGTTG", "cover_url": "https://x/c.jpg"},
+        ),
         patch.object(bridge_handlers, "_get_history_db", return_value=None),
     ):
         result = bridge_handlers.handle_get_audiobook_detail({"md5": _VALID_MD5})
 
-    assert result["audiobook"] == fake_audiobook
+    # The download row supplies title + cover the audiobooks table lacks.
+    assert result["audiobook"]["title"] == "HHGTTG"
+    assert result["audiobook"]["cover_url"] == "https://x/c.jpg"
     assert result["chapters"] == fake_chapters
 
 

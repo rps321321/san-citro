@@ -278,7 +278,7 @@ def get_completed_download(db_path: str | None = None, md5: str = "") -> dict[st
         cursor = conn.execute(
             """
             SELECT md5, title, filename, status, started_at,
-                   completed_at, filesize_bytes, error
+                   completed_at, filesize_bytes, error, cover_url
             FROM downloads
             WHERE md5 = ? AND status = 'completed'
             LIMIT 1

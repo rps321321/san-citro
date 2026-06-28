@@ -127,6 +127,15 @@ export function onPlayerActive(
   return ipc().onPlayerActive(cb);
 }
 
+export function setPlayerContentRect(rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): void {
+  ipc().setPlayerContentRect(rect);
+}
+
 // --------------- Settings ---------------
 
 export async function getSettings(): Promise<ConfigModel> {

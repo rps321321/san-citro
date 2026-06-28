@@ -9,6 +9,7 @@ import {
   destroyPlayerView,
   getMode,
   sendToPlayer,
+  setContentRect,
 } from './player-view';
 
 /**
@@ -120,6 +121,15 @@ export function registerIpcHandlers(
     setMode(mode);
     emitPlayerActive(true, mode);
   });
+
+  // main-window renderer -> main: the body region the player should occupy
+  // (right of the sidebar). Keeps the view off the sidebar on resize/toggle.
+  ipcMain.on(
+    IPC_CHANNELS.PLAYER_CONTENT_RECT,
+    (_event, rect: { x: number; y: number; width: number; height: number }) => {
+      setContentRect(rect);
+    }
+  );
 
   ipcMain.handle(IPC_CHANNELS.GET_STATS, () => {
     return bridge.call('get_stats');

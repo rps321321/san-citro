@@ -36,6 +36,7 @@ const IPC_CHANNELS = {
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
   PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
   PLAYER_ACTIVE: 'san-citro:player:active',
+  PLAYER_CONTENT_RECT: 'san-citro:player:contentRect',
 } as const;
 
 const api = {
@@ -93,6 +94,15 @@ const api = {
       ipcRenderer.removeListener(IPC_CHANNELS.PLAYER_ACTIVE, listener);
     };
   },
+
+  // Report the body region (right of the sidebar) so the player view is bounded
+  // to it and never covers the sidebar. Sent on resize / sidebar toggle.
+  setPlayerContentRect: (rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): void => ipcRenderer.send(IPC_CHANNELS.PLAYER_CONTENT_RECT, rect),
 
   getStats: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_STATS),

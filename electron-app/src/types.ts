@@ -64,6 +64,9 @@ export const IPC_CHANNELS = {
   PLAYER_ACTIVE: 'san-citro:player:active',
   GET_AUDIOBOOK_PROGRESS: 'san-citro:getAudiobookProgress',
   SAVE_AUDIOBOOK_PROGRESS: 'san-citro:saveAudiobookProgress',
+  // main-window renderer -> main: the body region (right of the sidebar) the
+  // player view should occupy, so it does not cover the sidebar.
+  PLAYER_CONTENT_RECT: 'san-citro:player:contentRect',
 } as const;
 
 export type PlayerMode = 'mini' | 'expanded' | 'hidden';

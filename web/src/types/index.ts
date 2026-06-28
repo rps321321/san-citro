@@ -203,6 +203,13 @@ export interface SanCitroApi {
   onPlayerActive(
     cb: (state: { active: boolean; mode: PlayerMode | null }) => void
   ): () => void;
+  /** Report the body region (right of the sidebar) the player view should occupy. */
+  setPlayerContentRect(rect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }): void;
   /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
   setTelemetryContext(ctx: {
     device_id: string;

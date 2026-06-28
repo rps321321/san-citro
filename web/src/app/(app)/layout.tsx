@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { UpdateBanner } from "@/components/update-banner";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { onPlayerActive } from "@/lib/api-client";
+import { onPlayerActive, setPlayerContentRect } from "@/lib/api-client";
 
 export default function AppLayout({
   children,
@@ -17,9 +17,34 @@ export default function AppLayout({
   // mini-bar overlays the bottom ~72px of the window. Pad the browsing surface so
   // page content is never hidden behind it.
   const [playerActive, setPlayerActive] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     return onPlayerActive(({ active }) => setPlayerActive(active));
+  }, []);
+
+  // Report the body region (right of the sidebar) so the player view is bounded
+  // to it and never covers the sidebar. Re-report on resize / sidebar toggle.
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el) return;
+    const report = () => {
+      const r = el.getBoundingClientRect();
+      setPlayerContentRect({
+        x: Math.round(r.left),
+        y: Math.round(r.top),
+        width: Math.round(r.width),
+        height: Math.round(r.height),
+      });
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    window.addEventListener("resize", report);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", report);
+    };
   }, []);
 
   return (
@@ -35,6 +60,7 @@ export default function AppLayout({
         <UpdateBanner />
         <AppHeader />
         <main
+          ref={mainRef}
           id="main-content"
           className="flex-1 overflow-auto p-4 md:p-6"
           style={playerActive ? { paddingBottom: 72 } : undefined}

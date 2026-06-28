@@ -431,6 +431,13 @@ def handle_get_audiobook_detail(params: dict[str, Any]) -> dict[str, Any]:
     try:
         audiobook = get_audiobook(db_path=db_path, md5=md5)
         chapters = get_audiobook_chapters(db_path=db_path, md5=md5)
+        # The audiobooks table has no title/cover — those live on the downloads
+        # row. Enrich so the player can show the book title and cover art.
+        if audiobook is not None:
+            download = get_completed_download(db_path=db_path, md5=md5)
+            if download:
+                audiobook["title"] = download.get("title")
+                audiobook["cover_url"] = download.get("cover_url")
     except Exception as exc:
         logger.error("Failed to retrieve audiobook detail for %s: %s", md5, exc, exc_info=True)
         raise RuntimeError("Failed to retrieve audiobook detail.") from exc
