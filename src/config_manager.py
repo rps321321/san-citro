@@ -67,6 +67,16 @@ def get_default_history_db_path() -> str:
     return str(db_path)
 
 
+def _default_download_dir() -> str:
+    """User's standard Downloads folder (e.g. ~/Downloads).
+
+    Used as the default ``out_dir`` so downloads land in a writable, predictable
+    location instead of a path resolved against the process cwd -- which, in the
+    packaged Electron app, can be a read-only directory (-> WinError 5).
+    """
+    return str(Path.home() / "Downloads")
+
+
 def set_config_path(path: str) -> None:
     """Override the config file path (used by --config CLI flag)."""
     global _config_path_override
@@ -117,7 +127,7 @@ def get_config() -> dict[str, Any]:
     On first call, attempts migration from the legacy location.
     """
     defaults: dict[str, Any] = {
-        "out_dir": "downloads",
+        "out_dir": _default_download_dir(),
         "concurrency": 2,
         "proxies": [],
         "base_url": None,  # None = auto-detect via get_working_domain()

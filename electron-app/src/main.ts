@@ -60,7 +60,7 @@ let isQuitting = false;
 
 const getMainWindow = (): BrowserWindow | null => mainWindow;
 
-const DOWNLOADS_DIR = path.join(app.getPath('userData'), 'downloads');
+const DOWNLOADS_DIR = app.getPath('downloads');
 
 // ---------------------------------------------------------------------------
 // Custom protocol: san-citro://

@@ -15,7 +15,7 @@ class TestGetConfig:
         ):
             cfg = config_manager.get_config()
         assert "db_path" not in cfg
-        assert cfg["out_dir"] == "downloads"
+        assert cfg["out_dir"] == config_manager._default_download_dir()
         assert cfg["concurrency"] == 2
         assert cfg["proxies"] == []
 
@@ -28,7 +28,7 @@ class TestGetConfig:
         ):
             cfg = config_manager.get_config()
         assert cfg["concurrency"] == 4
-        assert cfg["out_dir"] == "downloads"  # default merged
+        assert cfg["out_dir"] == config_manager._default_download_dir()  # default merged
 
     def test_returns_defaults_on_corrupt_json(self, tmp_path):
         cfg_file = tmp_path / "bad.json"
