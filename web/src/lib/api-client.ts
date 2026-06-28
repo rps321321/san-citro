@@ -59,9 +59,19 @@ function assertValidMd5(md5: string): void {
   }
 }
 
-export async function startDownload(md5: string, title?: string): Promise<DownloadStatus> {
+export interface DownloadMeta {
+  author?: string | null;
+  year?: number | null;
+  extension?: string | null;
+  content_type?: string | null;
+  language?: string | null;
+  publisher?: string | null;
+  cover_url?: string | null;
+}
+
+export async function startDownload(md5: string, title?: string, meta?: DownloadMeta): Promise<DownloadStatus> {
   assertValidMd5(md5);
-  return timed("start_download", () => ipc().startDownload({ md5, title }));
+  return timed("start_download", () => ipc().startDownload({ md5, title, ...meta }));
 }
 
 export async function getActiveDownloads(): Promise<DownloadStatus[]> {

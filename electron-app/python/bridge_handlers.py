@@ -146,9 +146,15 @@ def handle_start_download(params: dict[str, Any]) -> dict[str, Any]:
     md5 = _validate_md5(params.get("md5", ""))
     title: str = params.get("title", "")
 
+    meta: dict[str, Any] = {
+        k: params.get(k)
+        for k in ("author", "year", "extension", "content_type", "language", "publisher", "cover_url")
+        if params.get(k) is not None
+    }
+
     import download_manager
 
-    return download_manager.enqueue(md5, title)
+    return download_manager.enqueue(md5, title, meta or None)
 
 
 def handle_cancel_download(params: dict[str, Any]) -> dict[str, Any]:

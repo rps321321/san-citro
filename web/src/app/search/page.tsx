@@ -231,7 +231,15 @@ function SearchContent() {
     setDownloadError(null);
     setDownloadingMd5s((prev) => new Set(prev).add(book.md5));
     try {
-      await startDownload(book.md5, book.title);
+      await startDownload(book.md5, book.title, {
+        author: book.author,
+        year: book.year,
+        extension: book.extension,
+        content_type: book.content_type,
+        language: book.language,
+        publisher: book.publisher,
+        cover_url: book.cover_url,
+      });
       incrementEngagement("downloadStarted");
       trackFunnelStep("search_to_download", "download_clicked", 2, { md5: book.md5 });
       trackFeatureDiscovery("download");

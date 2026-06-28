@@ -42,6 +42,7 @@ class DownloadEntry:
     file_path: str | None = None
     started_at: float | None = None  # unix timestamp
     telemetry_emitted: bool = False  # guard: download_analytics row sent once
+    meta: dict[str, Any] = field(default_factory=dict)  # search-result metadata; not serialised
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -180,7 +181,7 @@ def _emit_download_terminal(entry: DownloadEntry) -> None:
         logger.warning("download_analytics telemetry emit failed", exc_info=True)
 
 
-def enqueue(md5: str, title: str) -> dict[str, Any]:
+def enqueue(md5: str, title: str, meta: dict[str, Any] | None = None) -> dict[str, Any]:
     """Queue a new download and spawn its worker thread.
 
     Returns the initial status dict immediately.
@@ -190,7 +191,7 @@ def enqueue(md5: str, title: str) -> dict[str, Any]:
         if md5 in _downloads and _downloads[md5].status in ("queued", "downloading"):
             return _downloads[md5].to_dict()
 
-        entry = DownloadEntry(md5=md5, title=title)
+        entry = DownloadEntry(md5=md5, title=title, meta=meta or {})
         _downloads[md5] = entry
         result = entry.to_dict()
 
@@ -321,6 +322,7 @@ def _download_worker_inner(md5: str, send_event) -> None:
             strategy=create_strategy("chrome", proxies=config.get("proxies")),
             on_status=on_status,
             cancel=entry.cancel_flag,
+            meta=entry.meta,
         )
     finally:
         poll_stop.set()

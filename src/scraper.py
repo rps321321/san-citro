@@ -61,6 +61,28 @@ _LANGUAGE_TOKEN_RE = re.compile(r"^(.+?)\s*\[[a-z]{2,3}\]$", re.IGNORECASE)
 _YEAR_RE = re.compile(r"\b(1[0-9]{3}|20[0-9]{2}|2100)\b")
 
 
+def _detect_content_type(card_text: str) -> str | None:
+    """Map an Anna's Archive content-type token to a short lowercase string.
+
+    Cards carry a token like ``"Book (fiction)"``, ``"Book (non-fiction)"``,
+    ``"Comic"``, ``"Magazine"`` or ``"Musical score"``.  Returns one of
+    ``"fiction"``, ``"non-fiction"``, ``"comic"``, ``"magazine"``, ``"other"``
+    or ``None`` when no token is present.
+    """
+    text = card_text.lower()
+    if "non-fiction" in text or "nonfiction" in text:
+        return "non-fiction"
+    if re.search(r"\bfiction\b", text):
+        return "fiction"
+    if "comic" in text:
+        return "comic"
+    if "magazine" in text:
+        return "magazine"
+    if "musical score" in text or "standards document" in text:
+        return "other"
+    return None
+
+
 def _pick_proxy(proxies: list[str]) -> str | None:
     """Return a random proxy URL from the list, or ``None`` if the list is empty."""
     return random.choice(proxies) if proxies else None
@@ -230,8 +252,8 @@ def scrape_annas_archive(
     -------
     list[dict[str, Any]]
         Each dict contains: ``title``, ``author``, ``year``, ``extension``,
-        ``md5``, ``language``, ``filesize_bytes``, ``publisher``, ``isbn13``,
-        ``is_downloaded``.
+        ``md5``, ``language``, ``content_type``, ``filesize_bytes``,
+        ``publisher``, ``isbn13``, ``is_downloaded``.
 
     Raises
     ------
@@ -360,6 +382,7 @@ def scrape_annas_archive(
             publisher: str | None = None
 
             language, extension, filesize_bytes, year = _parse_card_metadata(card_lines)
+            content_type = _detect_content_type(card_text)
 
             # Find author — typically the line right after the title
             title_idx: int | None = None
@@ -406,6 +429,7 @@ def scrape_annas_archive(
                     "extension": extension,
                     "md5": md5,
                     "language": language,
+                    "content_type": content_type,
                     "filesize_bytes": filesize_bytes,
                     "publisher": publisher,
                     "isbn13": None,

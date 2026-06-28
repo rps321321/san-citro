@@ -46,6 +46,7 @@ def run_download(
     on_status: StatusSink,
     cancel: threading.Event,
     proxies: list[str] | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> str | None:
     """Full tracked download lifecycle for ONE book. Returns the final file
     path on success, else None. Never raises for normal download failure —
@@ -76,7 +77,7 @@ def run_download(
         emit("cancelled")
         return None
 
-    record_download_start(db_path=history_db, md5=md5, title=title)
+    record_download_start(db_path=history_db, md5=md5, title=title, meta=meta)
     emit("started")
     emit("downloading")
 

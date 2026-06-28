@@ -13,6 +13,8 @@ export interface BookRecord {
   isbn13: string;
   /** Cover image URL from Anna's Archive search results */
   cover_url?: string | null;
+  /** Content type token parsed from the search result card, e.g. "fiction", "non-fiction", "comic" */
+  content_type?: string | null;
   /** May be undefined for scraper-fallback results */
   is_downloaded?: boolean;
 }
@@ -87,7 +89,17 @@ export interface SanCitroApi {
     extension?: string;
     language?: string;
   }): Promise<SearchResponse>;
-  startDownload(params: { md5: string; title?: string }): Promise<DownloadStatus>;
+  startDownload(params: {
+    md5: string;
+    title?: string;
+    author?: string | null;
+    year?: number | null;
+    extension?: string | null;
+    content_type?: string | null;
+    language?: string | null;
+    publisher?: string | null;
+    cover_url?: string | null;
+  }): Promise<DownloadStatus>;
   cancelDownload(md5: string): Promise<{ status?: string; error?: string }>;
   getDownloads(): Promise<DownloadStatus[]>;
   getHistory(): Promise<HistoryEntry[]>;

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.download_history import (
+    _migrate_meta_columns,
     get_completed_md5s,
     get_download_history,
     get_download_stats,
@@ -15,6 +16,30 @@ from src.download_history import (
     record_download_complete,
     record_download_failed,
     record_download_start,
+)
+
+# The legacy (pre-metadata) schema, used to prove the guarded migration adds
+# only the missing columns and is safe to run repeatedly.
+_LEGACY_SCHEMA = """
+    CREATE TABLE downloads (
+        md5             TEXT PRIMARY KEY,
+        title           TEXT,
+        filename        TEXT,
+        status          TEXT,
+        started_at      TIMESTAMP,
+        completed_at    TIMESTAMP,
+        filesize_bytes  INTEGER,
+        error           TEXT
+    )
+"""
+_META_COLUMNS = (
+    "author",
+    "year",
+    "extension",
+    "content_type",
+    "language",
+    "publisher",
+    "cover_url",
 )
 
 
@@ -48,6 +73,14 @@ class TestInitDownloadsTable:
             "completed_at",
             "filesize_bytes",
             "error",
+            # Metadata-spine columns added by the guarded migration.
+            "author",
+            "year",
+            "extension",
+            "content_type",
+            "language",
+            "publisher",
+            "cover_url",
         }
         assert columns == expected
 
@@ -270,3 +303,111 @@ class TestGetCompletedMd5s:
 
     def test_should_return_empty_set_for_empty_input(self, history_db: str) -> None:
         assert get_completed_md5s(history_db, []) == set()
+
+
+class TestRecordDownloadStartMeta:
+    def test_should_persist_meta_fields_when_provided(self, history_db: str) -> None:
+        meta = {
+            "author": "Ada Lovelace",
+            "year": 1843,
+            "extension": "pdf",
+            "content_type": "non-fiction",
+            "language": "English",
+            "publisher": "Analytical Press",
+            "cover_url": "https://example.com/c.jpg",
+        }
+        record_download_start(history_db, md5="meta1", title="With Meta", meta=meta)
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'meta1'").fetchone()
+
+        assert row["title"] == "With Meta"
+        assert row["status"] == "started"
+        for key, value in meta.items():
+            assert row[key] == value
+
+    def test_should_leave_meta_columns_null_when_meta_absent(self, history_db: str) -> None:
+        record_download_start(history_db, md5="nometa", title="No Meta")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'nometa'").fetchone()
+
+        for col in _META_COLUMNS:
+            assert row[col] is None
+
+    def test_should_persist_only_present_meta_keys(self, history_db: str) -> None:
+        # Partial meta: only some keys, plus an explicit None that must stay NULL.
+        meta = {"author": "Solo Author", "year": None, "content_type": "fiction"}
+        record_download_start(history_db, md5="partial", title="Partial", meta=meta)
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'partial'").fetchone()
+
+        assert row["author"] == "Solo Author"
+        assert row["content_type"] == "fiction"
+        assert row["year"] is None
+        assert row["extension"] is None
+
+    def test_should_update_meta_on_conflict_when_restarting(self, history_db: str) -> None:
+        record_download_start(history_db, md5="upd", title="v1", meta={"author": "Old"})
+        record_download_start(history_db, md5="upd", title="v2", meta={"author": "New", "year": 2020})
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'upd'").fetchone()
+
+        assert row["title"] == "v2"
+        assert row["author"] == "New"
+        assert row["year"] == 2020
+
+
+class TestGuardedMetaMigration:
+    def test_should_add_missing_columns_to_legacy_table(self, history_db: str) -> None:
+        # Build a legacy table that predates the metadata-spine columns.
+        with sqlite3.connect(history_db) as conn:
+            conn.executescript(_LEGACY_SCHEMA)
+            conn.commit()
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            _migrate_meta_columns(conn)
+            conn.commit()
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
+
+        for col in _META_COLUMNS:
+            assert col in cols
+
+    def test_should_be_safe_to_run_twice(self, history_db: str) -> None:
+        with sqlite3.connect(history_db) as conn:
+            conn.executescript(_LEGACY_SCHEMA)
+            conn.commit()
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            _migrate_meta_columns(conn)
+            # Second run must be a no-op, not an "duplicate column" error.
+            _migrate_meta_columns(conn)
+            conn.commit()
+            cols = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
+
+        for col in _META_COLUMNS:
+            assert col in cols
+
+    def test_should_preserve_existing_rows_through_migration(self, history_db: str) -> None:
+        with sqlite3.connect(history_db) as conn:
+            conn.executescript(_LEGACY_SCHEMA)
+            conn.execute("INSERT INTO downloads (md5, title, status) VALUES ('legacy1', 'Old Row', 'completed')")
+            conn.commit()
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            _migrate_meta_columns(conn)
+            conn.commit()
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'legacy1'").fetchone()
+
+        assert row["title"] == "Old Row"
+        assert row["status"] == "completed"
+        assert row["author"] is None

@@ -14,6 +14,17 @@ logger = get_logger()
 _initialized_dbs: set[str] = set()
 _init_lock = threading.Lock()
 
+# Nullable metadata columns added by a guarded migration (name -> SQLite type).
+_META_COLUMNS: dict[str, str] = {
+    "author": "TEXT",
+    "year": "INTEGER",
+    "extension": "TEXT",
+    "content_type": "TEXT",
+    "language": "TEXT",
+    "publisher": "TEXT",
+    "cover_url": "TEXT",
+}
+
 
 def _resolve_db_path(db_path: str | None) -> str:
     """Resolve a db path, falling back to the platform data dir."""
@@ -53,8 +64,21 @@ def _ensure_table(db_path: str | None = None) -> None:
                     error           TEXT
                 )
             """)
+            _migrate_meta_columns(conn)
             conn.commit()
         _initialized_dbs.add(resolved)
+
+
+def _migrate_meta_columns(conn: sqlite3.Connection) -> None:
+    """Add any missing nullable metadata columns. Idempotent every launch.
+
+    ``ALTER TABLE ADD COLUMN`` is not idempotent on its own, so we read the
+    existing columns via ``PRAGMA table_info`` and only add the missing ones.
+    """
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
+    for name, col_type in _META_COLUMNS.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE downloads ADD COLUMN {name} {col_type}")
 
 
 def init_downloads_table(db_path: str | None = None) -> None:
@@ -91,8 +115,14 @@ def record_download_start(
     db_path: str | None = None,
     md5: str = "",
     title: str = "",
+    meta: dict[str, Any] | None = None,
 ) -> None:
-    """Insert a new row (or update an existing one) with status='started'."""
+    """Insert a new row (or update an existing one) with status='started'.
+
+    ``meta`` may carry any of the nullable metadata fields (author, year,
+    extension, content_type, language, publisher, cover_url). Only keys that
+    are present and non-None are persisted; everything else is left untouched.
+    """
     if not md5:
         logger.warning("record_download_start called without an md5 — skipping")
         return
@@ -100,22 +130,34 @@ def record_download_start(
     _ensure_table(db_path)
     now = datetime.now(UTC).isoformat()
 
+    # Only persist known meta columns that are present and non-None.
+    meta = meta or {}
+    extra_cols = [name for name in _META_COLUMNS if meta.get(name) is not None]
+
+    insert_cols = ["md5", "title", "status", "started_at", *extra_cols]
+    placeholders = ["?", "?", "'started'", "?", *["?"] * len(extra_cols)]
+    insert_values: list[Any] = [md5, title, now, *(meta[name] for name in extra_cols)]
+
+    conflict_updates = [
+        "title          = excluded.title",
+        "status         = 'started'",
+        "started_at     = excluded.started_at",
+        "completed_at   = CASE WHEN downloads.status = 'completed' THEN downloads.completed_at   ELSE NULL END",
+        "filename       = CASE WHEN downloads.status = 'completed' THEN downloads.filename       ELSE NULL END",
+        "filesize_bytes = CASE WHEN downloads.status = 'completed' THEN downloads.filesize_bytes ELSE NULL END",
+        "error          = NULL",
+        *[f"{name} = excluded.{name}" for name in extra_cols],
+    ]
+
+    updates_sql = ",\n    ".join(conflict_updates)
+    sql = (
+        f"INSERT INTO downloads ({', '.join(insert_cols)})\n"
+        f"VALUES ({', '.join(placeholders)})\n"
+        f"ON CONFLICT(md5) DO UPDATE SET\n    {updates_sql}"
+    )
+
     with _connect(db_path) as conn:
-        conn.execute(
-            """
-            INSERT INTO downloads (md5, title, status, started_at)
-            VALUES (?, ?, 'started', ?)
-            ON CONFLICT(md5) DO UPDATE SET
-                title          = excluded.title,
-                status         = 'started',
-                started_at     = excluded.started_at,
-                completed_at   = CASE WHEN downloads.status = 'completed' THEN downloads.completed_at   ELSE NULL END,
-                filename       = CASE WHEN downloads.status = 'completed' THEN downloads.filename       ELSE NULL END,
-                filesize_bytes = CASE WHEN downloads.status = 'completed' THEN downloads.filesize_bytes ELSE NULL END,
-                error          = NULL
-            """,
-            (md5, title, now),
-        )
+        conn.execute(sql, insert_values)
         conn.commit()
     logger.debug(f"Recorded download start for {md5[:8]}")
 
