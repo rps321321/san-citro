@@ -7,6 +7,8 @@ import type {
   UpdateStatus,
   SanCitroApi,
   LibraryItem,
+  Audiobook,
+  AudiobookDetail,
 } from "@/types";
 import { trackBridgeCall } from "./telemetry";
 
@@ -94,6 +96,21 @@ export async function getHistory(): Promise<HistoryEntry[]> {
 
 export async function listLibrary(): Promise<LibraryItem[]> {
   return timed("list_library", () => ipc().listLibrary());
+}
+
+// --------------- Audiobooks ---------------
+
+export async function listAudiobooks(): Promise<Audiobook[]> {
+  return timed("list_audiobooks", () => ipc().listAudiobooks());
+}
+
+export async function getAudiobookDetail(md5: string): Promise<AudiobookDetail> {
+  assertValidMd5(md5);
+  return timed("get_audiobook_detail", () => ipc().getAudiobookDetail(md5));
+}
+
+export function onAudiobookStatus(cb: (e: { md5: string; status: string }) => void): () => void {
+  return ipc().onAudiobookStatus(cb);
 }
 
 // --------------- Settings ---------------

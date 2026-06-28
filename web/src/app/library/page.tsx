@@ -7,6 +7,12 @@ import {
   LayoutGridIcon,
   ListIcon,
   SearchIcon,
+  HeadphonesIcon,
+  Loader2Icon,
+  CircleCheckIcon,
+  CircleAlertIcon,
+  BanIcon,
+  FolderOpenIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -29,8 +35,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import { listLibrary } from "@/lib/api-client";
-import type { LibraryItem } from "@/types";
+import {
+  listLibrary,
+  listAudiobooks,
+  onAudiobookStatus,
+} from "@/lib/api-client";
+import type { Audiobook, LibraryItem } from "@/types";
 
 // ---------------------------------------------------------------------------
 // View persistence
@@ -128,6 +138,211 @@ function Cover({
 }
 
 // ---------------------------------------------------------------------------
+// Audiobooks
+// ---------------------------------------------------------------------------
+
+/** Format a duration in seconds as "Hh Mm" / "Mm" — null/0 renders nothing. */
+function formatDuration(seconds: number | null): string | null {
+  if (!seconds || seconds <= 0) return null;
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m > 0) return `${m}m`;
+  return "< 1m";
+}
+
+type StatusVariant = "success" | "warning" | "outline" | "destructive";
+
+interface StatusDisplay {
+  label: string;
+  variant: StatusVariant;
+  spinning: boolean;
+}
+
+/** Map a raw audiobook status string to a badge label + variant. */
+function statusDisplay(status: string): StatusDisplay {
+  switch (status) {
+    case "ready":
+    case "completed":
+      return { label: "Ready", variant: "success", spinning: false };
+    case "unsupported":
+      return { label: "Unsupported", variant: "outline", spinning: false };
+    case "error":
+    case "failed":
+      return { label: "Error", variant: "destructive", spinning: false };
+    default:
+      // pending / queued / processing / downloading / extracting …
+      return { label: "Processing…", variant: "warning", spinning: true };
+  }
+}
+
+function isReady(status: string): boolean {
+  return status === "ready" || status === "completed";
+}
+
+function StatusBadge({ book }: { book: Audiobook }) {
+  const { label, variant, spinning } = statusDisplay(book.status);
+  const isError = variant === "destructive";
+  const Icon = spinning
+    ? Loader2Icon
+    : variant === "success"
+      ? CircleCheckIcon
+      : isError
+        ? CircleAlertIcon
+        : BanIcon;
+  return (
+    <Badge
+      variant={variant}
+      className="gap-1"
+      title={isError && book.error_message ? book.error_message : undefined}
+    >
+      <Icon className={spinning ? "animate-spin" : undefined} />
+      {label}
+    </Badge>
+  );
+}
+
+function AudiobookCard({ book }: { book: Audiobook }) {
+  const ready = isReady(book.status);
+  const title = book.title || "Untitled";
+  const duration = formatDuration(book.total_duration_seconds);
+
+  const handleOpen = () => {
+    // No player yet (Phase 4) — reveal the source archive in the file manager.
+    if (ready) window.sanCitro?.showItemInFolder(book.md5);
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleOpen}
+      disabled={!ready}
+      className="group text-left space-y-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default"
+      title={ready ? "Show in folder (player coming soon)" : title}
+    >
+      <div className="relative">
+        <Cover coverUrl={book.cover_url} title={title} size="grid" />
+        <div className="absolute left-1.5 top-1.5">
+          <StatusBadge book={book} />
+        </div>
+        {ready && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+            <span className="flex items-center gap-1.5 rounded-md bg-background/90 px-2.5 py-1 text-xs font-medium">
+              <FolderOpenIcon className="size-3.5" />
+              Show in folder
+            </span>
+          </div>
+        )}
+      </div>
+      <div>
+        <div className="truncate text-sm font-medium leading-snug group-hover:underline group-disabled:no-underline">
+          {title}
+        </div>
+        <div className="truncate text-xs text-muted-foreground">
+          {[
+            book.track_count ? `${book.track_count} tracks` : null,
+            duration,
+            book.container_type ? book.container_type.toUpperCase() : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Player coming soon"}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function AudiobooksPanel() {
+  const [books, setBooks] = useState<Audiobook[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setIsLoading(true);
+    try {
+      const data = await listAudiobooks();
+      setBooks(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load audiobooks");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load(true);
+    // Live status: re-fetch (without the loading skeleton) so a Processing…
+    // row flips to Ready — with its freshly-populated track_count / duration —
+    // as the backend finishes.
+    const unsubscribe = onAudiobookStatus(() => {
+      void load();
+    });
+    return unsubscribe;
+  }, [load]);
+
+  if (isLoading) {
+    return (
+      <div
+        role="status"
+        aria-label="Loading audiobooks"
+        aria-busy="true"
+        className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+      >
+        <span className="sr-only">Loading audiobooks…</span>
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="aspect-[2/3] w-full rounded-lg" />
+            <Skeleton className="h-4 w-3/4" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive flex items-center justify-between gap-3"
+      >
+        <span>{error}</span>
+        <button
+          type="button"
+          className="shrink-0 underline underline-offset-2 font-medium"
+          onClick={() => void load(true)}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (books.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <HeadphonesIcon className="size-12 mb-4 text-muted-foreground/40" />
+        <p className="text-sm">No audiobooks yet</p>
+        <Button variant="outline" size="sm" className="mt-4" render={<a href="/search" />}>
+          <SearchIcon className="size-3.5" />
+          Search for an audiobook to download
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {books.map((book) => (
+        <AudiobookCard key={book.md5} book={book} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Filter helpers — only surface options that exist in the data
 // ---------------------------------------------------------------------------
 
@@ -182,7 +397,11 @@ function FilterSelect({
 // Page
 // ---------------------------------------------------------------------------
 
+type Tab = "books" | "audiobooks";
+
 export default function LibraryPage() {
+  const [tab, setTab] = useState<Tab>("books");
+
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -236,6 +455,32 @@ export default function LibraryPage() {
 
   return (
     <div className="space-y-6">
+      {/* Tabs */}
+      <div className="flex items-center gap-1 rounded-lg border p-0.5 w-fit">
+        <Button
+          variant={tab === "books" ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => setTab("books")}
+          aria-pressed={tab === "books"}
+        >
+          <BookOpenIcon className="size-4" />
+          Books
+        </Button>
+        <Button
+          variant={tab === "audiobooks" ? "secondary" : "ghost"}
+          size="sm"
+          onClick={() => setTab("audiobooks")}
+          aria-pressed={tab === "audiobooks"}
+        >
+          <HeadphonesIcon className="size-4" />
+          Audiobooks
+        </Button>
+      </div>
+
+      {tab === "audiobooks" ? (
+        <AudiobooksPanel />
+      ) : (
+        <>
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -421,6 +666,8 @@ export default function LibraryPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+        </>
       )}
     </div>
   );

@@ -17,6 +17,11 @@ from typing import Any
 
 import telemetry_emitter
 
+from src.audiobook_db import (
+    get_audiobook,
+    get_audiobook_chapters,
+    list_audiobooks,
+)
 from src.config_manager import (
     get_config,
     save_config,
@@ -339,6 +344,32 @@ def handle_list_library(params: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def handle_list_audiobooks(params: dict[str, Any]) -> list[dict[str, Any]]:
+    """list_audiobooks — all audiobooks joined with download title/cover_url."""
+    try:
+        rows = list_audiobooks(db_path=_get_history_db())
+    except Exception as exc:
+        logger.error("Failed to retrieve audiobooks: %s", exc, exc_info=True)
+        raise RuntimeError("Failed to retrieve audiobooks.") from exc
+
+    return rows
+
+
+def handle_get_audiobook_detail(params: dict[str, Any]) -> dict[str, Any]:
+    """get_audiobook_detail — audiobook row + chapters for a given md5."""
+    md5 = _validate_md5(params.get("md5", ""))
+    db_path = _get_history_db()
+
+    try:
+        audiobook = get_audiobook(db_path=db_path, md5=md5)
+        chapters = get_audiobook_chapters(db_path=db_path, md5=md5)
+    except Exception as exc:
+        logger.error("Failed to retrieve audiobook detail for %s: %s", md5, exc, exc_info=True)
+        raise RuntimeError("Failed to retrieve audiobook detail.") from exc
+
+    return {"audiobook": audiobook, "chapters": chapters}
+
+
 def handle_set_telemetry_context(params: dict[str, Any]) -> dict[str, Any]:
     """set_telemetry_context — thread renderer identity + Supabase creds to Python."""
     telemetry_emitter.set_context(
@@ -373,3 +404,5 @@ def register_handlers() -> None:
     register_method("resolve_download_path", handle_resolve_download_path)
     register_method("set_telemetry_context", handle_set_telemetry_context)
     register_method("list_library", handle_list_library)
+    register_method("list_audiobooks", handle_list_audiobooks)
+    register_method("get_audiobook_detail", handle_get_audiobook_detail)

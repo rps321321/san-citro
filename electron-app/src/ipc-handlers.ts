@@ -38,6 +38,14 @@ export function registerIpcHandlers(
     return bridge.call('list_library');
   });
 
+  ipcMain.handle(IPC_CHANNELS.LIST_AUDIOBOOKS, () => {
+    return bridge.call('list_audiobooks');
+  });
+
+  ipcMain.handle(IPC_CHANNELS.GET_AUDIOBOOK_DETAIL, (_event, { md5 }: { md5: string }) => {
+    return bridge.call('get_audiobook_detail', { md5 });
+  });
+
   ipcMain.handle(IPC_CHANNELS.GET_STATS, () => {
     return bridge.call('get_stats');
   });
@@ -150,6 +158,13 @@ export function registerIpcHandlers(
         title: 'Download complete',
         body: p.title ?? 'Your download has finished.',
       }).show();
+    }
+  });
+
+  bridge.on('audiobook_status', (params) => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.AUDIOBOOK_STATUS, params);
     }
   });
 

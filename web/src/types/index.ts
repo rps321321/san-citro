@@ -69,6 +69,31 @@ export interface LibraryItem {
   completed_at: string | null;
 }
 
+export interface Audiobook {
+  md5: string;
+  title: string | null;
+  cover_url: string | null;
+  status: string;
+  container_type: string | null;
+  track_count: number | null;
+  total_duration_seconds: number | null;
+  error_message: string | null;
+}
+
+export interface Chapter {
+  chapter_id: number;
+  chapter_index: number;
+  title: string | null;
+  rel_path: string;
+  start_offset_seconds: number;
+  duration_seconds: number | null;
+}
+
+export interface AudiobookDetail {
+  audiobook: Audiobook | null;
+  chapters: Chapter[];
+}
+
 export interface ConfigModel {
   out_dir: string;
   concurrency: number;
@@ -142,6 +167,12 @@ export interface SanCitroApi {
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   /** List completed downloads with threaded metadata (the library). */
   listLibrary(): Promise<LibraryItem[]>;
+  /** List all audiobooks tracked in the audiobook DB. */
+  listAudiobooks(): Promise<Audiobook[]>;
+  /** Get detail (audiobook row + chapters) for a single audiobook. */
+  getAudiobookDetail(md5: string): Promise<AudiobookDetail>;
+  /** Subscribe to live audiobook status events. Returns an unsubscribe function. */
+  onAudiobookStatus(cb: (e: { md5: string; status: string }) => void): () => void;
   /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
   setTelemetryContext(ctx: {
     device_id: string;

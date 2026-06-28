@@ -31,6 +31,9 @@ const IPC_CHANNELS = {
   UPDATE_STATUS: 'san-citro:updateStatus',
   SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
   LIST_LIBRARY: 'san-citro:listLibrary',
+  LIST_AUDIOBOOKS: 'san-citro:listAudiobooks',
+  GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
+  AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
 } as const;
 
 const api = {
@@ -54,6 +57,22 @@ const api = {
 
   listLibrary: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.LIST_LIBRARY),
+
+  listAudiobooks: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LIST_AUDIOBOOKS),
+
+  getAudiobookDetail: (md5: string): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_AUDIOBOOK_DETAIL, { md5 }),
+
+  onAudiobookStatus: (callback: (data: unknown) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+      callback(data);
+    };
+    ipcRenderer.on(IPC_CHANNELS.AUDIOBOOK_STATUS, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.AUDIOBOOK_STATUS, listener);
+    };
+  },
 
   getStats: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_STATS),
