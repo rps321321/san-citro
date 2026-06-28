@@ -56,7 +56,17 @@ export const IPC_CHANNELS = {
   LIST_AUDIOBOOKS: 'san-citro:listAudiobooks',
   GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
+  // --- Persistent audiobook player (Phase 4) ---
+  PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
+  PLAYER_LOAD: 'san-citro:player:load',
+  PLAYER_SET_MODE: 'san-citro:player:setMode',
+  PLAYER_REQUEST_MODE: 'san-citro:player:requestMode',
+  PLAYER_ACTIVE: 'san-citro:player:active',
+  GET_AUDIOBOOK_PROGRESS: 'san-citro:getAudiobookProgress',
+  SAVE_AUDIOBOOK_PROGRESS: 'san-citro:saveAudiobookProgress',
 } as const;
+
+export type PlayerMode = 'mini' | 'expanded' | 'hidden';
 
 export interface UpdateStatus {
   status:

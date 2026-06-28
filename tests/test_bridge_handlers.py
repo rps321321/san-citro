@@ -180,3 +180,201 @@ def test_handle_get_audiobook_detail_propagates_error():
         pytest.raises(RuntimeError, match="Failed to retrieve audiobook detail"),
     ):
         bridge_handlers.handle_get_audiobook_detail({"md5": _VALID_MD5})
+
+
+# ---------------------------------------------------------------------------
+# handle_get_chapter_path
+# ---------------------------------------------------------------------------
+
+
+def test_handle_get_chapter_path_returns_path(tmp_path):
+    """Happy path: valid ownership + containment + existing file."""
+    md5 = "d" * 32
+    audio_file = tmp_path / "audiobooks" / md5 / "track01.mp3"
+    audio_file.parent.mkdir(parents=True)
+    audio_file.write_bytes(b"")
+
+    fake_chapter = {
+        "chapter_id": 1,
+        "md5": md5,
+        "rel_path": f"audiobooks/{md5}/track01.mp3",
+    }
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_chapter", return_value=fake_chapter),
+        patch.object(bridge_handlers, "get_config", return_value={"out_dir": str(tmp_path)}),
+        patch.object(bridge_handlers, "validate_writable_dir", side_effect=lambda d: d),
+    ):
+        result = bridge_handlers.handle_get_chapter_path({"md5": md5, "chapter_id": 1})
+
+    import os
+
+    assert result == os.path.realpath(str(audio_file))
+
+
+def test_handle_get_chapter_path_rejects_wrong_ownership(tmp_path):
+    """Chapter row md5 differs from requested md5 -> None."""
+    md5 = "e" * 32
+    other_md5 = "f" * 32
+
+    fake_chapter = {
+        "chapter_id": 2,
+        "md5": other_md5,
+        "rel_path": f"audiobooks/{other_md5}/track01.mp3",
+    }
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_chapter", return_value=fake_chapter),
+        patch.object(bridge_handlers, "get_config", return_value={"out_dir": str(tmp_path)}),
+        patch.object(bridge_handlers, "validate_writable_dir", side_effect=lambda d: d),
+    ):
+        result = bridge_handlers.handle_get_chapter_path({"md5": md5, "chapter_id": 2})
+
+    assert result is None
+
+
+def test_handle_get_chapter_path_rejects_path_escape(tmp_path):
+    """rel_path that escapes out_dir via ../ -> None."""
+    md5 = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+
+    fake_chapter = {
+        "chapter_id": 3,
+        "md5": md5,
+        "rel_path": "../../etc/passwd",
+    }
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_chapter", return_value=fake_chapter),
+        patch.object(bridge_handlers, "get_config", return_value={"out_dir": str(tmp_path)}),
+        patch.object(bridge_handlers, "validate_writable_dir", side_effect=lambda d: d),
+    ):
+        result = bridge_handlers.handle_get_chapter_path({"md5": md5, "chapter_id": 3})
+
+    assert result is None
+
+
+def test_handle_get_chapter_path_returns_none_when_missing(tmp_path):
+    """Chapter row exists but file is absent -> None."""
+    md5 = "1234567890abcdef1234567890abcdef"
+    fake_chapter = {
+        "chapter_id": 4,
+        "md5": md5,
+        "rel_path": f"audiobooks/{md5}/missing.mp3",
+    }
+    # Ensure the audiobooks dir exists but the file does not.
+    (tmp_path / "audiobooks" / md5).mkdir(parents=True)
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_chapter", return_value=fake_chapter),
+        patch.object(bridge_handlers, "get_config", return_value={"out_dir": str(tmp_path)}),
+        patch.object(bridge_handlers, "validate_writable_dir", side_effect=lambda d: d),
+    ):
+        result = bridge_handlers.handle_get_chapter_path({"md5": md5, "chapter_id": 4})
+
+    assert result is None
+
+
+def test_handle_get_chapter_path_returns_none_for_unknown_chapter():
+    """get_chapter returns None -> handler returns None."""
+    md5 = "abcdef1234567890abcdef1234567890"
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_chapter", return_value=None),
+        patch.object(bridge_handlers, "get_config", return_value={"out_dir": "/tmp/x"}),
+        patch.object(bridge_handlers, "validate_writable_dir", side_effect=lambda d: d),
+    ):
+        result = bridge_handlers.handle_get_chapter_path({"md5": md5, "chapter_id": 99})
+
+    assert result is None
+
+
+def test_handle_get_chapter_path_rejects_non_int_chapter_id():
+    """chapter_id that is not an int raises ValueError."""
+    import pytest
+
+    md5 = "abcdef1234567890abcdef1234567890"
+    with pytest.raises(ValueError, match="chapter_id must be an integer"):
+        bridge_handlers.handle_get_chapter_path({"md5": md5, "chapter_id": "one"})
+
+
+def test_handle_get_chapter_path_rejects_bad_md5():
+    """Bad md5 raises ValueError from _validate_md5."""
+    import pytest
+
+    with pytest.raises(ValueError, match="Invalid md5"):
+        bridge_handlers.handle_get_chapter_path({"md5": "short", "chapter_id": 1})
+
+
+# ---------------------------------------------------------------------------
+# handle_get_audiobook_progress / handle_save_audiobook_progress
+# ---------------------------------------------------------------------------
+
+
+def test_handle_get_audiobook_progress_returns_row():
+    md5 = _VALID_MD5
+    fake_progress = {
+        "md5": md5,
+        "chapter_id": 2,
+        "file_position_seconds": 123.4,
+        "updated_at": "2026-06-29T00:00:00+00:00",
+    }
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_audiobook_progress", return_value=fake_progress),
+    ):
+        result = bridge_handlers.handle_get_audiobook_progress({"md5": md5})
+
+    assert result == fake_progress
+
+
+def test_handle_get_audiobook_progress_returns_none_when_absent():
+    md5 = _VALID_MD5
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "get_audiobook_progress", return_value=None),
+    ):
+        result = bridge_handlers.handle_get_audiobook_progress({"md5": md5})
+
+    assert result is None
+
+
+def test_handle_save_audiobook_progress_returns_ok():
+    md5 = _VALID_MD5
+
+    with (
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        patch.object(bridge_handlers, "save_audiobook_progress") as mock_save,
+    ):
+        result = bridge_handlers.handle_save_audiobook_progress(
+            {"md5": md5, "chapter_id": 3, "file_position_seconds": 45.6}
+        )
+        mock_save.assert_called_once_with(db_path=None, md5=md5, chapter_id=3, file_position_seconds=45.6)
+
+    assert result == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Registration test — all three new methods resolve via register_method
+# ---------------------------------------------------------------------------
+
+
+def test_registration_includes_new_audiobook_player_methods():
+    """register_handlers must bind all three new player RPC methods."""
+    registered: dict[str, object] = {}
+
+    def fake_register(name: str, fn: object) -> None:
+        registered[name] = fn
+
+    with patch("bridge.register_method", fake_register):
+        bridge_handlers.register_handlers()
+
+    assert "get_chapter_path" in registered, "get_chapter_path not registered"
+    assert "get_audiobook_progress" in registered, "get_audiobook_progress not registered"
+    assert "save_audiobook_progress" in registered, "save_audiobook_progress not registered"

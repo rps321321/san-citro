@@ -20,7 +20,10 @@ import telemetry_emitter
 from src.audiobook_db import (
     get_audiobook,
     get_audiobook_chapters,
+    get_audiobook_progress,
+    get_chapter,
     list_audiobooks,
+    save_audiobook_progress,
 )
 from src.config_manager import (
     get_config,
@@ -338,6 +341,66 @@ def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
     return file_path
 
 
+def handle_get_chapter_path(params: dict[str, Any]) -> str | None:
+    """get_chapter_path — return a realpath-contained absolute audio file path
+    for a chapter owned by the given md5, or None.
+
+    Ownership: the chapter row's md5 MUST equal the requested md5.
+    Containment: the resolved path MUST sit inside realpath(out_dir)+sep.
+    """
+    md5 = _validate_md5(params.get("md5", ""))
+    raw_chapter_id = params.get("chapter_id")
+    if not isinstance(raw_chapter_id, int):
+        raise ValueError("chapter_id must be an integer")
+    chapter_id: int = raw_chapter_id
+
+    db_path = _get_history_db()
+    chapter = get_chapter(db_path=db_path, chapter_id=chapter_id)
+    if chapter is None:
+        return None
+
+    # Ownership check: chapter must belong to the requested audiobook.
+    if chapter.get("md5") != md5:
+        return None
+
+    out_dir_abs = os.path.realpath(validate_writable_dir(get_config().get("out_dir", "downloads")))
+    # rel_path is relative to out_dir (e.g. "audiobooks/<md5>/track01.mp3").
+    rel_path: str = chapter.get("rel_path", "")
+    file_path = os.path.realpath(os.path.join(out_dir_abs, rel_path))
+
+    # Containment: reject any path that escapes out_dir.
+    if not file_path.startswith(out_dir_abs + os.sep):
+        return None
+
+    if not os.path.exists(file_path):
+        return None
+
+    return file_path
+
+
+def handle_get_audiobook_progress(params: dict[str, Any]) -> dict[str, Any] | None:
+    """get_audiobook_progress — return saved playback progress for an md5, or None."""
+    md5 = _validate_md5(params.get("md5", ""))
+    return get_audiobook_progress(db_path=_get_history_db(), md5=md5)
+
+
+def handle_save_audiobook_progress(params: dict[str, Any]) -> dict[str, Any]:
+    """save_audiobook_progress — upsert playback position for an md5."""
+    md5 = _validate_md5(params.get("md5", ""))
+    raw_chapter_id = params.get("chapter_id")
+    chapter_id: int | None = int(raw_chapter_id) if raw_chapter_id is not None else None
+    file_position_seconds: float | None = params.get("file_position_seconds")
+    if file_position_seconds is not None:
+        file_position_seconds = float(file_position_seconds)
+    save_audiobook_progress(
+        db_path=_get_history_db(),
+        md5=md5,
+        chapter_id=chapter_id,
+        file_position_seconds=file_position_seconds,
+    )
+    return {"ok": True}
+
+
 def handle_list_library(params: dict[str, Any]) -> list[dict[str, Any]]:
     """list_library — completed downloads with full metadata."""
     try:
@@ -411,3 +474,6 @@ def register_handlers() -> None:
     register_method("list_library", handle_list_library)
     register_method("list_audiobooks", handle_list_audiobooks)
     register_method("get_audiobook_detail", handle_get_audiobook_detail)
+    register_method("get_chapter_path", handle_get_chapter_path)
+    register_method("get_audiobook_progress", handle_get_audiobook_progress)
+    register_method("save_audiobook_progress", handle_save_audiobook_progress)

@@ -9,6 +9,7 @@ import type {
   LibraryItem,
   Audiobook,
   AudiobookDetail,
+  PlayerMode,
 } from "@/types";
 import { trackBridgeCall } from "./telemetry";
 
@@ -111,6 +112,19 @@ export async function getAudiobookDetail(md5: string): Promise<AudiobookDetail> 
 
 export function onAudiobookStatus(cb: (e: { md5: string; status: string }) => void): () => void {
   return ipc().onAudiobookStatus(cb);
+}
+
+// --------------- Persistent player ---------------
+
+export async function playAudiobook(md5: string): Promise<void> {
+  assertValidMd5(md5);
+  return timed("play_audiobook", () => ipc().playAudiobook(md5));
+}
+
+export function onPlayerActive(
+  cb: (state: { active: boolean; mode: PlayerMode | null }) => void
+): () => void {
+  return ipc().onPlayerActive(cb);
 }
 
 // --------------- Settings ---------------

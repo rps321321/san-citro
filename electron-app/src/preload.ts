@@ -34,6 +34,8 @@ const IPC_CHANNELS = {
   LIST_AUDIOBOOKS: 'san-citro:listAudiobooks',
   GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
+  PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
+  PLAYER_ACTIVE: 'san-citro:player:active',
 } as const;
 
 const api = {
@@ -71,6 +73,24 @@ const api = {
     ipcRenderer.on(IPC_CHANNELS.AUDIOBOOK_STATUS, listener);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.AUDIOBOOK_STATUS, listener);
+    };
+  },
+
+  // --- Persistent audiobook player ---
+
+  // Start (or switch to) playing an audiobook in the persistent player view.
+  playAudiobook: (md5: string): Promise<void> =>
+    ipcRenderer.invoke(IPC_CHANNELS.PLAY_AUDIOBOOK, { md5 }),
+
+  // Notifies the page when the player becomes active/inactive (and its mode) so
+  // it can reserve ~72px of bottom padding for the mini-bar.
+  onPlayerActive: (callback: (data: unknown) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+      callback(data);
+    };
+    ipcRenderer.on(IPC_CHANNELS.PLAYER_ACTIVE, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.PLAYER_ACTIVE, listener);
     };
   },
 

@@ -13,6 +13,8 @@ import log from 'electron-log';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { registerIpcHandlers } from './ipc-handlers';
+import { registerMediaProtocol } from './media-protocol';
+import { getMode, setMode, destroyPlayerView } from './player-view';
 import { showSplash, closeSplash } from './splash';
 import { createTray, destroyTray, setTrayUpdateStatus } from './tray';
 import {
@@ -122,6 +124,18 @@ protocol.registerSchemesAsPrivileged([
       corsEnabled: true,
     },
   },
+  {
+    // Audiobook chapter media. stream:true is REQUIRED so <audio> seeking can
+    // issue HTTP Range requests against the protocol handler.
+    scheme: 'san-citro-media',
+    privileges: {
+      standard: false,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: false,
+    },
+  },
 ]);
 
 // ---------------------------------------------------------------------------
@@ -181,6 +195,20 @@ function createMainWindow(): BrowserWindow {
     }
   });
 
+  // COLLAPSE ON NAV: the renderer uses full-page-reload navigation. If the
+  // player is EXPANDED when the user browses, auto-collapse it to the mini-bar
+  // (audio keeps playing — the view is a sibling, not part of the page).
+  mainWindow.webContents.on('did-start-navigation', (details) => {
+    if (!details.isMainFrame || details.isSameDocument) return;
+    if (getMode() === 'expanded') {
+      setMode('mini');
+      mainWindow?.webContents.send(IPC_CHANNELS.PLAYER_ACTIVE, {
+        active: true,
+        mode: 'mini',
+      });
+    }
+  });
+
   // Prevent new windows — open external URLs in default browser instead
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
@@ -227,6 +255,9 @@ app.whenReady().then(async () => {
   // 5. Register bridge IPC handlers
   registerIpcHandlers(bridge, getMainWindow);
 
+  // 5b. Register the audiobook media protocol (san-citro-media://).
+  registerMediaProtocol(bridge);
+
   // 6. Set up CSP BEFORE creating the window (must be active before loadURL fires)
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -240,6 +271,8 @@ app.whenReady().then(async () => {
           // epub.js renders into a blob: iframe
           "frame-src 'self' san-citro: blob:; " +
           "img-src 'self' san-citro: data: blob: https:; " +
+          // <audio> in the player view streams chapters over san-citro-media://
+          "media-src san-citro-media:; " +
           // Update this domain when NEXT_PUBLIC_SUPABASE_URL changes in web/.env.local
           "connect-src 'self' san-citro: blob: https://uxykfosgpcjexqqdzhsp.supabase.co; " +
           "font-src 'self' san-citro: data: blob:; " +
@@ -318,6 +351,7 @@ app.on('will-quit', async (event) => {
   event.preventDefault();
 
   destroyTray();
+  destroyPlayerView();
 
   // Hard timeout to prevent the app from hanging forever if bridge.kill() stalls
   try {

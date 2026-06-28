@@ -12,7 +12,7 @@ import {
   CircleCheckIcon,
   CircleAlertIcon,
   BanIcon,
-  FolderOpenIcon,
+  PlayIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ import {
   listLibrary,
   listAudiobooks,
   onAudiobookStatus,
+  playAudiobook,
 } from "@/lib/api-client";
 import type { Audiobook, LibraryItem } from "@/types";
 
@@ -219,8 +220,8 @@ function AudiobookCard({ book }: { book: Audiobook }) {
   const duration = formatDuration(book.total_duration_seconds);
 
   const handleOpen = () => {
-    // No player yet (Phase 4) — reveal the source archive in the file manager.
-    if (ready) window.sanCitro?.showItemInFolder(book.md5);
+    // Launch the persistent audiobook player (mini-bar) for this book.
+    if (ready) void playAudiobook(book.md5).catch(() => {});
   };
 
   return (
@@ -229,7 +230,7 @@ function AudiobookCard({ book }: { book: Audiobook }) {
       onClick={handleOpen}
       disabled={!ready}
       className="group text-left space-y-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default"
-      title={ready ? "Show in folder (player coming soon)" : title}
+      title={ready ? "Play" : title}
     >
       <div className="relative">
         <Cover coverUrl={book.cover_url} title={title} size="grid" />
@@ -239,8 +240,8 @@ function AudiobookCard({ book }: { book: Audiobook }) {
         {ready && (
           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
             <span className="flex items-center gap-1.5 rounded-md bg-background/90 px-2.5 py-1 text-xs font-medium">
-              <FolderOpenIcon className="size-3.5" />
-              Show in folder
+              <PlayIcon className="size-3.5" />
+              Play
             </span>
           </div>
         )}
@@ -256,7 +257,7 @@ function AudiobookCard({ book }: { book: Audiobook }) {
             book.container_type ? book.container_type.toUpperCase() : null,
           ]
             .filter(Boolean)
-            .join(" · ") || "Player coming soon"}
+            .join(" · ") || (ready ? "Tap to play" : "Processing…")}
         </div>
       </div>
     </button>
