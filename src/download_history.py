@@ -321,6 +321,23 @@ def get_completed_md5s(db_path: str | None = None, md5s: list[str] | None = None
     return {row["md5"] for row in rows}
 
 
+def list_library(db_path: str | None = None) -> list[dict[str, Any]]:
+    """Return all completed downloads with full metadata, newest first."""
+    _ensure_table(db_path)
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            SELECT md5, title, filename, author, year, extension,
+                   content_type, language, publisher, cover_url,
+                   filesize_bytes, completed_at
+            FROM downloads
+            WHERE status = 'completed'
+            ORDER BY completed_at DESC
+            """
+        )
+        return [dict(row) for row in cursor.fetchall()]
+
+
 def get_download_stats(db_path: str | None = None) -> dict[str, Any]:
     """Return aggregate download stats. Never raises on an empty/new DB."""
     _ensure_table(db_path)

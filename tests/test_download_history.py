@@ -12,6 +12,7 @@ from src.download_history import (
     get_download_stats,
     init_downloads_table,
     is_downloaded,
+    list_library,
     record_download_cancelled,
     record_download_complete,
     record_download_failed,
@@ -411,3 +412,66 @@ class TestGuardedMetaMigration:
         assert row["title"] == "Old Row"
         assert row["status"] == "completed"
         assert row["author"] is None
+
+
+class TestListLibrary:
+    def test_should_return_completed_downloads_with_all_library_fields(self, history_db: str) -> None:
+        meta = {
+            "author": "Jane Austen",
+            "year": 1813,
+            "extension": "epub",
+            "content_type": "fiction",
+            "language": "English",
+            "publisher": "T. Egerton",
+            "cover_url": "https://example.com/pride.jpg",
+        }
+        record_download_start(history_db, md5="lib1", title="Pride and Prejudice", meta=meta)
+        record_download_complete(history_db, md5="lib1", filename="pride.epub", filesize_bytes=512000)
+
+        items = list_library(history_db)
+
+        assert len(items) == 1
+        item = items[0]
+        assert item["md5"] == "lib1"
+        assert item["title"] == "Pride and Prejudice"
+        assert item["filename"] == "pride.epub"
+        assert item["filesize_bytes"] == 512000
+        assert item["completed_at"] is not None
+        for key, value in meta.items():
+            assert item[key] == value
+
+    def test_should_exclude_non_completed_downloads(self, history_db: str) -> None:
+        record_download_start(history_db, md5="started1", title="In Progress")
+        record_download_start(history_db, md5="failed1", title="Failed Book")
+        record_download_failed(history_db, md5="failed1", error="oops")
+        record_download_start(history_db, md5="done1", title="Done Book")
+        record_download_complete(history_db, md5="done1", filename="done.pdf", filesize_bytes=1)
+
+        items = list_library(history_db)
+
+        assert len(items) == 1
+        assert items[0]["md5"] == "done1"
+
+    def test_should_return_empty_list_when_no_completed_downloads(self, history_db: str) -> None:
+        assert list_library(history_db) == []
+
+    def test_should_return_newest_first_by_completed_at(self, history_db: str) -> None:
+        for md5, title in [("x1", "First"), ("x2", "Second"), ("x3", "Third")]:
+            record_download_start(history_db, md5=md5, title=title)
+            record_download_complete(history_db, md5=md5, filename=f"{md5}.pdf", filesize_bytes=1)
+
+        items = list_library(history_db)
+
+        assert [i["title"] for i in items] == ["Third", "Second", "First"]
+
+    def test_should_have_exactly_the_library_fields(self, history_db: str) -> None:
+        record_download_start(history_db, md5="fields1", title="Fields Test")
+        record_download_complete(history_db, md5="fields1", filename="f.pdf", filesize_bytes=0)
+
+        items = list_library(history_db)
+        expected_keys = {
+            "md5", "title", "filename", "author", "year", "extension",
+            "content_type", "language", "publisher", "cover_url",
+            "filesize_bytes", "completed_at",
+        }
+        assert set(items[0].keys()) == expected_keys

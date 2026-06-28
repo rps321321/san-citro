@@ -34,6 +34,10 @@ export function registerIpcHandlers(
     return bridge.call('get_history', params);
   });
 
+  ipcMain.handle(IPC_CHANNELS.LIST_LIBRARY, () => {
+    return bridge.call('list_library');
+  });
+
   ipcMain.handle(IPC_CHANNELS.GET_STATS, () => {
     return bridge.call('get_stats');
   });

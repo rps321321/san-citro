@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { trackInteraction } from "@/lib/telemetry";
 import {
   SearchIcon,
+  LibraryIcon,
   DownloadIcon,
   ClockIcon,
   SettingsIcon,
@@ -38,6 +39,7 @@ import {
 
 const NAV_ITEMS = [
   { label: "Search", href: "/search", icon: SearchIcon },
+  { label: "Library", href: "/library", icon: LibraryIcon },
   { label: "Downloads", href: "/downloads", icon: DownloadIcon },
   { label: "History", href: "/history", icon: ClockIcon },
   { label: "Settings", href: "/settings", icon: SettingsIcon },

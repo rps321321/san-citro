@@ -36,6 +36,7 @@ from src.download_history import (
     get_completed_md5s,
     get_download_history,
     get_download_stats,
+    list_library,
 )
 from src.scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
 
@@ -327,6 +328,17 @@ def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
     return file_path
 
 
+def handle_list_library(params: dict[str, Any]) -> list[dict[str, Any]]:
+    """list_library — completed downloads with full metadata."""
+    try:
+        rows = list_library(db_path=_get_history_db())
+    except Exception as exc:
+        logger.error("Failed to retrieve library: %s", exc, exc_info=True)
+        raise RuntimeError("Failed to retrieve library.") from exc
+
+    return rows
+
+
 def handle_set_telemetry_context(params: dict[str, Any]) -> dict[str, Any]:
     """set_telemetry_context — thread renderer identity + Supabase creds to Python."""
     telemetry_emitter.set_context(
@@ -360,3 +372,4 @@ def register_handlers() -> None:
     register_method("run_diagnostics", handle_run_diagnostics)
     register_method("resolve_download_path", handle_resolve_download_path)
     register_method("set_telemetry_context", handle_set_telemetry_context)
+    register_method("list_library", handle_list_library)

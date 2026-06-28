@@ -54,6 +54,21 @@ export interface HistoryEntry {
   error: string | null;
 }
 
+export interface LibraryItem {
+  md5: string;
+  title: string;
+  filename: string | null;
+  author: string | null;
+  year: number | null;
+  extension: string | null;
+  content_type: string | null;
+  language: string | null;
+  publisher: string | null;
+  cover_url: string | null;
+  filesize_bytes: number | null;
+  completed_at: string | null;
+}
+
 export interface ConfigModel {
   out_dir: string;
   concurrency: number;
@@ -125,6 +140,8 @@ export interface SanCitroApi {
   quitAndInstall(): Promise<void>;
   /** Subscribe to pushed update-status events. Returns an unsubscribe function. */
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+  /** List completed downloads with threaded metadata (the library). */
+  listLibrary(): Promise<LibraryItem[]>;
   /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
   setTelemetryContext(ctx: {
     device_id: string;

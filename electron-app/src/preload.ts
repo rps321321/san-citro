@@ -30,6 +30,7 @@ const IPC_CHANNELS = {
   QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
   UPDATE_STATUS: 'san-citro:updateStatus',
   SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
+  LIST_LIBRARY: 'san-citro:listLibrary',
 } as const;
 
 const api = {
@@ -50,6 +51,9 @@ const api = {
 
   getHistory: (params?: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_HISTORY, params),
+
+  listLibrary: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LIST_LIBRARY),
 
   getStats: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_STATS),

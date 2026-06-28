@@ -6,6 +6,7 @@ import type {
   DiagnosticResult,
   UpdateStatus,
   SanCitroApi,
+  LibraryItem,
 } from "@/types";
 import { trackBridgeCall } from "./telemetry";
 
@@ -87,6 +88,12 @@ export async function cancelDownload(md5: string): Promise<{ status?: string; er
 
 export async function getHistory(): Promise<HistoryEntry[]> {
   return timed("get_history", () => ipc().getHistory());
+}
+
+// --------------- Library ---------------
+
+export async function listLibrary(): Promise<LibraryItem[]> {
+  return timed("list_library", () => ipc().listLibrary());
 }
 
 // --------------- Settings ---------------

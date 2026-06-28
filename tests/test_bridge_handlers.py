@@ -32,3 +32,42 @@ def test_search_has_next_uses_scraper_page_size():
 
     assert result["total_count"] == 20
     assert result["has_next"] is False
+
+
+def test_handle_list_library_returns_rows():
+    fake_rows = [
+        {
+            "md5": "a" * 32,
+            "title": "Test Book",
+            "filename": "test.epub",
+            "author": "Author A",
+            "year": "2020",
+            "extension": "epub",
+            "content_type": "book",
+            "language": "en",
+            "publisher": "Publisher X",
+            "cover_url": "https://example.com/cover.jpg",
+            "filesize_bytes": 1024,
+            "completed_at": "2024-01-01T00:00:00",
+        }
+    ]
+
+    with (
+        patch.object(bridge_handlers, "list_library", return_value=fake_rows),
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+    ):
+        result = bridge_handlers.handle_list_library({})
+
+    assert result == fake_rows
+    assert result[0]["md5"] == "a" * 32
+
+
+def test_handle_list_library_propagates_error():
+    import pytest
+
+    with (
+        patch.object(bridge_handlers, "list_library", side_effect=OSError("db gone")),
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        pytest.raises(RuntimeError, match="Failed to retrieve library"),
+    ):
+        bridge_handlers.handle_list_library({})
