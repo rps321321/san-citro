@@ -192,7 +192,7 @@ export default function ReaderPage() {
         <BookOpenIcon className="size-12 mb-4 opacity-30" />
         <p className="text-sm">No book open</p>
         <p className="text-xs mt-1">Open an EPUB from your History or Downloads to start reading.</p>
-        <a href="/history" className="mt-6">
+        <a href="#/history" className="mt-6">
           <Button variant="outline" size="sm">
             <ListIcon className="size-3.5" />
             Go to History
@@ -208,7 +208,7 @@ export default function ReaderPage() {
         <AlertCircleIcon className="size-12 text-destructive mb-4" />
         <h2 className="text-lg font-semibold tracking-tight">Couldn&apos;t open this book</h2>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">{error}</p>
-        <a href="/history" className="mt-6">
+        <a href="#/history" className="mt-6">
           <Button variant="outline" size="sm">Back to History</Button>
         </a>
       </div>

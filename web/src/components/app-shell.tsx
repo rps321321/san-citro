@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Outlet } from "react-router";
 
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
@@ -9,14 +10,10 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { TitlebarSync } from "@/components/titlebar-sync";
 import { onPlayerActive, setPlayerContentRect } from "@/lib/api-client";
 
-export default function AppLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  // RESERVE SPACE: when the persistent audiobook player is active, the player's
-  // mini-bar overlays the bottom ~72px of the window. Pad the browsing surface so
-  // page content is never hidden behind it.
+// The persistent SPA shell: sidebar + title bar + the routed <Outlet />.
+// 2A keeps the WebContentsView player, so the player-active padding and the
+// content-rect IPC reporter are preserved here (both removed in 2B).
+export default function AppShell() {
   const [playerActive, setPlayerActive] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
 
@@ -24,8 +21,6 @@ export default function AppLayout({
     return onPlayerActive(({ active }) => setPlayerActive(active));
   }, []);
 
-  // Report the body region (right of the sidebar) so the player view is bounded
-  // to it and never covers the sidebar. Re-report on resize / sidebar toggle.
   useEffect(() => {
     const el = mainRef.current;
     if (!el) return;
@@ -69,7 +64,7 @@ export default function AppLayout({
           className="flex-1 overflow-auto p-4 md:p-6"
           style={playerActive ? { paddingBottom: 72 } : undefined}
         >
-          {children}
+          <Outlet />
         </main>
       </SidebarInset>
     </SidebarProvider>

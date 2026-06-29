@@ -254,7 +254,7 @@ function DownloadCard({
 function openReader(md5: string, title: string) {
   sessionStorage.setItem("reader:md5", md5);
   sessionStorage.setItem("reader:title", title || "");
-  window.location.href = "/reader";
+  window.location.hash = "#/reader";
 }
 
 export default function DownloadsPage() {
@@ -430,7 +430,7 @@ export default function DownloadsPage() {
             <>
               <DownloadIcon className="size-12 mb-4 text-muted-foreground/40" />
               <p className="text-sm">No active downloads</p>
-              <Button variant="outline" size="sm" className="mt-4" render={<a href="/search" />}>
+              <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
                 <DownloadIcon className="size-3.5" />
                 Start a download from Search
               </Button>

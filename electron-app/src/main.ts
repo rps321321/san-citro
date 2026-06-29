@@ -102,7 +102,8 @@ function registerProtocol(): void {
       } else if (fs.existsSync(withIndex) && fs.statSync(withIndex).isFile()) {
         resolvedPath = withIndex;
       } else {
-        resolvedPath = path.join(rendererDir, 'search.html');
+        // SPA shell: every unresolved route falls back to the HashRouter entry.
+        resolvedPath = path.join(rendererDir, 'index.html');
       }
     }
 
@@ -167,7 +168,7 @@ function createMainWindow(): BrowserWindow {
     },
   });
 
-  mainWindow.loadURL('san-citro://app/search.html');
+  mainWindow.loadURL('san-citro://app/index.html');
 
   // Open DevTools only during development
   if (!app.isPackaged) {

@@ -91,7 +91,7 @@ function openItem(item: LibraryItem): void {
   if (item.filename?.toLowerCase().endsWith(".epub")) {
     sessionStorage.setItem("reader:md5", item.md5);
     sessionStorage.setItem("reader:title", item.title || item.filename || "");
-    window.location.href = "/reader";
+    window.location.hash = "#/reader";
     return;
   }
   window.sanCitro?.showItemInFolder(item.md5);
@@ -336,7 +336,7 @@ function AudiobooksPanel() {
       <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
         <HeadphonesIcon className="size-12 mb-4 text-muted-foreground/40" />
         <p className="text-sm">No audiobooks yet</p>
-        <Button variant="outline" size="sm" className="mt-4" render={<a href="/search" />}>
+        <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
           <SearchIcon className="size-3.5" />
           Search for an audiobook to download
         </Button>
@@ -597,7 +597,7 @@ export default function LibraryPage() {
             {items.length === 0 ? "No downloads yet" : "No items match these filters"}
           </p>
           {items.length === 0 && (
-            <Button variant="outline" size="sm" className="mt-4" render={<a href="/search" />}>
+            <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
               <SearchIcon className="size-3.5" />
               Search for something to download
             </Button>

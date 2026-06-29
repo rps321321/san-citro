@@ -394,7 +394,7 @@ function SearchContent() {
       {downloadSuccess && (
         <Banner variant="success" onDismiss={() => setDownloadSuccess(false)}>
           Added to downloads.{" "}
-          <a href="/downloads" className="font-medium underline underline-offset-2">
+          <a href="#/downloads" className="font-medium underline underline-offset-2">
             View downloads
           </a>
         </Banner>

@@ -121,7 +121,7 @@ function compareEntries(a: HistoryEntry, b: HistoryEntry, key: SortKey): number 
 function openReader(md5: string, title: string) {
   sessionStorage.setItem("reader:md5", md5);
   sessionStorage.setItem("reader:title", title || "");
-  window.location.href = "/reader";
+  window.location.hash = "#/reader";
 }
 
 export default function HistoryPage() {
@@ -259,7 +259,7 @@ export default function HistoryPage() {
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <ClockIcon className="size-12 mb-4 text-muted-foreground/40" />
           <p className="text-sm">No download history</p>
-          <Button variant="outline" size="sm" className="mt-4" render={<a href="/search" />}>
+          <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
             <SearchIcon className="size-3.5" />
             Search for something to download
           </Button>

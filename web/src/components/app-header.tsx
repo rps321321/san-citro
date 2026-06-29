@@ -1,6 +1,7 @@
 "use client";
 
 import { DownloadIcon } from "lucide-react";
+import { Link } from "react-router";
 
 import { Badge } from "@/components/ui/badge";
 import { useDownloadStream } from "@/lib/use-sse";
@@ -22,7 +23,7 @@ export function AppHeader() {
           <Badge
             variant="secondary"
             render={
-              <a href="/downloads" aria-label={`${activeCount} active downloads`} />
+              <Link to="/downloads" aria-label={`${activeCount} active downloads`} />
             }
           >
             <DownloadIcon />

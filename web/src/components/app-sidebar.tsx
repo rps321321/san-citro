@@ -1,6 +1,7 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router";
 import { useTheme } from "next-themes";
 import { trackInteraction } from "@/lib/telemetry";
 import {
@@ -45,22 +46,12 @@ const NAV_ITEMS = [
   { label: "Settings", href: "/settings", icon: SettingsIcon },
 ] as const;
 
-function subscribeAfterHydration(callback: () => void) {
-  queueMicrotask(callback);
-  return () => {};
-}
-
 export function AppSidebar() {
-  const pathname = useSyncExternalStore(
-    subscribeAfterHydration,
-    () => window.location.pathname,
-    () => ""
-  );
-  const mounted = useSyncExternalStore(
-    subscribeAfterHydration,
-    () => true,
-    () => false
-  );
+  // HashRouter: useLocation().pathname is the route (/search, /library, …);
+  // window.location.pathname would be "/" always (the route lives in the hash).
+  const { pathname } = useLocation();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const { resolvedTheme } = useTheme();
   const { toggleTheme } = useThemeToggle({ variant: "circle", start: "bottom-left" });
   const isDark = mounted && resolvedTheme === "dark";
@@ -69,8 +60,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="app-region-drag h-9 justify-center py-0">
         <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
-          <a
-            href="/search"
+          <Link
+            to="/search"
             aria-label="San Citro — home"
             className="app-region-no-drag flex items-center gap-2 overflow-hidden group-data-[collapsible=icon]:hidden"
           >
@@ -83,7 +74,7 @@ export function AppSidebar() {
               className="size-8 shrink-0 rounded-lg"
             />
             <TextRepel text="San Citro" className="text-sm font-semibold" radius={70} strength={16} />
-          </a>
+          </Link>
           <SidebarTrigger className="app-region-no-drag" />
         </div>
       </SidebarHeader>
@@ -94,7 +85,7 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV_ITEMS.map((item) => {
-                // Home ("/") re-exports the search page, so treat it as /search.
+                // Root ("/") redirects to /search, so treat it as /search.
                 const normalized = pathname === "/" ? "/search" : pathname;
                 const isActive = normalized.startsWith(item.href);
                 return (
@@ -102,7 +93,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={isActive}
                       tooltip={item.label}
-                      render={<a href={item.href} aria-current={isActive ? "page" : undefined} />}
+                      render={<NavLink to={item.href} aria-current={isActive ? "page" : undefined} />}
                     >
                       <item.icon />
                       <span>{item.label}</span>
