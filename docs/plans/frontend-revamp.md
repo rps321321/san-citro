@@ -120,3 +120,11 @@ The component kit is the *vocabulary*; this is the *grammar* — how it should f
 - **Player (expanded, in-page):** **centered cover-hero**; scrubber / transport / speed below; a **Chapters** button slides in a glass chapter sheet.
 - **Search:** **distinct** from the Library — task-oriented **rows** (cover thumb + title/author/year/format/size/lang) with an **inline Download**; not the grid+sheet. (Search = find fast; Library = browse your collection.)
 - **Navigation / IA:** sidebar = **Search · Library · Activity · Settings**. Downloads + History **merge into "Activity"** (the full transfer log — completed/failed/processing); the title-bar **Dynamic Island** owns live status.
+- **Platform:** **Mac aesthetic, Windows conventions** — `Ctrl` shortcuts (shown "Ctrl K", never ⌘), window controls top-right, Windows file paths. The *look* is Mac; the *behaviors* are native Windows.
+- **Command palette:** a **Ctrl+K** glass overlay — instant Anna's Archive search + commands (jump-to-page, play-last, open Settings, toggle theme, reveal file). Complements the Search page.
+- **Density:** **comfortable** (generous spacing, big covers); search rows + Activity self-tighten.
+- **Empty states:** **calm Apple** — quiet icon + helpful copy + one CTA; standard soft enter-animation, no mascots.
+- **Theme:** **follow system** by default; both modes first-class (citrus brightens in dark, glass darkens). next-themes `system`.
+- **Genre:** **browse shelves** — a "Browse by genre" surface (cover shelves via `carousel-navigator`) over the *owned* library; sparse early, fills as the collection + enrichment grow.
+- **Reader:** **paginated, Apple Books style** — page-turn, light/sepia/dark reading themes, type controls, chrome auto-hides while reading.
+- **Multi-select:** **Select mode** (Apple Photos) — a Select button → click toggles selection → contextual glass bulk-action toolbar; single-item actions stay in the **right-click** menu.
