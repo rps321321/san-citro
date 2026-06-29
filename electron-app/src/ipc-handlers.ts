@@ -132,14 +132,14 @@ export function registerIpcHandlers(
   );
 
   // renderer -> main: recolor the OS window-controls overlay to match the title
-  // bar (theme-aware), keeping the 48px height so the buttons fill the band.
+  // bar (theme-aware), keeping the 36px height so the buttons fill the band.
   ipcMain.on(
     IPC_CHANNELS.SET_TITLEBAR_OVERLAY,
     (_event, opts: { color: string; symbolColor: string }) => {
       const win = getMainWindow();
       if (win && !win.isDestroyed()) {
         try {
-          win.setTitleBarOverlay({ ...opts, height: 48 });
+          win.setTitleBarOverlay({ ...opts, height: 36 });
         } catch {
           /* overlay not enabled on this platform */
         }

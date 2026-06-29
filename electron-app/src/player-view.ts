@@ -19,7 +19,7 @@ import { IPC_CHANNELS, type PlayerMode } from './types';
 const MINI_HEIGHT = 72;
 // Top offset so the expanded player clears the OS window-controls overlay
 // (titleBarOverlay height in main.ts). Expanded fills from here to the bottom.
-const TITLEBAR_OFFSET = 48;
+const TITLEBAR_OFFSET = 36;
 
 type Rect = { x: number; y: number; width: number; height: number };
 

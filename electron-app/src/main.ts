@@ -153,8 +153,8 @@ function createMainWindow(): BrowserWindow {
     titleBarOverlay: {
       color: '#1a1a2e',
       symbolColor: '#e0e0e0',
-      // Matches the h-12 title-bar band; the renderer re-syncs color per theme.
-      height: 48,
+      // Matches the h-9 title-bar band; the renderer re-syncs color per theme.
+      height: 36,
     },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
