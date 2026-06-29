@@ -8,9 +8,13 @@ plus a **marketing landing page**.
 
 ## Why this is feasible (stack verified 2026-06-29)
 
-`web/` is **Next.js 16.2.1 · React 19.2.4 · Tailwind v4 (`@import`, no config) ·
-framer-motion/motion v12 · next-themes · shadcn** (`components.json`, style
-`base-nova`, baseColor neutral, `@skiper-ui` registry already wired). Every target
+`web/` is **Next.js 16.2.9 · React 19.2.7 · TypeScript 6 · Tailwind v4 (`@import`,
+no config) · framer-motion/motion v12 · next-themes · shadcn** (`components.json`,
+style `base-nova`, baseColor neutral, `@skiper-ui` registry already wired);
+`electron-app/` is **Electron 42 · electron-builder 26 · TypeScript 6**. Stack bumped
+to latest 2026-06-29 (branch `feat/latest-stack`); two held back by ecosystem lag —
+**eslint stays at 9** (10 crashes eslint-config-next's bundled react plugin) and the
+react-compiler lint rules are advisory (warn). Every target
 library is a **shadcn registry built on the exact same stack** (React 19 + Tailwind
 v4 + Framer Motion), so they install drop-in. The libraries' docs/registries are
 Cloudflare-bot-protected against `WebFetch`, but the real `npx shadcn add` CLI is
