@@ -46,10 +46,23 @@ export class PythonBridge {
     const bridgePath = this.getBridgePath();
     const isPackaged = app.isPackaged;
 
+    // Point the Python media-tools locator at the BUNDLED 7-Zip + ffprobe so
+    // audiobook processing never depends on the user having them installed.
+    // Packaged: resources/bin (extraResources); dev: electron-app/bin.
+    const binDir = isPackaged
+      ? path.join(process.resourcesPath, 'bin')
+      : path.join(app.getAppPath(), 'bin');
+    const env = {
+      ...process.env,
+      SAN_CITRO_7Z: path.join(binDir, '7z.exe'),
+      SAN_CITRO_FFPROBE: path.join(binDir, 'ffprobe.exe'),
+    };
+
     if (isPackaged && bridgePath.endsWith('.exe')) {
       this.process = spawn(bridgePath, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
+        env,
       });
     } else {
       // Determine the Python binary — respect SAN_CITRO_PYTHON env var
@@ -58,6 +71,7 @@ export class PythonBridge {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         cwd: path.join(app.getAppPath(), '..'),
+        env,
       });
     }
 

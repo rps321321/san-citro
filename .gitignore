@@ -60,6 +60,9 @@ electron-app/dist/
 electron-app/release/
 electron-app/renderer/
 electron-app/python-dist/
+# Bundled binaries (7-Zip + ffprobe) — too large for git (ffprobe > 100MB);
+# populated at build time by scripts/sync-binaries.ps1, shipped via extraResources.
+electron-app/bin/
 
 # Compressed data (too large for git)
 data/*.jsonl.zst
