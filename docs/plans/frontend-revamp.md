@@ -59,19 +59,28 @@ URL pattern `https://registry.watermelon.sh/{name}.json`, plus `@componentry`,
 2. **Landing page (marketing):** device mockups · particle typography + text-repel
    hero · circuit-board · profile/feature/demo cards · carousel.
 
-## Phased build
+## Phased build — architecture-first, ship each phase (grill 2026-06-29)
 
-- **Phase A — Chrome (the shell).** Windows-11 **Mica** (`backgroundMaterial:'mica'`
-  + zero-alpha `backgroundColor`, transparent renderer + **translucent sidebar**) à la
-  Codex's "semi-transparent sidebar". KEEP the existing sidebar (no dock); it already
-  flows into the title bar. Content surfaces stay opaque for readability.
-- **Phase B — Core interactions.** dropdown-disclosure across all selects/filters;
-  scroll-island wired to live curated status; discrete-tabs in Library; dot-matrix
-  loaders replacing skeletons; gooey quick-actions; time-undo on deletes.
-- **Phase C — Player & media.** adaptive-slider scrubber + frequency-selector speed
-  in the audiobook player; carousel-navigator + shuffle-pinned in Library.
-- **Phase D — Landing page.** New marketing route: device mockups, particle/text-repel
-  hero, circuit-board, repurposed cards.
+Sequencing rule: land the **scary structural change isolated and proven** before any reskin, and
+**ship a release at each phase** so the app is never long-broken and every checkpoint is bisectable.
+Supersedes the old Chrome→Core→Player→Landing plan. (Stack already on latest, branch `feat/latest-stack`.)
+
+- **Phase 0 — Stack to latest.** ✅ done (Next 16.2.9 · React 19.2.7 · TS 6 · Electron 42 · builder 26).
+- **Phase 1 — SPA spike (throwaway).** 2 routes under `san-citro://`, HashRouter, `protocol.handle`
+  fallback-to-shell; must survive **reload + single-instance respawn**. Prove HashRouter holds before
+  building on it. ([ADR-0013](../adr/0013-hash-routed-spa-in-page-player.md))
+- **Phase 2 — SPA + in-page player at PARITY (new arch, old look) → SHIP.** Every page → route
+  component; player becomes a persistent shell component (retire the WebContentsView, reuse audio +
+  `san-citro-media://`). Functional parity, no reskin. Releasing here proves Electron 42 + HashRouter +
+  in-page audio in real use, isolated from visual churn.
+- **Phase 3 — Design system.** Citrus + `--glass-*` tokens, glass-surface util, spring config, Apple
+  type metrics. ([ADR-0011](../adr/0011-apple-liquid-glass-design-direction.md))
+- **Phase 4+ — Reskin surface-by-surface, ship each.** Shell (Dynamic Island, glass toolbar, refined
+  sidebar, Ctrl+K palette) → Library (grid, Select mode, detail sheet + cover morph, OpenLibrary
+  enrichment, genre-browse shelves) → Player UI → Search rows → Activity (merge) → paginated Reader.
+  After shell + player land, **profile glass on a normal laptop** and optimize if needed (ADR-0011 trigger).
+- **Phase N — Landing page (last).** Expressive kit: device mockups, particle/text-repel hero,
+  circuit-board, repurposed cards. ([ADR-0012](../adr/0012-components-split-by-surface.md))
 
 ## Decisions (2026-06-29)
 
@@ -130,5 +139,5 @@ The component kit is the *vocabulary*; this is the *grammar* — how it should f
 - **Empty states:** **calm Apple** — quiet icon + helpful copy + one CTA; standard soft enter-animation, no mascots.
 - **Theme:** **follow system** by default; both modes first-class (citrus brightens in dark, glass darkens). next-themes `system`.
 - **Genre:** **browse shelves** — a "Browse by genre" surface (cover shelves via `carousel-navigator`) over the *owned* library; sparse early, fills as the collection + enrichment grow.
-- **Reader:** **paginated, Apple Books style** — page-turn, light/sepia/dark reading themes, type controls, chrome auto-hides while reading.
+- **Reader:** **paginated, Apple Books style** — page-turn, light/sepia/dark reading themes, type controls, chrome auto-hides while reading. **Multi-format via foliate-js** (vendored+pinned) — epub/mobi/azw3/fb2/cbz (pdf later); reflowable get themes+type controls, comics/pdf get a page-image view. Replaces epub.js; the "Read" action widens to all these formats. ([ADR-0014](../adr/0014-reader-engine-foliate-js-multiformat.md))
 - **Multi-select:** **Select mode** (Apple Photos) — a Select button → click toggles selection → contextual glass bulk-action toolbar; single-item actions stay in the **right-click** menu.
