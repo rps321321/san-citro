@@ -5,9 +5,11 @@ import {
   ipcMain,
   session,
   shell,
+  net,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import { pathToFileURL } from 'node:url';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { PythonBridge } from './python-bridge';
@@ -69,47 +71,42 @@ const DOWNLOADS_DIR = app.getPath('downloads');
 // Maps san-citro://app/<file> to the renderer/ directory
 // ---------------------------------------------------------------------------
 function registerProtocol(): void {
-  protocol.registerFileProtocol('san-citro', (request, callback) => {
-    // Strip "san-citro://app/" prefix to get the relative file path
-    let filePath = request.url.replace(/^san-citro:\/\/app\/?/, '');
-    filePath = decodeURIComponent(filePath);
+  // In a packaged build the renderer ships as an extraResource at
+  // <resources>/renderer (a sibling of app.asar). In dev it sits next to the
+  // app at app.getAppPath().
+  const rendererDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'renderer')
+    : path.join(app.getAppPath(), 'renderer');
 
-    // In a packaged build the renderer ships as an extraResource at
-    // <resources>/renderer (a sibling of app.asar), so resolve against
-    // process.resourcesPath. In dev it sits next to the app at app.getAppPath().
-    const rendererDir = app.isPackaged
-      ? path.join(process.resourcesPath, 'renderer')
-      : path.join(app.getAppPath(), 'renderer');
-    let resolvedPath = path.resolve(rendererDir, filePath);
+  // protocol.handle (Electron 25+) replaces the deprecated registerFileProtocol.
+  // With standard:true (registered as privileged below), san-citro://app/<path>
+  // parses as host="app" + a real pathname, so relative _next assets resolve
+  // correctly and the renderer is a secure context.
+  protocol.handle('san-citro', async (request) => {
+    const rel = decodeURIComponent(new URL(request.url).pathname).replace(/^\/+/, '');
+    let resolvedPath = path.resolve(rendererDir, rel);
 
-    // Security: prevent directory traversal (case-insensitive on Windows)
-    const cmp = process.platform === 'win32'
-      ? (a: string, b: string) => a.toLowerCase().startsWith(b.toLowerCase())
-      : (a: string, b: string) => a.startsWith(b);
-    if (!cmp(resolvedPath, rendererDir)) {
-      callback({ statusCode: 403 });
-      return;
+    // Security: block path traversal outside the renderer dir.
+    const within = path.relative(rendererDir, resolvedPath);
+    if (within.startsWith('..') || path.isAbsolute(within)) {
+      return new Response('forbidden', { status: 403 });
     }
 
-    // #6: SPA-friendly fallback for client-side routing
+    // SPA-friendly fallback for client-side routing:
+    // file → file.html → dir/index.html → the app shell (search.html).
     if (!fs.existsSync(resolvedPath) || fs.statSync(resolvedPath).isDirectory()) {
-      // Try appending .html
       const withHtml = resolvedPath + '.html';
+      const withIndex = path.join(resolvedPath, 'index.html');
       if (fs.existsSync(withHtml) && fs.statSync(withHtml).isFile()) {
         resolvedPath = withHtml;
+      } else if (fs.existsSync(withIndex) && fs.statSync(withIndex).isFile()) {
+        resolvedPath = withIndex;
       } else {
-        // Try appending /index.html
-        const withIndex = path.join(resolvedPath, 'index.html');
-        if (fs.existsSync(withIndex) && fs.statSync(withIndex).isFile()) {
-          resolvedPath = withIndex;
-        } else {
-          // Fallback: serve the main page (SPA catch-all)
-          resolvedPath = path.join(rendererDir, 'search.html');
-        }
+        resolvedPath = path.join(rendererDir, 'search.html');
       }
     }
 
-    callback({ path: resolvedPath });
+    return net.fetch(pathToFileURL(resolvedPath).toString());
   });
 }
 
