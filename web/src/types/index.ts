@@ -210,6 +210,8 @@ export interface SanCitroApi {
     width: number;
     height: number;
   }): void;
+  /** Theme-sync the OS window-controls overlay colors to the title bar. */
+  setTitlebarOverlay(opts: { color: string; symbolColor: string }): void;
   /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
   setTelemetryContext(ctx: {
     device_id: string;

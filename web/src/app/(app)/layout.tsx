@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppHeader } from "@/components/app-header";
 import { UpdateBanner } from "@/components/update-banner";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { TitlebarSync } from "@/components/titlebar-sync";
 import { onPlayerActive, setPlayerContentRect } from "@/lib/api-client";
 
 export default function AppLayout({
@@ -49,6 +50,7 @@ export default function AppLayout({
 
   return (
     <SidebarProvider>
+      <TitlebarSync />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground focus:rounded-md"

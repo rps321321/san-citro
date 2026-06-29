@@ -136,6 +136,13 @@ export function setPlayerContentRect(rect: {
   ipc().setPlayerContentRect(rect);
 }
 
+export function setTitlebarOverlay(opts: {
+  color: string;
+  symbolColor: string;
+}): void {
+  ipc().setTitlebarOverlay(opts);
+}
+
 // --------------- Settings ---------------
 
 export async function getSettings(): Promise<ConfigModel> {

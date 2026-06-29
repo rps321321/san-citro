@@ -67,6 +67,9 @@ export const IPC_CHANNELS = {
   // main-window renderer -> main: the body region (right of the sidebar) the
   // player view should occupy, so it does not cover the sidebar.
   PLAYER_CONTENT_RECT: 'san-citro:player:contentRect',
+  // renderer -> main: theme-synced colors for the OS window-controls overlay so
+  // the control area matches the title-bar background.
+  SET_TITLEBAR_OVERLAY: 'san-citro:setTitlebarOverlay',
 } as const;
 
 export type PlayerMode = 'mini' | 'expanded' | 'hidden';
