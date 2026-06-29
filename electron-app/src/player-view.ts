@@ -17,10 +17,9 @@ import { app } from 'electron';
 import { IPC_CHANNELS, type PlayerMode } from './types';
 
 const MINI_HEIGHT = 72;
-const EXPANDED_MARGIN = 24;
-const EXPANDED_MAX_WIDTH = 1100;
-// Minimum top offset so the expanded card clears the 36px titleBarOverlay.
-const EXPANDED_MIN_Y = 36;
+// Top offset so the expanded player clears the OS window-controls overlay
+// (titleBarOverlay height in main.ts). Expanded fills from here to the bottom.
+const TITLEBAR_OFFSET = 36;
 
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -39,29 +38,16 @@ export function getMode(): PlayerMode {
 
 function computeBounds(win: BrowserWindow, mode: PlayerMode): Rect {
   const full = win.getContentBounds();
+  // Horizontal extent (x + width) comes from the renderer so the player tracks
+  // the sidebar; vertical extent spans the window so there are no top/bottom gaps.
+  const x = contentRect ? contentRect.x : 0;
+  const width = contentRect ? contentRect.width : full.width;
 
   if (mode === 'expanded') {
-    // Fill the body region so the player covers only the content, not the sidebar.
-    if (contentRect) {
-      return { ...contentRect };
-    }
-    // Fallback before the renderer reports: a centered card clearing the titlebar.
-    const w = Math.min(EXPANDED_MAX_WIDTH, full.width - EXPANDED_MARGIN * 2);
-    const x = Math.round((full.width - w) / 2);
-    const y = EXPANDED_MIN_Y;
-    return { x, y, width: w, height: full.height - y - EXPANDED_MARGIN };
+    return { x, y: TITLEBAR_OFFSET, width, height: full.height - TITLEBAR_OFFSET };
   }
-
-  // mini: a bottom strip across the body region (full width as fallback).
-  if (contentRect) {
-    return {
-      x: contentRect.x,
-      y: contentRect.y + contentRect.height - MINI_HEIGHT,
-      width: contentRect.width,
-      height: MINI_HEIGHT,
-    };
-  }
-  return { x: 0, y: full.height - MINI_HEIGHT, width: full.width, height: MINI_HEIGHT };
+  // mini: a bottom strip across the body region.
+  return { x, y: full.height - MINI_HEIGHT, width, height: MINI_HEIGHT };
 }
 
 /** Update the body region the player should occupy, then re-layout. */

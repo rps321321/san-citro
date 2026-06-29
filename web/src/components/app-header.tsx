@@ -8,6 +8,7 @@ import { useDownloadStream } from "@/lib/use-sse";
 
 const PAGE_TITLES: Record<string, string> = {
   "/search": "Search",
+  "/library": "Library",
   "/downloads": "Downloads",
   "/history": "History",
   "/settings": "Settings",
