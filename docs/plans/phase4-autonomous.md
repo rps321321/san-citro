@@ -58,3 +58,7 @@ is green, write the blocker + your recommendation in the Progress log, and stop.
 - 2026-06-29 — **#1 sidebar citrus active-nav ✅**. The active nav item now uses a citrus tint
   (`bg-primary/10`) + citrus text/icon (`text-primary`), overriding the neutral `bg-sidebar-accent`.
   Renderer-only; build + lint green. NEEDS VISUAL REVIEW (citrus active state). Next: #2 Library cover grid.
+- 2026-06-29 — **#2 Library cover grid ✅**. Hero covers (soft `shadow-md` + hairline ring), card
+  **hover-lift** (`-translate-y-1`), and a **citrus hover-ring** on covers — applied to both the books
+  and audiobook grids. Staggered entrance DEFERRED (needs motion wiring; a polish follow-up, not
+  blocking). Build + lint green. NEEDS VISUAL REVIEW. Next: #3 Dynamic Island.

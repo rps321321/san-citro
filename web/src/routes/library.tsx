@@ -114,7 +114,7 @@ function Cover({
   const box =
     size === "thumb"
       ? "w-12 h-16 rounded shrink-0"
-      : "aspect-[2/3] w-full rounded-lg";
+      : "aspect-[2/3] w-full rounded-lg shadow-md ring-1 ring-black/5 transition duration-200 group-hover:shadow-xl group-hover:ring-2 group-hover:ring-primary/50";
   const icon = size === "thumb" ? "size-5" : "size-8";
 
   if (!coverUrl || failed) {
@@ -230,7 +230,7 @@ function AudiobookCard({ book }: { book: Audiobook }) {
       type="button"
       onClick={handleOpen}
       disabled={!ready}
-      className="group text-left space-y-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default"
+      className="group text-left space-y-2 rounded-lg outline-none transition-transform duration-200 enabled:hover:-translate-y-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default"
       title={ready ? "Play" : title}
     >
       <div className="relative">
@@ -611,7 +611,7 @@ export default function LibraryPage() {
               key={item.md5}
               type="button"
               onClick={() => openItem(item)}
-              className="group text-left space-y-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              className="group text-left space-y-2 rounded-lg outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-3 focus-visible:ring-ring/50"
               title={item.title || undefined}
             >
               <div className="relative">
