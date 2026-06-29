@@ -91,11 +91,12 @@ ISBN first (parsed from the filename — unreliable), title+author fallback; `nu
 common. **Decoration, never load-bearing** — AA's coarse **category** (fiction/non-fiction/comic) is
 the always-present grouping when enrichment is empty. A Library facet. (Decided 2026-06-29.)
 
-**Player overlay**:
-The persistent audiobook player — a child **`WebContentsView`** overlaid on the main window as
-an expandable **mini-bar**, with its own webContents that survives the main window's full-reload
-navigation, owning playback and all player UI. See ADR-0010.
-_Avoid_: "the player page" (it is a persistent view, not a page).
+**In-page player**:
+The persistent audiobook player — a React component (`InPagePlayer`) in the SPA shell, with its
+`<audio>` mounted **outside the router `<Outlet>`** so playback survives route changes (the SPA has
+no full reloads). State lives in `PlayerContext`; it owns playback + all player UI and streams
+chapters over `san-citro-media://`. See ADR-0013 (Phase 2B retired the ADR-0010 `WebContentsView`).
+_Avoid_: "the player page", "player view" (it is an in-page component, not a page or a separate view).
 
 ## Language — Visual design (ADR-0011)
 
