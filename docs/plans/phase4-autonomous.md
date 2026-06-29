@@ -97,3 +97,19 @@ PAUSED per the doc stop-conditions (budget getting long + remaining surfaces gen
 Every NEEDS-VISUAL-REVIEW surface COMPILES + RUNS but I could not judge its look. Open the app, skim, send feedback to tune the citrus shade / glass / positioning and unblock the rest.
 - 2026-06-29 — **#6 detail sheet (done, conservative)**. Built it after all: books grid + list now click -> a slide-in detail Sheet (cover + metadata + Read[epub]/Reveal actions), replacing direct-open. Solid Sheet (no glass-on-slide trap, no cover-morph, no enrichment — those are follow-ups). openItem removed (logic moved into DetailSheet). Build + lint green. NEEDS VISUAL REVIEW (sheet layout + does click->sheet feel right). Your follow-ups: cover-morph, glass-on-sheet (needs cross-fade), lazy OpenLibrary enrichment.
 - 2026-06-29 — **#6 Activity merge (done)**. Downloads + History merged into one **Activity** route + nav item; /downloads + /history redirect to /activity. DownloadsPage gained an `embedded` prop (returns null when no active transfer, so it stacks flush above History). Sidebar + command palette nav updated; StatusIsland click -> /activity. Build + lint green across 6 files. NEEDS VISUAL REVIEW (combined Active+History layout). Genuinely-remaining = NEW features, not reskins: genre shelves + OpenLibrary enrichment (#8, needs the enrichment fetch/match/cache infra) and foliate-js multi-format reader (#9, big vendor effort). Player polish (#7) is already mostly done by Phase 3.
+
+=== RESKIN COMPLETE (2026-06-29) — 24 commits, branch green ===
+
+Phase-4 surface reskin DONE: Phase-3 design system + Ctrl+K palette + 7 surfaces (citrus active-nav, hero cover grid, Dynamic Island, grid stagger, reader 3-way theming, book detail sheet, Activity merge). All web-build + electron-tsc + lint green; on feat/latest-stack; master/v1.2.0 untouched.
+
+GENUINELY REMAINING = NEW FEATURES (not reskins — need your involvement + bigger effort):
+
+- OpenLibrary enrichment (#8): needs a CSP change (allow openlibrary.org in connect-src, electron main) + a fetch/match/cache layer + wiring into the detail sheet. Spans renderer+electron.
+
+- Genre shelves (#8): depends on enrichment data.
+
+- foliate-js multi-format reader (#9): vendor the lib (pinned commit) + a React wrapper + format detection. Big.
+
+- Cover morph + glass-on-sheet (flagship motion): needs the glass-killer cross-fade technique + your visual eye.
+
+EVERY surface NEEDS VISUAL REVIEW — they compile + run but I could not judge the look (citrus shade, glass, positioning, detail-sheet + Activity layouts). Open the app, skim, send feedback to tune + greenlight the remaining features.
