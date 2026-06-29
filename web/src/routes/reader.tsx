@@ -10,6 +10,9 @@ import {
   LoaderIcon,
   BookOpenIcon,
   AlertCircleIcon,
+  SunIcon,
+  CoffeeIcon,
+  MoonIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -24,9 +27,21 @@ interface TocItem {
 // epub.js renders the book into an iframe; we drive nav/progress from the
 // rendition. The book to open is passed via sessionStorage (the san-citro://
 // custom protocol has no URL query params).
-function applyTheme(rendition: { themes: { override: (k: string, v: string, p?: boolean) => void } }, dark: boolean) {
-  rendition.themes.override("color", dark ? "#e6e6e6" : "#1a1a1a", true);
-  rendition.themes.override("background", dark ? "#0a0a0a" : "#ffffff", true);
+type ReadingTheme = "light" | "sepia" | "dark";
+
+const READER_THEMES: Record<ReadingTheme, { bg: string; color: string }> = {
+  light: { bg: "#ffffff", color: "#1a1a1a" },
+  sepia: { bg: "#f4ecd8", color: "#5b4636" },
+  dark: { bg: "#0a0a0a", color: "#e6e6e6" },
+};
+
+function applyTheme(
+  rendition: { themes: { override: (k: string, v: string, p?: boolean) => void } },
+  theme: ReadingTheme
+) {
+  const t = READER_THEMES[theme];
+  rendition.themes.override("color", t.color, true);
+  rendition.themes.override("background", t.bg, true);
 }
 
 export default function ReaderPage() {
@@ -49,11 +64,20 @@ export default function ReaderPage() {
   const [tocOpen, setTocOpen] = useState(false);
   const [progress, setProgress] = useState(0);
   const [chapter, setChapter] = useState("");
+  const [readingTheme, setReadingTheme] = useState<ReadingTheme>("dark");
+  const themeInitRef = useRef(false);
 
   useEffect(() => {
     setMd5(sessionStorage.getItem("reader:md5"));
     setTitle(sessionStorage.getItem("reader:title") ?? "");
   }, []);
+
+  // Sync the reading theme to the app theme once, then the user controls it.
+  useEffect(() => {
+    if (themeInitRef.current || !resolvedTheme) return;
+    themeInitRef.current = true;
+    setReadingTheme(resolvedTheme === "dark" ? "dark" : "light");
+  }, [resolvedTheme]);
 
   const prev = useCallback(() => renditionRef.current?.prev(), []);
   const next = useCallback(() => renditionRef.current?.next(), []);
@@ -89,7 +113,7 @@ export default function ReaderPage() {
           allowScriptedContent: false,
         });
         renditionRef.current = rendition;
-        applyTheme(rendition, resolvedTheme === "dark");
+        applyTheme(rendition, readingTheme);
 
         await rendition.display();
         if (cancelled) return;
@@ -165,10 +189,10 @@ export default function ReaderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [md5]);
 
-  // Re-apply reader theme when the app theme changes.
+  // Re-apply the reader theme whenever the reading theme changes.
   useEffect(() => {
-    if (renditionRef.current) applyTheme(renditionRef.current, resolvedTheme === "dark");
-  }, [resolvedTheme]);
+    if (renditionRef.current) applyTheme(renditionRef.current, readingTheme);
+  }, [readingTheme]);
 
   // Keyboard paging (works even when focus is outside the epub iframe).
   useEffect(() => {
@@ -218,7 +242,10 @@ export default function ReaderPage() {
   return (
     <div className="relative flex h-[calc(100vh-8rem)] flex-col gap-2">
       {/* Reading surface */}
-      <div className="relative flex-1 overflow-hidden rounded-lg border bg-card">
+      <div
+        className="relative flex-1 overflow-hidden rounded-lg border"
+        style={{ backgroundColor: READER_THEMES[readingTheme].bg }}
+      >
         <div ref={viewportRef} className="h-full w-full" />
 
         {isLoading && (
@@ -292,6 +319,30 @@ export default function ReaderPage() {
           <ListIcon className="size-3.5" />
           Contents
         </Button>
+
+        {/* Reading theme switcher (light / sepia / dark) */}
+        <div className="flex items-center gap-0.5 rounded-md border p-0.5">
+          {(
+            [
+              { key: "light", icon: SunIcon, label: "Light" },
+              { key: "sepia", icon: CoffeeIcon, label: "Sepia" },
+              { key: "dark", icon: MoonIcon, label: "Dark" },
+            ] as const
+          ).map((t) => (
+            <Button
+              key={t.key}
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setReadingTheme(t.key)}
+              aria-label={`${t.label} reading theme`}
+              aria-pressed={readingTheme === t.key}
+              disabled={isLoading}
+              className={readingTheme === t.key ? "bg-primary/10 text-primary" : ""}
+            >
+              <t.icon className="size-3.5" />
+            </Button>
+          ))}
+        </div>
 
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs text-muted-foreground" title={chapter || title}>

@@ -74,3 +74,4 @@ is green, write the blocker + your recommendation in the Progress log, and stop.
   make blind. Built the safe Library finish instead: **staggered card-enter** on the books grid
   (per-item `animationDelay`). Build + lint green. **TOP ITEM FOR YOUR REVIEW: the detail sheet +
   cover morph** (surface #4) — confirm click→sheet and I'll build it with feedback. Next: reader theming.
+- 2026-06-29 — **#5 reader theming (done)**. Reader gets a 3-way reading theme (light/sepia/dark) independent of the app chrome, with a control-bar switcher (Sun/Coffee/Moon, citrus-active). Sepia = warm cream bg + brown text; the reading surface bg tracks the theme. Syncs to the app theme on first open, then user-controlled. Still epub.js (foliate multi-format deferred). Build + lint green. NEEDS VISUAL REVIEW (sepia shade + switcher). Next: search rows.
