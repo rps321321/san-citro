@@ -108,3 +108,15 @@ The component kit is the *vocabulary*; this is the *grammar* — how it should f
 - **Dropdowns/selects** — `dropdown-disclosure` smooth disclosure; **dot-matrix** loaders everywhere.
 - **Chrome** — Mica + rounded sidebar (done).
 - **Landing** — particle/text-repel typography + device mockups + scroll-driven reveals.
+
+## Surface designs (locked — grill 2026-06-29)
+
+- **Type:** Geist (SF-adjacent) + Apple type metrics (tracking, weight/size hierarchy). No bundled SF Pro.
+- **Page header:** **minimal — no large title**; the sidebar is the location cue; pages open straight into the glass toolbar + content.
+- **Library:** **grid-first**, covers as the hero (rounded, soft shadow, title+author below); hover = lift + a contextual play/open glyph; citrus selection ring; **segmented Books/Audiobooks** (≈ Apple Books); list view secondary.
+- **Status island:** a **title-bar-center "Dynamic Island"** — idle glass pill, expands downward on activity (download progress, "Processing… → Ready"), then settles. Backed by `scroll-island`.
+- **Item interaction:** click a cover → a glass **detail sheet** (the cover does a shared-element **morph** in); big cover, metadata, description, actions (Read / Play / Reveal / Delete). Read → reader, Play → player. Secondary actions also via a native **right-click** menu.
+- **Detail enrichment:** open instantly with known metadata; **lazily** fetch description + genre from **Google Books / OpenLibrary** (cached per book, graceful fallback).
+- **Player (expanded, in-page):** **centered cover-hero**; scrubber / transport / speed below; a **Chapters** button slides in a glass chapter sheet.
+- **Search:** **distinct** from the Library — task-oriented **rows** (cover thumb + title/author/year/format/size/lang) with an **inline Download**; not the grid+sheet. (Search = find fast; Library = browse your collection.)
+- **Navigation / IA:** sidebar = **Search · Library · Activity · Settings**. Downloads + History **merge into "Activity"** (the full transfer log — completed/failed/processing); the title-bar **Dynamic Island** owns live status.
