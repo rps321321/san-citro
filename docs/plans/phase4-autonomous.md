@@ -55,3 +55,6 @@ is green, write the blocker + your recommendation in the Progress log, and stop.
 - 2026-06-29 — Run armed. Done before this run: Phases 0–3 + Ctrl+K palette (commits up to the
   command-palette). Next surface: **#1 sidebar/chrome citrus active-nav**. Visual surfaces will be
   flagged "needs visual review" — please skim the diffs + the live app and send feedback in the morning.
+- 2026-06-29 — **#1 sidebar citrus active-nav ✅**. The active nav item now uses a citrus tint
+  (`bg-primary/10`) + citrus text/icon (`text-primary`), overriding the neutral `bg-sidebar-accent`.
+  Renderer-only; build + lint green. NEEDS VISUAL REVIEW (citrus active state). Next: #2 Library cover grid.

@@ -93,6 +93,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={isActive}
                       tooltip={item.label}
+                      className="data-active:bg-primary/10 data-active:text-primary"
                       render={<NavLink to={item.href} aria-current={isActive ? "page" : undefined} />}
                     >
                       <item.icon />
