@@ -38,13 +38,16 @@ export function DetailSheet({
   item: LibraryItem | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  const isEpub = item?.filename?.toLowerCase().endsWith(".epub") ?? false;
+  // Readable in-app via foliate-js (ADR-0014): epub/mobi/azw3/fb2/cbz.
+  const ext = (item?.extension || item?.filename?.split(".").pop() || "").toLowerCase();
+  const isReadable = ["epub", "mobi", "azw3", "azw", "fb2", "fbz", "cbz"].includes(ext);
   const size = fmtSize(item?.filesize_bytes ?? null);
 
   const read = () => {
     if (!item) return;
     sessionStorage.setItem("reader:md5", item.md5);
     sessionStorage.setItem("reader:title", item.title || item.filename || "");
+    sessionStorage.setItem("reader:filename", item.filename ?? "");
     window.location.hash = "#/reader";
     onOpenChange(false);
   };
@@ -95,7 +98,7 @@ export function DetailSheet({
             </div>
 
             <SheetFooter>
-              {isEpub && (
+              {isReadable && (
                 <Button onClick={read}>
                   <BookOpenIcon />
                   Read

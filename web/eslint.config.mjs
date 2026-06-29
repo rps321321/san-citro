@@ -21,6 +21,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Vendored third-party source (foliate-js, ADR-0014) — not ours to lint.
+    "src/vendor/**",
   ]),
 ]);
 

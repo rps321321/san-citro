@@ -14,19 +14,16 @@ import {
   CoffeeIcon,
   MoonIcon,
 } from "lucide-react";
+import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { readBookFile } from "@/lib/api-client";
 import { trackError, trackFeatureDiscovery, trackReadingProgress } from "@/lib/telemetry";
 
-interface TocItem {
-  href: string;
-  label: string;
-}
+// Multi-format reader (ADR-0014): EPUB / MOBI / AZW3 / FB2 / CBZ via foliate-js
+// (vendored at web/src/vendor/foliate-js, pinned commit). Replaces epub.js. The
+// book is passed via sessionStorage (the san-citro:// protocol has no query params).
 
-// epub.js renders the book into an iframe; we drive nav/progress from the
-// rendition. The book to open is passed via sessionStorage (the san-citro://
-// custom protocol has no URL query params).
 type ReadingTheme = "light" | "sepia" | "dark";
 
 const READER_THEMES: Record<ReadingTheme, { bg: string; color: string }> = {
@@ -35,29 +32,29 @@ const READER_THEMES: Record<ReadingTheme, { bg: string; color: string }> = {
   dark: { bg: "#0a0a0a", color: "#e6e6e6" },
 };
 
-function applyTheme(
-  rendition: { themes: { override: (k: string, v: string, p?: boolean) => void } },
-  theme: ReadingTheme
-) {
-  const t = READER_THEMES[theme];
-  rendition.themes.override("color", t.color, true);
-  rendition.themes.override("background", t.bg, true);
+function themeCSS(t: ReadingTheme): string {
+  const c = READER_THEMES[t];
+  return `html, body { color: ${c.color} !important; background: ${c.bg} !important; }
+a, a:link, a:visited { color: ${c.color} !important; }`;
+}
+
+interface TocItem {
+  href: string;
+  label: string;
 }
 
 export default function ReaderPage() {
-  const viewportRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bookRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const renditionRef = useRef<any>(null);
+  const viewRef = useRef<any>(null);
   const openedAtRef = useRef(0);
   const lastBucketRef = useRef(-1);
   const lastPctRef = useRef(0);
   const { resolvedTheme } = useTheme();
 
-  // undefined = sessionStorage not read yet; "" / null = nothing selected
   const [md5, setMd5] = useState<string | null | undefined>(undefined);
   const [title, setTitle] = useState("");
+  const [filename, setFilename] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toc, setToc] = useState<TocItem[]>([]);
@@ -70,6 +67,7 @@ export default function ReaderPage() {
   useEffect(() => {
     setMd5(sessionStorage.getItem("reader:md5"));
     setTitle(sessionStorage.getItem("reader:title") ?? "");
+    setFilename(sessionStorage.getItem("reader:filename") ?? "");
   }, []);
 
   // Sync the reading theme to the app theme once, then the user controls it.
@@ -79,8 +77,8 @@ export default function ReaderPage() {
     setReadingTheme(resolvedTheme === "dark" ? "dark" : "light");
   }, [resolvedTheme]);
 
-  const prev = useCallback(() => renditionRef.current?.prev(), []);
-  const next = useCallback(() => renditionRef.current?.next(), []);
+  const prev = useCallback(() => viewRef.current?.prev(), []);
+  const next = useCallback(() => viewRef.current?.next(), []);
 
   useEffect(() => {
     if (md5 === undefined) return; // still reading sessionStorage
@@ -91,58 +89,34 @@ export default function ReaderPage() {
 
     let cancelled = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let book: any;
+    let view: any;
 
     (async () => {
       try {
         trackFeatureDiscovery("reader");
-        const ePub = (await import("epubjs")).default;
+        // Registers the <foliate-view> custom element + its renderers.
+        await import("@/vendor/foliate-js/view.js");
         const data = await readBookFile(md5);
         if (cancelled) return;
+        const host = hostRef.current;
+        if (!host) return;
 
-        book = ePub(data);
-        bookRef.current = book;
-        const el = viewportRef.current;
-        if (!el) return;
-
-        const rendition = book.renderTo(el, {
-          width: "100%",
-          height: "100%",
-          flow: "paginated",
-          spread: "auto",
-          allowScriptedContent: false,
-        });
-        renditionRef.current = rendition;
-        applyTheme(rendition, readingTheme);
-
-        await rendition.display();
-        if (cancelled) return;
-        setIsLoading(false);
-        openedAtRef.current = Date.now() / 1000;
-        trackReadingProgress({ event: "open", md5, title });
-
-        const nav = await book.loaded.navigation;
-        if (!cancelled) {
-          const flat: TocItem[] = [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const walk = (items: any[]) =>
-            items.forEach((it) => {
-              flat.push({ href: it.href, label: (it.label ?? "").trim() || "Untitled section" });
-              if (it.subitems?.length) walk(it.subitems);
-            });
-          walk(nav.toc ?? []);
-          setToc(flat);
-        }
+        view = document.createElement("foliate-view");
+        view.style.display = "block";
+        view.style.width = "100%";
+        view.style.height = "100%";
+        host.appendChild(view);
+        viewRef.current = view;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        rendition.on("relocated", (location: any) => {
+        view.addEventListener("relocate", (e: any) => {
           if (cancelled) return;
-          const pctInt = Math.round((location?.start?.percentage ?? 0) * 100);
+          const frac = e.detail?.fraction ?? 0;
+          const pctInt = Math.max(0, Math.min(100, Math.round(frac * 100)));
           setProgress(pctInt);
           lastPctRef.current = pctInt;
-          const href: string | undefined = location?.start?.href;
-          const match = href ? book.navigation?.get?.(href) : null;
-          if (match?.label) setChapter(match.label.trim());
+          const label = e.detail?.tocItem?.label;
+          if (label) setChapter(String(label).trim());
           // Throttle progress telemetry to one row per 5% bucket.
           const bucket = Math.floor(pctInt / 5);
           if (bucket !== lastBucketRef.current) {
@@ -151,16 +125,44 @@ export default function ReaderPage() {
               event: "progress",
               md5,
               progressPercent: pctInt,
-              chapter: match?.label?.trim(),
+              chapter: label ? String(label).trim() : undefined,
               elapsedSeconds: Math.round(Date.now() / 1000 - openedAtRef.current),
             });
           }
         });
+        // Re-apply the reading theme each time a section's document loads.
+        view.addEventListener("load", () => {
+          view.renderer?.setStyles?.(themeCSS(readingTheme));
+        });
 
-        // Locations enable an accurate percentage; generate in the background.
-        book.ready
-          .then(() => book.locations.generate(1600))
-          .catch(() => {});
+        // foliate-js detects the format from the file (content + extension).
+        const file = new File([data], filename || md5);
+        await view.open(file);
+        if (cancelled) return;
+        view.renderer?.setStyles?.(themeCSS(readingTheme));
+        try {
+          view.renderer?.setAttribute?.("flow", "paginated");
+        } catch {
+          /* renderer may be fixed-layout */
+        }
+        await view.init?.({});
+        if (cancelled) return;
+        setIsLoading(false);
+        openedAtRef.current = Date.now() / 1000;
+        trackReadingProgress({ event: "open", md5, title });
+
+        // Table of contents.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rawToc: any[] = view.book?.toc ?? [];
+        const flat: TocItem[] = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const walk = (items: any[]) =>
+          items.forEach((it) => {
+            flat.push({ href: it.href, label: (it.label ?? "").trim() || "Untitled section" });
+            if (it.subitems?.length) walk(it.subitems);
+          });
+        walk(rawToc);
+        if (!cancelled) setToc(flat);
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : "Failed to open book";
@@ -181,7 +183,8 @@ export default function ReaderPage() {
         });
       }
       try {
-        book?.destroy();
+        view?.close?.();
+        view?.remove?.();
       } catch {
         /* noop */
       }
@@ -189,12 +192,12 @@ export default function ReaderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [md5]);
 
-  // Re-apply the reader theme whenever the reading theme changes.
+  // Re-apply the reading theme whenever it changes.
   useEffect(() => {
-    if (renditionRef.current) applyTheme(renditionRef.current, readingTheme);
+    viewRef.current?.renderer?.setStyles?.(themeCSS(readingTheme));
   }, [readingTheme]);
 
-  // Keyboard paging (works even when focus is outside the epub iframe).
+  // Keyboard paging (works even when focus is outside the rendered iframe).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowLeft") prev();
@@ -205,7 +208,7 @@ export default function ReaderPage() {
   }, [prev, next]);
 
   const goTo = (href: string) => {
-    renditionRef.current?.display(href);
+    viewRef.current?.goTo?.(href);
     setTocOpen(false);
   };
 
@@ -215,13 +218,13 @@ export default function ReaderPage() {
       <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground">
         <BookOpenIcon className="size-12 mb-4 opacity-30" />
         <p className="text-sm">No book open</p>
-        <p className="text-xs mt-1">Open an EPUB from your History or Downloads to start reading.</p>
-        <a href="#/history" className="mt-6">
+        <p className="text-xs mt-1">Open a book from your Library or Activity to start reading.</p>
+        <Link to="/library" className="mt-6">
           <Button variant="outline" size="sm">
             <ListIcon className="size-3.5" />
-            Go to History
+            Go to Library
           </Button>
-        </a>
+        </Link>
       </div>
     );
   }
@@ -232,9 +235,9 @@ export default function ReaderPage() {
         <AlertCircleIcon className="size-12 text-destructive mb-4" />
         <h2 className="text-lg font-semibold tracking-tight">Couldn&apos;t open this book</h2>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">{error}</p>
-        <a href="#/history" className="mt-6">
-          <Button variant="outline" size="sm">Back to History</Button>
-        </a>
+        <Link to="/library" className="mt-6">
+          <Button variant="outline" size="sm">Back to Library</Button>
+        </Link>
       </div>
     );
   }
@@ -246,7 +249,7 @@ export default function ReaderPage() {
         className="relative flex-1 overflow-hidden rounded-lg border"
         style={{ backgroundColor: READER_THEMES[readingTheme].bg }}
       >
-        <div ref={viewportRef} className="h-full w-full" />
+        <div ref={hostRef} className="h-full w-full" />
 
         {isLoading && (
           <div role="status" className="absolute inset-0 flex items-center justify-center bg-card">
