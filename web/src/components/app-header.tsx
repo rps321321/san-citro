@@ -16,7 +16,7 @@ export function AppHeader() {
   ).length;
 
   return (
-    <header className="app-region-drag flex h-12 items-center gap-2 border-b pl-4 pr-[140px]">
+    <header className="app-region-drag flex h-12 items-center gap-2 border-b border-sidebar-border bg-sidebar pl-4 pr-[140px]">
       <div className="app-region-no-drag ml-auto flex items-center gap-3">
         {activeCount > 0 && (
           <Badge

@@ -67,7 +67,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="app-region-drag">
+      <SidebarHeader className="app-region-drag h-12 justify-center border-b border-sidebar-border">
         <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <a
             href="/search"
