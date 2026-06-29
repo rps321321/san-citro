@@ -143,10 +143,12 @@ protocol.registerSchemesAsPrivileged([
 // ---------------------------------------------------------------------------
 function createMainWindow(): BrowserWindow {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    minWidth: 900,
-    minHeight: 600,
+    // Sized so standard pages fit without a page-level scrollbar; the min is a
+    // firm floor that keeps them scrollbar-free (and stays screen-safe ~840px).
+    width: 1360,
+    height: 920,
+    minWidth: 1120,
+    minHeight: 840,
     show: false,
     // Zero-alpha bg + Mica: the Windows 11 DWM paints the translucent material
     // behind the window (Codex-style "semi-transparent sidebar"). Translucent
