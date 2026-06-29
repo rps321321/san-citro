@@ -148,7 +148,11 @@ function createMainWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#1a1a2e',
+    // Zero-alpha bg + Mica: the Windows 11 DWM paints the translucent material
+    // behind the window (Codex-style "semi-transparent sidebar"). Translucent
+    // renderer surfaces (the sidebar) show it; opaque panels stay readable.
+    backgroundColor: '#00000000',
+    backgroundMaterial: 'mica',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
       color: '#1a1a2e',
