@@ -41,6 +41,7 @@ import {
   onAudiobookStatus,
 } from "@/lib/api-client";
 import { usePlayer } from "@/contexts/player-context";
+import { DetailSheet } from "@/components/detail-sheet";
 import type { Audiobook, LibraryItem } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -83,19 +84,7 @@ function compareItems(a: LibraryItem, b: LibraryItem, key: SortKey): number {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Open behavior — mirrors history/page.tsx + downloads/page.tsx
-// ---------------------------------------------------------------------------
-
-function openItem(item: LibraryItem): void {
-  if (item.filename?.toLowerCase().endsWith(".epub")) {
-    sessionStorage.setItem("reader:md5", item.md5);
-    sessionStorage.setItem("reader:title", item.title || item.filename || "");
-    window.location.hash = "#/reader";
-    return;
-  }
-  window.sanCitro?.showItemInFolder(item.md5);
-}
+// Book open behavior now lives in DetailSheet: click a cover → detail → Read/Reveal.
 
 // ---------------------------------------------------------------------------
 // Cover — inlined per contract, same fallback pattern as search BookCover
@@ -423,6 +412,7 @@ export default function LibraryPage() {
   const [category, setCategory] = useState(ALL);
   const [format, setFormat] = useState(ALL);
   const [language, setLanguage] = useState(ALL);
+  const [detailItem, setDetailItem] = useState<LibraryItem | null>(null);
 
   // Read the persisted view after mount to avoid SSR/localStorage mismatch.
   useEffect(() => {
@@ -610,7 +600,7 @@ export default function LibraryPage() {
             <button
               key={item.md5}
               type="button"
-              onClick={() => openItem(item)}
+              onClick={() => setDetailItem(item)}
               style={{ animationDelay: `${Math.min(i, 14) * 30}ms` }}
               className="group text-left space-y-2 rounded-lg outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-3 focus-visible:ring-ring/50 animate-[card-enter_0.35s_ease-out_both]"
               title={item.title || undefined}
@@ -655,7 +645,7 @@ export default function LibraryPage() {
                 <TableRow
                   key={item.md5}
                   className="cursor-pointer"
-                  onClick={() => openItem(item)}
+                  onClick={() => setDetailItem(item)}
                 >
                   <TableCell className="w-16 p-2">
                     <Cover coverUrl={item.cover_url} title={item.title} size="thumb" />
@@ -682,6 +672,12 @@ export default function LibraryPage() {
       )}
         </>
       )}
+      <DetailSheet
+        item={detailItem}
+        onOpenChange={(open) => {
+          if (!open) setDetailItem(null);
+        }}
+      />
     </div>
   );
 }
