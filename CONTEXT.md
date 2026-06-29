@@ -93,3 +93,21 @@ The persistent audiobook player — a child **`WebContentsView`** overlaid on th
 an expandable **mini-bar**, with its own webContents that survives the main window's full-reload
 navigation, owning playback and all player UI. See ADR-0010.
 _Avoid_: "the player page" (it is a persistent view, not a page).
+
+## Language — Visual design (ADR-0011)
+
+**Liquid Glass**:
+San Citro's material language — translucent, blurred, layered surfaces evoking Apple's Liquid
+Glass. On Windows it is *approximated*: **Mica** at the window level (the sidebar) + CSS
+`backdrop-filter` for in-app overlays. There is no true refraction.
+_Avoid_: calling any flat/opaque panel "glass".
+
+**Control layer vs Content layer**:
+The two-tier rule for where glass goes. The **control layer** (sidebar, toolbars, sheets,
+popovers, dropdowns, the expanded player, the status island) floats above and is **glass**;
+the **content layer** (lists, cards, the library/reading surface) stays **solid** for legibility.
+
+**Citrus accent**:
+The single brand accent — a citrus orange from the logo — used with Apple restraint (active nav,
+primary buttons, focus rings, the playing chapter). Not a general fill; glass + grays carry the
+rest. _Avoid_: Apple system blue, or multiple accent hues.

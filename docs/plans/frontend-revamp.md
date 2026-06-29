@@ -89,3 +89,22 @@ URL pattern `https://registry.watermelon.sh/{name}.json`, plus `@componentry`,
 - Dock-instead-of-sidebar is a **nav paradigm shift** + the bottom-edge conflict (Q1).
 - Volume: ~20 components across two surfaces — strictly phased; each installed via CLI
   then adapted to San Citro's tokens/theme.
+
+## Design language (inspiration: 60fps.design · designspells · seesaw.website · viewport-ui.design)
+
+The component kit is the *vocabulary*; this is the *grammar* — how it should feel.
+
+**Principles**
+1. **Buttery motion (60fps).** Spring / deceleration easing — nothing "pops", everything flows; 200–300ms on state changes. **Stagger** list/grid entrances. **Shared-element** transitions (the mini-bar ↔ expanded player is the flagship one). No abrupt stops.
+2. **Restraint + rhythm (seesaw / viewport-ui).** 8/16/24px spacing rhythm, 40%+ whitespace, 2–3 type weights, **one vivid accent on a neutral base** (San Citro is already neutral — pick a single signature accent). Premium = focus, not visual complexity.
+3. **Delight in the details (designspells / 60fps).** Animated empty states (a friendly mascot/illustration), shimmer/gradient-pulse loaders, a small celebration on completion, satisfying toggles/checkboxes.
+4. **Desktop premium (viewport-ui).** Persistent sidebar/panels (done), card systems, contextual toolbars on selection, a status panel, accent-on-neutral.
+
+**Per-surface application** (kit component → with this grammar)
+- **Search** — focus animation on the input; results **stagger-in**; loading = dot-matrix / gradient-pulse shimmer; empty state = an animated illustration (not the static magnifier).
+- **Library** — card **hover lift/morph** + cover **shimmer-on-load**; grid stagger; `carousel-navigator` for "recent"; the audiobook **Ready** badge gets a subtle pop.
+- **Audiobook player** — **spring** scrubber (`adaptive-slider`), play/pause **icon morph**, chapter list slide/stagger, and mini→expanded as a **shared-element crossfade** (we already animate bounds — add a content crossfade).
+- **Downloads** — progress **pulse** + a **micro-celebration** (check/confetti) on complete (designspells "Vercel deploy" energy).
+- **Dropdowns/selects** — `dropdown-disclosure` smooth disclosure; **dot-matrix** loaders everywhere.
+- **Chrome** — Mica + rounded sidebar (done).
+- **Landing** — particle/text-repel typography + device mockups + scroll-driven reveals.
