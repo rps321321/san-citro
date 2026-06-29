@@ -7,8 +7,7 @@ import { Command } from "cmdk";
 import {
   SearchIcon,
   LibraryIcon,
-  DownloadIcon,
-  ClockIcon,
+  ActivityIcon,
   SettingsIcon,
   SunMoonIcon,
 } from "lucide-react";
@@ -18,8 +17,7 @@ import {
 const NAV = [
   { label: "Search", icon: SearchIcon, to: "/search" },
   { label: "Library", icon: LibraryIcon, to: "/library" },
-  { label: "Downloads", icon: DownloadIcon, to: "/downloads" },
-  { label: "History", icon: ClockIcon, to: "/history" },
+  { label: "Activity", icon: ActivityIcon, to: "/activity" },
   { label: "Settings", icon: SettingsIcon, to: "/settings" },
 ] as const;
 

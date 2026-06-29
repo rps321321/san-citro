@@ -62,7 +62,7 @@ export function StatusIsland() {
           <motion.button
             key="island"
             type="button"
-            onClick={() => navigate("/downloads")}
+            onClick={() => navigate("/activity")}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}

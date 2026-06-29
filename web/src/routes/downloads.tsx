@@ -257,7 +257,7 @@ function openReader(md5: string, title: string) {
   window.location.hash = "#/reader";
 }
 
-export default function DownloadsPage() {
+export default function DownloadsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { downloads, connection, removeDownloads } = useDownloadStream();
   const items = Array.from(downloads.values());
 
@@ -338,6 +338,10 @@ export default function DownloadsPage() {
       );
     }
   };
+
+  // Embedded in Activity: show nothing when there's no active transfer, so the
+  // History section below sits flush (no big empty state).
+  if (embedded && items.length === 0) return null;
 
   return (
     <div className="space-y-6">

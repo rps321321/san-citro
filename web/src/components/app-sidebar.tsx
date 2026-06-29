@@ -7,8 +7,7 @@ import { trackInteraction } from "@/lib/telemetry";
 import {
   SearchIcon,
   LibraryIcon,
-  DownloadIcon,
-  ClockIcon,
+  ActivityIcon,
   SettingsIcon,
   SunIcon,
   MoonIcon,
@@ -41,8 +40,7 @@ import {
 const NAV_ITEMS = [
   { label: "Search", href: "/search", icon: SearchIcon },
   { label: "Library", href: "/library", icon: LibraryIcon },
-  { label: "Downloads", href: "/downloads", icon: DownloadIcon },
-  { label: "History", href: "/history", icon: ClockIcon },
+  { label: "Activity", href: "/activity", icon: ActivityIcon },
   { label: "Settings", href: "/settings", icon: SettingsIcon },
 ] as const;
 

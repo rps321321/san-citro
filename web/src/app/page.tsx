@@ -6,8 +6,7 @@ import { HashRouter, Routes, Route, Navigate } from "react-router";
 import AppShell from "@/components/app-shell";
 import SearchPage from "@/routes/search";
 import LibraryPage from "@/routes/library";
-import DownloadsPage from "@/routes/downloads";
-import HistoryPage from "@/routes/history";
+import ActivityPage from "@/routes/activity";
 import SettingsPage from "@/routes/settings";
 import ReaderPage from "@/routes/reader";
 
@@ -27,8 +26,9 @@ export default function Page() {
           <Route index element={<Navigate to="/search" replace />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/library" element={<LibraryPage />} />
-          <Route path="/downloads" element={<DownloadsPage />} />
-          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/downloads" element={<Navigate to="/activity" replace />} />
+          <Route path="/history" element={<Navigate to="/activity" replace />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/reader" element={<ReaderPage />} />
           <Route path="*" element={<Navigate to="/search" replace />} />
