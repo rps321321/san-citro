@@ -84,9 +84,12 @@ Audiobooks** tabs, and **Sort + Filter facets** (author, year, genre, category, 
 language). Sits in the nav alongside (not replacing) History.
 
 **Genre**:
-A book's genre(s), fetched once post-download from **Google Books** `categories` — ISBN lookup
-first (ISBN parsed from the filename), title+author fallback; `null` on miss. A Library facet.
-Distinct from **category** (AA's coarse fiction/non-fiction/comic content type).
+A book's genre(s), enriched **best-effort** post-download from **OpenLibrary** `subjects` (keyless,
+the primary), with **Google Books** `categories` as an **opt-in fallback only when the user supplies
+their own API key** (Google's key + ~100/day quota is a poor fit for a keyless shipped app). Match by
+ISBN first (parsed from the filename — unreliable), title+author fallback; `null` on miss, which is
+common. **Decoration, never load-bearing** — AA's coarse **category** (fiction/non-fiction/comic) is
+the always-present grouping when enrichment is empty. A Library facet. (Decided 2026-06-29.)
 
 **Player overlay**:
 The persistent audiobook player — a child **`WebContentsView`** overlaid on the main window as

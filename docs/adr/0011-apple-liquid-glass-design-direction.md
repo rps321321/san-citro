@@ -38,4 +38,12 @@ the refined bar.
 - Motion becomes **spring-based** (Apple easing), not generic 200ms tweens.
 - A `--glass-*` token set + a reusable glass surface utility (translucent bg + `backdrop-blur`
   + hairline border + soft shadow) is needed; `--primary`/accent tokens shift to the citrus.
+- **Glass performance — full glass now, optimize later (decided 2026-06-29).** Glass goes on the
+  whole control layer *and* animates (player morph, island expand), despite `backdrop-filter` blur
+  being GPU-heavy and animated blur being its worst case (research: [shadcn #327](https://github.com/shadcn-ui/ui/issues/327),
+  [FoundryVTT #10400](https://github.com/foundryvtt/foundryvtt/issues/10400)). Risk accepted to keep
+  the vision intact. **Trigger:** after the shell + player land, profile on a *normal laptop* (not the
+  dev GPU). If frames drop, optimize hotspots in this order — animated-blur morphs first (cross-fade a
+  pre-blurred static layer instead of re-blurring per frame), then cap simultaneous CSS-blur surfaces,
+  then let Mica carry the always-on sidebar. Fake-glass (gradient/no-blur) is the last-resort fallback.
 - Glossary: [[liquid-glass]], [[control-layer-vs-content-layer]], [[citrus-accent]].
