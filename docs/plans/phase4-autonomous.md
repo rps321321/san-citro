@@ -75,3 +75,23 @@ is green, write the blocker + your recommendation in the Progress log, and stop.
   (per-item `animationDelay`). Build + lint green. **TOP ITEM FOR YOUR REVIEW: the detail sheet +
   cover morph** (surface #4) — confirm click→sheet and I'll build it with feedback. Next: reader theming.
 - 2026-06-29 — **#5 reader theming (done)**. Reader gets a 3-way reading theme (light/sepia/dark) independent of the app chrome, with a control-bar switcher (Sun/Coffee/Moon, citrus-active). Sepia = warm cream bg + brown text; the reading surface bg tracks the theme. Syncs to the app theme on first open, then user-controlled. Still epub.js (foliate multi-format deferred). Build + lint green. NEEDS VISUAL REVIEW (sepia shade + switcher). Next: search rows.
+
+=== OVERNIGHT RUN PAUSED (2026-06-29) — branch green, 21 commits ===
+
+SHIPPED (committed on feat/latest-stack; web build + electron tsc + lint all green): Phase 3 design system (citrus + glass tokens + .glass util + spring presets + type metrics); Ctrl+K command palette; and 5 Phase-4 surfaces — 4.1 citrus active-nav, 4.2 hero cover grid (shadow/hover-lift/citrus-ring), 4.3 Dynamic Island (StatusIsland, replaces the download badge), 4.4 staggered grid entrance, 4.5 reader 3-way theming (light/sepia/dark).
+
+PAUSED per the doc stop-conditions (budget getting long + remaining surfaces genuinely need your feedback/decisions — building them blind risks rework/breakage):
+
+- Detail sheet + cover morph (#4) — TOP item. Changes the primary click-to-open interaction; glass-on-slide trap. Confirm click->sheet and I build it.
+
+- Activity merge (#6) — needs Downloads/History refactored for clean embedding (empty-state handling); confirm the merged layout.
+
+- Search rows (#5) — ALREADY a table with citrus buttons; essentially done.
+
+- Player polish (#7) — already glass+citrus from Phase 3; the mini->expanded spring morph needs the glass-killer cross-fade technique.
+
+- Genre shelves + OpenLibrary enrichment (#8) — needs the enrichment API wiring + accumulated data.
+
+- foliate-js multi-format reader (#9) — a big separate effort (vendor + React wrapper).
+
+Every NEEDS-VISUAL-REVIEW surface COMPILES + RUNS but I could not judge its look. Open the app, skim, send feedback to tune the citrus shade / glass / positioning and unblock the rest.
