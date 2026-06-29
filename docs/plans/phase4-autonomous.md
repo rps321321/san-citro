@@ -62,3 +62,9 @@ is green, write the blocker + your recommendation in the Progress log, and stop.
   **hover-lift** (`-translate-y-1`), and a **citrus hover-ring** on covers — applied to both the books
   and audiobook grids. Staggered entrance DEFERRED (needs motion wiring; a polish follow-up, not
   blocking). Build + lint green. NEEDS VISUAL REVIEW. Next: #3 Dynamic Island.
+- 2026-06-29 — **#3 Dynamic Island ✅**. `scroll-island` turned out to be a scroll-progress/topic
+  widget (wrong shape), so built a purpose-fit **StatusIsland**: a centered glass pill in the title
+  bar that appears on activity (Downloading N / Processing… / Ready), hides when idle, click →
+  Downloads. **Replaces the old download badge** (AppHeader simplified). Fade-only motion + flex
+  centering — no transform under the glass (glass-killer trap). Build + lint green. NEEDS VISUAL
+  REVIEW (title-bar positioning + glass-over-Mica look). Next: #4 detail sheet.
