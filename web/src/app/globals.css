@@ -58,8 +58,10 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  /* Citrus accent (ADR-0011) — the single brand color, on primary buttons,
+     focus rings, and the active nav. */
+  --primary: oklch(0.63 0.19 48);
+  --primary-foreground: oklch(0.99 0.01 80);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -75,17 +77,24 @@
   --info-foreground: oklch(0.985 0 0);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: oklch(0.63 0.19 48);
   --destructive-foreground: oklch(0.985 0 0);
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0 / 0.7);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.63 0.19 48);
+  --sidebar-primary-foreground: oklch(0.99 0.01 80);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-ring: oklch(0.63 0.19 48);
+  /* Liquid Glass tokens (ADR-0011) — consumed by the .glass utility on the
+     control layer. Blur ≤16px per the perf research; keep glass OUT of any
+     Motion-transformed ancestor (the containing-block trap blanks backdrop-filter). */
+  --glass-bg: oklch(1 0 0 / 0.55);
+  --glass-border: oklch(0 0 0 / 0.08);
+  --glass-blur: 16px;
+  --glass-shadow: 0 8px 30px oklch(0 0 0 / 0.12);
 }
 
 .dark {
@@ -95,8 +104,9 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  /* Citrus brightens in dark (ADR-0011). */
+  --primary: oklch(0.70 0.17 52);
+  --primary-foreground: oklch(0.16 0.02 48);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -112,16 +122,19 @@
   --info-foreground: oklch(0.205 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.70 0.17 52);
   --destructive-foreground: oklch(0.985 0 0);
   --sidebar: oklch(0.205 0 0 / 0.7);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.70 0.17 52);
+  --sidebar-primary-foreground: oklch(0.16 0.02 48);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.70 0.17 52);
+  --glass-bg: oklch(0.21 0 0 / 0.55);
+  --glass-border: oklch(1 0 0 / 0.1);
+  --glass-shadow: 0 8px 30px oklch(0 0 0 / 0.4);
 }
 
 @layer base {
@@ -137,6 +150,10 @@
   html {
     @apply font-sans;
   }
+  /* Apple type metrics (ADR-0011): tighten tracking on larger text. */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+  }
 }
 
 /* Frameless window (Electron titleBarStyle: hidden): draggable title-bar regions.
@@ -146,6 +163,18 @@
 }
 .app-region-no-drag {
   -webkit-app-region: no-drag;
+}
+
+/* Liquid Glass surface (ADR-0011) — translucent + blurred control-layer surfaces
+   (sheets, popovers, the command palette, the expanded player). Keep OUT of any
+   Motion-transformed ancestor: a transform/filter on an ancestor establishes a
+   containing block that makes backdrop-filter sample nothing, blanking the blur. */
+.glass {
+  background-color: var(--glass-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
 }
 
 /* Easing used by the View Transition theme toggle */
