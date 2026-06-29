@@ -84,8 +84,9 @@ export function ensurePlayerView(win: BrowserWindow): WebContentsView {
 
   // Transparent so the player UI's frosted/translucent surfaces show the body
   // softly behind them (glassmorphic look). The page paints its own backdrop.
+  // No border radius — the player fills the body edge-to-edge, so rounded corners
+  // would punch transparent "holes" at the top edge.
   playerView.setBackgroundColor('#00000000');
-  playerView.setBorderRadius(12);
   win.contentView.addChildView(playerView);
   void playerView.webContents.loadURL('san-citro://app/player.html');
 

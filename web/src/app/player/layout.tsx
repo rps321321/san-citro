@@ -4,5 +4,9 @@
 export default function PlayerLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <>{children}</>;
+  // h-dvh establishes a definite height so the player page's `h-full` fills the
+  // entire view. The root <body> is only `min-h-full`, against which a child
+  // `h-full` collapses to content height — which left a transparent gap at the
+  // bottom of the (correctly full-height) view.
+  return <div className="h-dvh w-full">{children}</div>;
 }
