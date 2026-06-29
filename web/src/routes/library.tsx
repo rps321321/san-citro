@@ -39,8 +39,8 @@ import {
   listLibrary,
   listAudiobooks,
   onAudiobookStatus,
-  playAudiobook,
 } from "@/lib/api-client";
+import { usePlayer } from "@/contexts/player-context";
 import type { Audiobook, LibraryItem } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -215,13 +215,14 @@ function StatusBadge({ book }: { book: Audiobook }) {
 }
 
 function AudiobookCard({ book }: { book: Audiobook }) {
+  const { play } = usePlayer();
   const ready = isReady(book.status);
   const title = book.title || "Untitled";
   const duration = formatDuration(book.total_duration_seconds);
 
   const handleOpen = () => {
-    // Launch the persistent audiobook player (mini-bar) for this book.
-    if (ready) void playAudiobook(book.md5).catch(() => {});
+    // Launch the in-page audiobook player (mini-bar) for this book.
+    if (ready) void play(book.md5).catch(() => {});
   };
 
   return (

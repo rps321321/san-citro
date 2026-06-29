@@ -12,17 +12,15 @@ import {
   BookOpenIcon,
 } from "lucide-react";
 
-import {
-  onLoad,
-  onSetMode,
-  requestMode,
-  saveProgress,
-} from "@/lib/player-bridge";
-import type { Chapter, PlayerLoadPayload, PlayerMode } from "@/types";
+import { usePlayer } from "@/contexts/player-context";
+import { saveAudiobookProgress } from "@/lib/api-client";
+import type { Chapter } from "@/types";
 
-// ---------------------------------------------------------------------------
-// Time formatting
-// ---------------------------------------------------------------------------
+// The persistent audiobook player, in-page (ADR-0013). The <audio> lives in the
+// shell — outside <Routes> — so playback survives route changes. State (payload,
+// mode) comes from PlayerContext; transport/position is local. NOTE (glass-killer
+// trap): this player must NOT be wrapped in any Motion layout-animated ancestor,
+// or its backdrop-filter will silently blank.
 
 /** Format seconds as M:SS or H:MM:SS. */
 function formatTime(seconds: number): string {
@@ -38,15 +36,10 @@ function formatTime(seconds: number): string {
 
 const SAVE_INTERVAL_MS = 5000;
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
-export default function PlayerPage() {
+export function InPagePlayer() {
+  const { payload, mode, setMode, close } = usePlayer();
   const audioRef = useRef<HTMLAudioElement>(null);
 
-  const [payload, setPayload] = useState<PlayerLoadPayload | null>(null);
-  const [mode, setMode] = useState<PlayerMode>("mini");
   const [chapterIndex, setChapterIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -58,35 +51,25 @@ export default function PlayerPage() {
   const audiobook = payload?.detail.audiobook ?? null;
   const currentChapter = chapters[chapterIndex] ?? null;
 
-  // The position to seek to once the *current* chapter's media is loaded. Set
-  // when (re)loading a chapter so onLoadedMetadata can apply it.
   const seekToRef = useRef(0);
   const lastSavedRef = useRef(0);
 
-  // ---- Load (from main) ---------------------------------------------------
+  // ---- Load (when a new book is played, payload changes) ------------------
   useEffect(() => {
-    return onLoad((p) => {
-      setPayload(p);
-      setCoverFailed(false);
-      // Resume from saved progress when available, else chapter 0 @ 0.
-      const startIdx = p.progress
-        ? Math.max(
-            0,
-            p.detail.chapters.findIndex(
-              (c) => c.chapter_id === p.progress!.chapter_id
-            )
+    if (!payload) return;
+    setCoverFailed(false);
+    const startIdx = payload.progress
+      ? Math.max(
+          0,
+          payload.detail.chapters.findIndex(
+            (c) => c.chapter_id === payload.progress!.chapter_id
           )
-        : 0;
-      setChapterIndex(startIdx);
-      seekToRef.current = p.progress?.file_position_seconds ?? 0;
-      lastSavedRef.current = 0;
-    });
-  }, []);
-
-  // ---- Mode (from main) ---------------------------------------------------
-  useEffect(() => {
-    return onSetMode((m) => setMode(m));
-  }, []);
+        )
+      : 0;
+    setChapterIndex(startIdx);
+    seekToRef.current = payload.progress?.file_position_seconds ?? 0;
+    lastSavedRef.current = 0;
+  }, [payload]);
 
   // ---- Load media when the chapter changes --------------------------------
   useEffect(() => {
@@ -94,12 +77,8 @@ export default function PlayerPage() {
     if (!audio || !currentChapter) return;
     setCurrentTime(0);
     setDuration(0);
-    // Setting src + load() triggers onLoadedMetadata, which applies seekToRef.
     audio.load();
-    void audio.play().catch(() => {
-      // Autoplay may be blocked until first user gesture — reflect paused state.
-      setIsPlaying(false);
-    });
+    void audio.play().catch(() => setIsPlaying(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [md5, currentChapter?.chapter_id]);
 
@@ -107,7 +86,7 @@ export default function PlayerPage() {
   const persist = useCallback(
     (positionSeconds: number) => {
       if (!md5 || !currentChapter) return;
-      void saveProgress({
+      void saveAudiobookProgress({
         md5,
         chapter_id: currentChapter.chapter_id,
         file_position_seconds: Math.floor(positionSeconds),
@@ -116,22 +95,18 @@ export default function PlayerPage() {
     [md5, currentChapter]
   );
 
-  // Flush the latest position when the view is being hidden/torn down. Uses
-  // pagehide + visibilitychange (NOT React unmount — the view persists across
-  // main-window reloads, so unmount never fires here).
+  // Flush the latest position when the window is closing. In-page the <audio> is
+  // part of the React tree, so beforeunload (fires on Electron window close) +
+  // the cleanup below cover teardown (pagehide/visibilitychange no longer needed).
   useEffect(() => {
     const flush = () => {
       const audio = audioRef.current;
       if (audio) persist(audio.currentTime);
     };
-    const onVisibility = () => {
-      if (document.visibilityState === "hidden") flush();
-    };
-    window.addEventListener("pagehide", flush);
-    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("beforeunload", flush);
     return () => {
-      window.removeEventListener("pagehide", flush);
-      document.removeEventListener("visibilitychange", onVisibility);
+      flush();
+      window.removeEventListener("beforeunload", flush);
     };
   }, [persist]);
 
@@ -183,7 +158,6 @@ export default function PlayerPage() {
     const audio = audioRef.current;
     if (!audio) return;
     setCurrentTime(audio.currentTime);
-    // Throttle persistence to ~once per SAVE_INTERVAL_MS.
     const now = Date.now();
     if (now - lastSavedRef.current >= SAVE_INTERVAL_MS) {
       lastSavedRef.current = now;
@@ -193,19 +167,12 @@ export default function PlayerPage() {
 
   const handleEnded = useCallback(() => {
     persist(duration);
-    if (chapterIndex < chapters.length - 1) {
-      goToChapter(chapterIndex + 1);
-    } else {
-      setIsPlaying(false);
-    }
+    if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1);
+    else setIsPlaying(false);
   }, [persist, duration, chapterIndex, chapters.length, goToChapter]);
 
   // ---- Render -------------------------------------------------------------
-  if (!payload || !currentChapter || !md5) {
-    // Nothing loaded yet (the view is built lazily and PLAYER_LOAD follows).
-    // Transparent so nothing flashes before the first PLAYER_LOAD.
-    return <div className="h-full w-full" />;
-  }
+  if (!payload || mode === "hidden" || !currentChapter || !md5) return null;
 
   const title = audiobook?.title || "Untitled";
   const coverUrl = audiobook?.cover_url ?? null;
@@ -231,9 +198,7 @@ export default function PlayerPage() {
         <BookOpenIcon className={`${iconClass} text-muted-foreground/40`} />
       </div>
     ) : (
-      <div
-        className={`${sizeClass} bg-muted overflow-hidden rounded-md shrink-0 shadow-lg ring-1 ring-black/10`}
-      >
+      <div className={`${sizeClass} bg-muted overflow-hidden rounded-md shrink-0 shadow-lg ring-1 ring-black/10`}>
         <img
           src={coverUrl}
           alt={`Cover of ${title}`}
@@ -245,91 +210,65 @@ export default function PlayerPage() {
 
   if (mode === "expanded") {
     return (
-      <div className="relative isolate flex h-full w-full flex-col overflow-hidden text-foreground">
-        {/* Frosted backdrop: blurred cover art under a translucent scrim. */}
+      // In-page: a fixed overlay over the content column, below the 36px title bar.
+      <div className="absolute inset-x-0 bottom-0 top-9 z-40 isolate flex flex-col overflow-hidden text-foreground">
         <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
           {coverUrl && !coverFailed && (
-            <img
-              src={coverUrl}
-              alt=""
-              className="h-full w-full scale-125 object-cover blur-3xl"
-            />
+            <img src={coverUrl} alt="" className="h-full w-full scale-125 object-cover blur-3xl" />
           )}
           <div className="absolute inset-0 bg-background/75 backdrop-blur-2xl" />
         </div>
         {sharedAudio}
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
-          <span className="truncate text-sm font-semibold" title={title}>
-            {title}
-          </span>
+          <span className="truncate text-sm font-semibold" title={title}>{title}</span>
           <div className="flex items-center gap-1">
-            <IconButton label="Collapse" onClick={() => requestMode("mini")}>
+            <IconButton label="Collapse" onClick={() => setMode("mini")}>
               <ChevronDownIcon className="size-4" />
             </IconButton>
-            <IconButton label="Close player" onClick={() => requestMode("hidden")}>
+            <IconButton label="Close player" onClick={close}>
               <XIcon className="size-4" />
             </IconButton>
           </div>
         </div>
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-          {/* Chapter list */}
-          <nav
-            aria-label="Chapters"
-            className="min-h-0 overflow-y-auto border-r border-border/40 p-2"
-          >
+          <nav aria-label="Chapters" className="min-h-0 overflow-y-auto border-r border-border/40 p-2">
             {chapters.map((c, i) => {
-              const active = i === chapterIndex;
+              const activeCh = i === chapterIndex;
               return (
                 <button
                   key={c.chapter_id}
                   type="button"
                   onClick={() => goToChapter(i)}
-                  aria-current={active ? "true" : undefined}
+                  aria-current={activeCh ? "true" : undefined}
                   className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition ${
-                    active
+                    activeCh
                       ? "bg-primary/15 font-medium text-primary shadow-sm backdrop-blur-sm"
                       : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
                   }`}
                 >
-                  <span className="w-6 shrink-0 text-right tabular-nums text-xs opacity-60">
-                    {i + 1}
-                  </span>
-                  <span className="truncate">
-                    {c.title || `Chapter ${c.chapter_index + 1}`}
-                  </span>
+                  <span className="w-6 shrink-0 text-right tabular-nums text-xs opacity-60">{i + 1}</span>
+                  <span className="truncate">{c.title || `Chapter ${c.chapter_index + 1}`}</span>
                 </button>
               );
             })}
           </nav>
 
-          {/* Now playing */}
           <div className="flex min-h-0 flex-col items-center justify-center gap-6 p-8">
             {cover("aspect-square w-56 max-w-[40vh]", "size-16")}
             <div className="text-center">
               <div className="text-lg font-semibold leading-snug">{title}</div>
               <div className="mt-1 text-sm text-muted-foreground">{chapterLabel}</div>
             </div>
-
             <div className="w-full max-w-md">
-              <Scrubber
-                value={currentTime}
-                max={duration}
-                onChange={onScrub}
-              />
+              <Scrubber value={currentTime} max={duration} onChange={onScrub} />
               <div className="mt-1 flex justify-between text-xs tabular-nums text-muted-foreground">
                 <span>{formatTime(currentTime)}</span>
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
-
             <div className="flex items-center gap-4">
-              <IconButton
-                label="Previous chapter"
-                onClick={prevChapter}
-                disabled={chapterIndex === 0}
-              >
+              <IconButton label="Previous chapter" onClick={prevChapter} disabled={chapterIndex === 0}>
                 <SkipBackIcon className="size-5" />
               </IconButton>
               <button
@@ -340,11 +279,7 @@ export default function PlayerPage() {
               >
                 {isPlaying ? <PauseIcon className="size-6" /> : <PlayIcon className="size-6" />}
               </button>
-              <IconButton
-                label="Next chapter"
-                onClick={nextChapter}
-                disabled={chapterIndex >= chapters.length - 1}
-              >
+              <IconButton label="Next chapter" onClick={nextChapter} disabled={chapterIndex >= chapters.length - 1}>
                 <SkipForwardIcon className="size-5" />
               </IconButton>
             </div>
@@ -354,10 +289,9 @@ export default function PlayerPage() {
     );
   }
 
-  // mini
+  // mini — a fixed bottom bar over the content column.
   return (
-    <div className="relative isolate flex h-full w-full items-center gap-3 px-3 text-foreground">
-      {/* Frosted bar backdrop (translucent over the body). */}
+    <div className="absolute inset-x-0 bottom-0 z-30 flex h-[72px] items-center gap-3 px-3 text-foreground">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 border-t border-border/40 bg-background/80 backdrop-blur-xl"
@@ -366,18 +300,12 @@ export default function PlayerPage() {
       {cover("size-12", "size-5")}
 
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium leading-tight" title={title}>
-          {title}
-        </div>
+        <div className="truncate text-sm font-medium leading-tight" title={title}>{title}</div>
         <div className="truncate text-xs text-muted-foreground">{chapterLabel}</div>
         <div className="mt-1 flex items-center gap-2">
-          <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
-            {formatTime(currentTime)}
-          </span>
+          <span className="w-9 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">{formatTime(currentTime)}</span>
           <Scrubber value={currentTime} max={duration} onChange={onScrub} compact />
-          <span className="w-9 shrink-0 text-[10px] tabular-nums text-muted-foreground">
-            {formatTime(duration)}
-          </span>
+          <span className="w-9 shrink-0 text-[10px] tabular-nums text-muted-foreground">{formatTime(duration)}</span>
         </div>
       </div>
 
@@ -393,27 +321,19 @@ export default function PlayerPage() {
         >
           {isPlaying ? <PauseIcon className="size-4" /> : <PlayIcon className="size-4" />}
         </button>
-        <IconButton
-          label="Next chapter"
-          onClick={nextChapter}
-          disabled={chapterIndex >= chapters.length - 1}
-        >
+        <IconButton label="Next chapter" onClick={nextChapter} disabled={chapterIndex >= chapters.length - 1}>
           <SkipForwardIcon className="size-4" />
         </IconButton>
-        <IconButton label="Expand player" onClick={() => requestMode("expanded")}>
+        <IconButton label="Expand player" onClick={() => setMode("expanded")}>
           <ChevronUpIcon className="size-4" />
         </IconButton>
-        <IconButton label="Close player" onClick={() => requestMode("hidden")}>
+        <IconButton label="Close player" onClick={close}>
           <XIcon className="size-4" />
         </IconButton>
       </div>
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Small presentational helpers
-// ---------------------------------------------------------------------------
 
 function IconButton({
   label,

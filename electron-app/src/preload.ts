@@ -35,6 +35,7 @@ const IPC_CHANNELS = {
   GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
   PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
+  SAVE_AUDIOBOOK_PROGRESS: 'san-citro:saveAudiobookProgress',
   PLAYER_ACTIVE: 'san-citro:player:active',
   PLAYER_CONTENT_RECT: 'san-citro:player:contentRect',
   SET_TITLEBAR_OVERLAY: 'san-citro:setTitlebarOverlay',
@@ -80,9 +81,17 @@ const api = {
 
   // --- Persistent audiobook player ---
 
-  // Start (or switch to) playing an audiobook in the persistent player view.
-  playAudiobook: (md5: string): Promise<void> =>
+  // Start (or switch to) playing an audiobook; resolves { md5, detail, progress }.
+  playAudiobook: (md5: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.PLAY_AUDIOBOOK, { md5 }),
+
+  // Persist the in-page player's playback position.
+  saveAudiobookProgress: (p: {
+    md5: string;
+    chapter_id: number;
+    file_position_seconds: number;
+  }): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.SAVE_AUDIOBOOK_PROGRESS, p),
 
   // Notifies the page when the player becomes active/inactive (and its mode) so
   // it can reserve ~72px of bottom padding for the mini-bar.

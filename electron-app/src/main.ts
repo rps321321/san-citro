@@ -16,7 +16,6 @@ import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMediaProtocol } from './media-protocol';
-import { getMode, setMode, destroyPlayerView } from './player-view';
 import { showSplash, closeSplash } from './splash';
 import { createTray, destroyTray, setTrayUpdateStatus } from './tray';
 import {
@@ -200,20 +199,6 @@ function createMainWindow(): BrowserWindow {
     }
   });
 
-  // COLLAPSE ON NAV: the renderer uses full-page-reload navigation. If the
-  // player is EXPANDED when the user browses, auto-collapse it to the mini-bar
-  // (audio keeps playing — the view is a sibling, not part of the page).
-  mainWindow.webContents.on('did-start-navigation', (details) => {
-    if (!details.isMainFrame || details.isSameDocument) return;
-    if (getMode() === 'expanded') {
-      setMode('mini');
-      mainWindow?.webContents.send(IPC_CHANNELS.PLAYER_ACTIVE, {
-        active: true,
-        mode: 'mini',
-      });
-    }
-  });
-
   // Prevent new windows — open external URLs in default browser instead
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (url.startsWith('https://') || url.startsWith('http://')) {
@@ -356,7 +341,6 @@ app.on('will-quit', async (event) => {
   event.preventDefault();
 
   destroyTray();
-  destroyPlayerView();
 
   // Hard timeout to prevent the app from hanging forever if bridge.kill() stalls
   try {

@@ -193,23 +193,14 @@ export interface SanCitroApi {
   getAudiobookDetail(md5: string): Promise<AudiobookDetail>;
   /** Subscribe to live audiobook status events. Returns an unsubscribe function. */
   onAudiobookStatus(cb: (e: { md5: string; status: string }) => void): () => void;
-  /** Launch (or focus) the persistent audiobook player for a ready audiobook. */
-  playAudiobook(md5: string): Promise<void>;
-  /**
-   * Subscribe to player-active state pushed from main. Fires whenever the player
-   * is shown/hidden or changes mode so the browsing window can reserve space.
-   * Returns an unsubscribe function.
-   */
-  onPlayerActive(
-    cb: (state: { active: boolean; mode: PlayerMode | null }) => void
-  ): () => void;
-  /** Report the body region (right of the sidebar) the player view should occupy. */
-  setPlayerContentRect(rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }): void;
+  /** Start (or switch to) playing an audiobook in-page; resolves the load payload. */
+  playAudiobook(md5: string): Promise<PlayerLoadPayload>;
+  /** Persist the in-page player's playback position. */
+  saveAudiobookProgress(p: {
+    md5: string;
+    chapter_id: number;
+    file_position_seconds: number;
+  }): Promise<void>;
   /** Theme-sync the OS window-controls overlay colors to the title bar. */
   setTitlebarOverlay(opts: { color: string; symbolColor: string }): void;
   /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
@@ -222,31 +213,8 @@ export interface SanCitroApi {
   }): Promise<void>;
 }
 
-/**
- * Bridge injected by the player-preload into the player WebContentsView only.
- * The player page (player/page.tsx) reads window.player; the main browsing
- * window does NOT have it (it uses window.sanCitro instead).
- */
-export interface PlayerBridge {
-  /** Receive the audiobook to play. Returns an unsubscribe function. */
-  onLoad(cb: (payload: PlayerLoadPayload) => void): () => void;
-  /** Receive mode changes driven by main (mini/expanded/hidden). */
-  onSetMode(cb: (mode: PlayerMode) => void): () => void;
-  /** Ask main to switch the view's display mode. */
-  requestMode(mode: PlayerMode): void;
-  /** Load the saved progress for an audiobook. */
-  getProgress(md5: string): Promise<AudiobookProgress | null>;
-  /** Persist playback position. */
-  saveProgress(p: {
-    md5: string;
-    chapter_id: number;
-    file_position_seconds: number;
-  }): Promise<void>;
-}
-
 declare global {
   interface Window {
     sanCitro?: SanCitroApi;
-    player?: PlayerBridge;
   }
 }

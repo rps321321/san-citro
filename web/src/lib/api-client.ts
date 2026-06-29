@@ -9,7 +9,7 @@ import type {
   LibraryItem,
   Audiobook,
   AudiobookDetail,
-  PlayerMode,
+  PlayerLoadPayload,
 } from "@/types";
 import { trackBridgeCall } from "./telemetry";
 
@@ -114,26 +114,19 @@ export function onAudiobookStatus(cb: (e: { md5: string; status: string }) => vo
   return ipc().onAudiobookStatus(cb);
 }
 
-// --------------- Persistent player ---------------
+// --------------- In-page player ---------------
 
-export async function playAudiobook(md5: string): Promise<void> {
+export async function playAudiobook(md5: string): Promise<PlayerLoadPayload> {
   assertValidMd5(md5);
   return timed("play_audiobook", () => ipc().playAudiobook(md5));
 }
 
-export function onPlayerActive(
-  cb: (state: { active: boolean; mode: PlayerMode | null }) => void
-): () => void {
-  return ipc().onPlayerActive(cb);
-}
-
-export function setPlayerContentRect(rect: {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}): void {
-  ipc().setPlayerContentRect(rect);
+export async function saveAudiobookProgress(p: {
+  md5: string;
+  chapter_id: number;
+  file_position_seconds: number;
+}): Promise<void> {
+  return ipc().saveAudiobookProgress(p);
 }
 
 export function setTitlebarOverlay(opts: {

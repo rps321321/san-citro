@@ -1,16 +1,8 @@
 import { ipcMain, BrowserWindow, shell, dialog, app, Notification } from 'electron';
 import { promises as fsp } from 'fs';
 import { PythonBridge } from './python-bridge';
-import { IPC_CHANNELS, type PlayerMode } from './types';
+import { IPC_CHANNELS } from './types';
 import { checkForUpdates, quitAndInstall } from './updater';
-import {
-  ensurePlayerView,
-  setMode,
-  destroyPlayerView,
-  getMode,
-  sendToPlayer,
-  setContentRect,
-} from './player-view';
 
 /**
  * Register all IPC handlers that delegate to the Python bridge.
@@ -54,29 +46,14 @@ export function registerIpcHandlers(
     return bridge.call('get_audiobook_detail', { md5 });
   });
 
-  // --- Persistent audiobook player (Phase 4) ---
+  // --- In-page audiobook player (ADR-0013) ---
 
-  // Tell the main-window renderer whether a player is active (so it can reserve
-  // ~72px of bottom padding) and which mode it is in.
-  const emitPlayerActive = (active: boolean, mode: PlayerMode | null): void => {
-    const win = getMainWindow();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC_CHANNELS.PLAYER_ACTIVE, { active, mode });
-    }
-  };
-
-  // main-window renderer -> main: start (or switch to) playing an audiobook.
-  // Builds the lazy view, loads detail + saved progress, shows the mini-bar.
+  // renderer -> main: start playing an audiobook. Fetch detail + saved progress
+  // and return them so the renderer hydrates its PlayerContext directly (no
+  // WebContentsView, no PLAYER_LOAD push).
   ipcMain.handle(
     IPC_CHANNELS.PLAY_AUDIOBOOK,
     async (_event, { md5 }: { md5: string }) => {
-      const win = getMainWindow();
-      if (!win) {
-        throw new Error('No main window to attach the player to.');
-      }
-
-      ensurePlayerView(win);
-
       const detail = await bridge.call('get_audiobook_detail', { md5 });
       let progress: unknown = null;
       try {
@@ -84,21 +61,11 @@ export function registerIpcHandlers(
       } catch (err) {
         console.error('[player] get_audiobook_progress failed:', err);
       }
-
-      sendToPlayer(IPC_CHANNELS.PLAYER_LOAD, { md5, detail, progress });
-      setMode('mini');
-      emitPlayerActive(true, 'mini');
+      return { md5, detail, progress };
     }
   );
 
-  // view -> main: read/persist progress (resume position).
-  ipcMain.handle(
-    IPC_CHANNELS.GET_AUDIOBOOK_PROGRESS,
-    (_event, { md5 }: { md5: string }) => {
-      return bridge.call('get_audiobook_progress', { md5 });
-    }
-  );
-
+  // renderer -> main: persist the in-page player's playback position.
   ipcMain.handle(
     IPC_CHANNELS.SAVE_AUDIOBOOK_PROGRESS,
     (
@@ -106,28 +73,6 @@ export function registerIpcHandlers(
       params: { md5: string; chapter_id: number; file_position_seconds: number }
     ) => {
       return bridge.call('save_audiobook_progress', params);
-    }
-  );
-
-  // view -> main: the player asked to change mode (expand / collapse / close).
-  // "hidden" is a full close: stop + destroy the view (frees memory); next Play
-  // rebuilds it. Otherwise just switch modes and keep playing.
-  ipcMain.on(IPC_CHANNELS.PLAYER_REQUEST_MODE, (_event, mode: PlayerMode) => {
-    if (mode === 'hidden') {
-      destroyPlayerView();
-      emitPlayerActive(false, null);
-      return;
-    }
-    setMode(mode);
-    emitPlayerActive(true, mode);
-  });
-
-  // main-window renderer -> main: the body region the player should occupy
-  // (right of the sidebar). Keeps the view off the sidebar on resize/toggle.
-  ipcMain.on(
-    IPC_CHANNELS.PLAYER_CONTENT_RECT,
-    (_event, rect: { x: number; y: number; width: number; height: number }) => {
-      setContentRect(rect);
     }
   );
 
