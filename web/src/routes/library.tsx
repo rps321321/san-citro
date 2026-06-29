@@ -606,12 +606,13 @@ export default function LibraryPage() {
         </div>
       ) : view === "grid" ? (
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {visibleItems.map((item) => (
+          {visibleItems.map((item, i) => (
             <button
               key={item.md5}
               type="button"
               onClick={() => openItem(item)}
-              className="group text-left space-y-2 rounded-lg outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-3 focus-visible:ring-ring/50"
+              style={{ animationDelay: `${Math.min(i, 14) * 30}ms` }}
+              className="group text-left space-y-2 rounded-lg outline-none transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-3 focus-visible:ring-ring/50 animate-[card-enter_0.35s_ease-out_both]"
               title={item.title || undefined}
             >
               <div className="relative">

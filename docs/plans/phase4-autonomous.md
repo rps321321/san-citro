@@ -68,3 +68,9 @@ is green, write the blocker + your recommendation in the Progress log, and stop.
   Downloads. **Replaces the old download badge** (AppHeader simplified). Fade-only motion + flex
   centering — no transform under the glass (glass-killer trap). Build + lint green. NEEDS VISUAL
   REVIEW (title-bar positioning + glass-over-Mica look). Next: #4 detail sheet.
+- 2026-06-29 — **#4 detail sheet DEFERRED** (needs your eyes) + **grid stagger ✅**. The detail sheet
+  changes the *primary click-to-open* interaction AND glass-on-sheet conflicts with base-ui's
+  slide-transform (glass-killer trap during the slide) — both are real UX/visual calls I shouldn't
+  make blind. Built the safe Library finish instead: **staggered card-enter** on the books grid
+  (per-item `animationDelay`). Build + lint green. **TOP ITEM FOR YOUR REVIEW: the detail sheet +
+  cover morph** (surface #4) — confirm click→sheet and I'll build it with feedback. Next: reader theming.
