@@ -58,15 +58,15 @@ export default function AppLayout({
         Skip to main content
       </a>
       <AppSidebar />
-      {/* Transparent so the title-bar strip shows Mica; the scrollable content
-          area below re-establishes an opaque surface for readability. */}
-      <SidebarInset className="bg-transparent">
+      {/* The content panel stays opaque (only the sidebar is translucent for
+          Mica) so there's no transparent sliver at the sidebar/content seam. */}
+      <SidebarInset>
         <UpdateBanner />
         <AppHeader />
         <main
           ref={mainRef}
           id="main-content"
-          className="flex-1 overflow-auto bg-background p-4 md:p-6"
+          className="flex-1 overflow-auto p-4 md:p-6"
           style={playerActive ? { paddingBottom: 72 } : undefined}
         >
           {children}
