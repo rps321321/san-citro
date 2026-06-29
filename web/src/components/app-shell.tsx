@@ -8,6 +8,7 @@ import { UpdateBanner } from "@/components/update-banner";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { TitlebarSync } from "@/components/titlebar-sync";
 import { InPagePlayer } from "@/components/in-page-player";
+import { CommandPalette } from "@/components/command-palette";
 import { PlayerProvider, usePlayer } from "@/contexts/player-context";
 
 // The persistent SPA shell: sidebar + title bar + routed <Outlet /> + the
@@ -39,6 +40,7 @@ function ShellInner() {
         </main>
         <InPagePlayer />
       </SidebarInset>
+      <CommandPalette />
     </SidebarProvider>
   );
 }
