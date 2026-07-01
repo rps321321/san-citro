@@ -58,6 +58,11 @@ if (!gotLock) {
 let mainWindow: BrowserWindow | null = null;
 const bridge = new PythonBridge();
 
+// ponytail: dev-only HMR loader. Set SAN_CITRO_DEV_SERVER_URL=http://localhost:3000
+// (with `next dev` running there) to load the live Next.js server instead of the
+// static san-citro:// build, so renderer edits hot-reload without a rebuild+relaunch.
+const DEV_SERVER_URL = !app.isPackaged ? process.env.SAN_CITRO_DEV_SERVER_URL || '' : '';
+
 // Module-level flag — cleaner than monkey-patching app object
 let isQuitting = false;
 
@@ -167,7 +172,7 @@ function createMainWindow(): BrowserWindow {
     },
   });
 
-  mainWindow.loadURL('san-citro://app/index.html');
+  mainWindow.loadURL(DEV_SERVER_URL || 'san-citro://app/index.html');
 
   // Open DevTools only during development
   if (!app.isPackaged) {
@@ -193,7 +198,7 @@ function createMainWindow(): BrowserWindow {
 
   // Prevent the renderer from navigating away from san-citro:// protocol
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('san-citro://')) {
+    if (!url.startsWith('san-citro://') && !(DEV_SERVER_URL && url.startsWith(DEV_SERVER_URL))) {
       event.preventDefault();
       console.warn('[main] Blocked navigation to:', url);
     }
@@ -249,14 +254,16 @@ app.whenReady().then(async () => {
   registerMediaProtocol(bridge);
 
   // 6. Set up CSP BEFORE creating the window (must be active before loadURL fires)
+  // Dev HMR needs the Next dev server origin + its websocket for fast refresh.
+  const devConnect = DEV_SERVER_URL ? `${DEV_SERVER_URL} ${DEV_SERVER_URL.replace('http', 'ws')} ` : '';
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' san-citro:; " +
+          `default-src 'self' san-citro: ${devConnect}; ` +
           // epub.js and Next.js require unsafe-inline/unsafe-eval for now
-          "script-src 'self' san-citro: 'unsafe-inline' 'unsafe-eval'; " +
+          `script-src 'self' san-citro: ${devConnect}'unsafe-inline' 'unsafe-eval'; ` +
           "style-src 'self' san-citro: 'unsafe-inline' blob:; " +
           // epub.js renders into a blob: iframe
           "frame-src 'self' san-citro: blob:; " +
@@ -264,7 +271,7 @@ app.whenReady().then(async () => {
           // <audio> in the player view streams chapters over san-citro-media://
           "media-src san-citro-media:; " +
           // Update this domain when NEXT_PUBLIC_SUPABASE_URL changes in web/.env.local
-          "connect-src 'self' san-citro: blob: https://uxykfosgpcjexqqdzhsp.supabase.co; " +
+          `connect-src 'self' san-citro: blob: ${devConnect}https://uxykfosgpcjexqqdzhsp.supabase.co; ` +
           "font-src 'self' san-citro: data: blob:; " +
           // Harden: restrict object embeds, base URI, form targets, workers
           "object-src 'none'; " +
