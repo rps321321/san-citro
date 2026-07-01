@@ -29,6 +29,7 @@ import { getHistory } from "@/lib/api-client";
 import type { HistoryEntry } from "@/types";
 import { trackInteraction, trackFeatureDiscovery, incrementEngagement } from "@/lib/telemetry";
 import { formatFileSize, truncateMd5, formatDate } from "@/lib/format";
+import { openReader } from "@/lib/reader-nav";
 import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
 
 // ---------------------------------------------------------------------------
@@ -116,12 +117,6 @@ function compareEntries(a: HistoryEntry, b: HistoryEntry, key: SortKey): number 
     case "completed":
       return (a.completed_at ?? "").localeCompare(b.completed_at ?? "");
   }
-}
-
-function openReader(md5: string, title: string) {
-  sessionStorage.setItem("reader:md5", md5);
-  sessionStorage.setItem("reader:title", title || "");
-  window.location.hash = "#/reader";
 }
 
 export default function HistoryPage() {
@@ -331,7 +326,13 @@ export default function HistoryPage() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            onClick={() => openReader(entry.md5, entry.title ?? entry.filename ?? "")}
+                            onClick={() =>
+                              openReader(
+                                entry.md5,
+                                entry.title ?? entry.filename ?? "",
+                                entry.filename ?? ""
+                              )
+                            }
                             aria-label={`Read ${entry.title ?? entry.filename}`}
                             title="Read"
                           >

@@ -219,22 +219,24 @@ function AudiobookCard({ book }: { book: Audiobook }) {
       type="button"
       onClick={handleOpen}
       disabled={!ready}
-      className="group text-left space-y-2 rounded-lg outline-none transition-transform duration-200 enabled:hover:-translate-y-1 focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default"
+      className="group text-left space-y-2 rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-default"
       title={ready ? "Play" : title}
     >
       <div className="relative">
-        <Cover coverUrl={book.cover_url} title={title} size="grid" />
+        <div className={ready ? "transition-transform duration-200 group-hover:-translate-y-1" : undefined}>
+          <Cover coverUrl={book.cover_url} title={title} size="grid" />
+          {ready && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
+              <span className="flex items-center gap-1.5 rounded-md bg-background/90 px-2.5 py-1 text-xs font-medium">
+                <PlayIcon className="size-3.5" />
+                Play
+              </span>
+            </div>
+          )}
+        </div>
         <div className="absolute left-1.5 top-1.5">
           <StatusBadge book={book} />
         </div>
-        {ready && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
-            <span className="flex items-center gap-1.5 rounded-md bg-background/90 px-2.5 py-1 text-xs font-medium">
-              <PlayIcon className="size-3.5" />
-              Play
-            </span>
-          </div>
-        )}
       </div>
       <div>
         <div className="truncate text-sm font-medium leading-snug group-hover:underline group-disabled:no-underline">
@@ -644,8 +646,17 @@ export default function LibraryPage() {
               {visibleItems.map((item) => (
                 <TableRow
                   key={item.md5}
-                  className="cursor-pointer"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`Open details for ${item.title || "Untitled"}`}
+                  className="cursor-pointer outline-none focus-visible:bg-muted/50 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
                   onClick={() => setDetailItem(item)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setDetailItem(item);
+                    }
+                  }}
                 >
                   <TableCell className="w-16 p-2">
                     <Cover coverUrl={item.cover_url} title={item.title} size="thumb" />

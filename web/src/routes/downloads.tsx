@@ -12,6 +12,7 @@ import { ConnectionIndicator } from "@/components/connection-indicator";
 import { useDownloadStream } from "@/lib/use-sse";
 import { cancelDownload } from "@/lib/api-client";
 import { truncateMd5, formatFileSize } from "@/lib/format";
+import { openReader } from "@/lib/reader-nav";
 import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
 import { trackInteraction } from "@/lib/telemetry";
 import type { DownloadStatus } from "@/types";
@@ -203,7 +204,7 @@ function DownloadCard({
                 variant="ghost"
                 size="sm"
                 className="shrink-0 text-xs"
-                onClick={() => openReader(dl.md5, dl.title || dl.filename || "")}
+                onClick={() => openReader(dl.md5, dl.title || dl.filename || "", dl.filename ?? "")}
                 aria-label={`Read ${dl.title || dl.filename}`}
               >
                 <BookOpenIcon className="size-3.5" />
@@ -249,12 +250,6 @@ function DownloadCard({
       </CardContent>
     </Card>
   );
-}
-
-function openReader(md5: string, title: string) {
-  sessionStorage.setItem("reader:md5", md5);
-  sessionStorage.setItem("reader:title", title || "");
-  window.location.hash = "#/reader";
 }
 
 export default function DownloadsPage({ embedded = false }: { embedded?: boolean } = {}) {

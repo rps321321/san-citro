@@ -17,6 +17,7 @@ import {
 import { Link } from "react-router";
 
 import { Button } from "@/components/ui/button";
+import { usePlayer } from "@/contexts/player-context";
 import { readBookFile } from "@/lib/api-client";
 import { trackError, trackFeatureDiscovery, trackReadingProgress } from "@/lib/telemetry";
 
@@ -51,6 +52,7 @@ export default function ReaderPage() {
   const lastBucketRef = useRef(-1);
   const lastPctRef = useRef(0);
   const { resolvedTheme } = useTheme();
+  const { active: playerActive } = usePlayer();
 
   const [md5, setMd5] = useState<string | null | undefined>(undefined);
   const [title, setTitle] = useState("");
@@ -62,6 +64,7 @@ export default function ReaderPage() {
   const [progress, setProgress] = useState(0);
   const [chapter, setChapter] = useState("");
   const [readingTheme, setReadingTheme] = useState<ReadingTheme>("dark");
+  const readingThemeRef = useRef<ReadingTheme>("dark");
   const themeInitRef = useRef(false);
 
   useEffect(() => {
@@ -132,14 +135,14 @@ export default function ReaderPage() {
         });
         // Re-apply the reading theme each time a section's document loads.
         view.addEventListener("load", () => {
-          view.renderer?.setStyles?.(themeCSS(readingTheme));
+          view.renderer?.setStyles?.(themeCSS(readingThemeRef.current));
         });
 
         // foliate-js detects the format from the file (content + extension).
         const file = new File([data], filename || md5);
         await view.open(file);
         if (cancelled) return;
-        view.renderer?.setStyles?.(themeCSS(readingTheme));
+        view.renderer?.setStyles?.(themeCSS(readingThemeRef.current));
         try {
           view.renderer?.setAttribute?.("flow", "paginated");
         } catch {
@@ -194,6 +197,7 @@ export default function ReaderPage() {
 
   // Re-apply the reading theme whenever it changes.
   useEffect(() => {
+    readingThemeRef.current = readingTheme;
     viewRef.current?.renderer?.setStyles?.(themeCSS(readingTheme));
   }, [readingTheme]);
 
@@ -243,7 +247,12 @@ export default function ReaderPage() {
   }
 
   return (
-    <div className="relative flex h-[calc(100vh-8rem)] flex-col gap-2">
+    // 72px matches AppShell's mini-player padding.
+    <div
+      className={`relative flex ${
+        playerActive ? "h-[calc(100vh-8rem-72px)]" : "h-[calc(100vh-8rem)]"
+      } flex-col gap-2`}
+    >
       {/* Reading surface */}
       <div
         className="relative flex-1 overflow-hidden rounded-lg border"

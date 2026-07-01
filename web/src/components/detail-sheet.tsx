@@ -10,6 +10,7 @@ import {
   SheetFooter,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { openReader } from "@/lib/reader-nav";
 import type { LibraryItem } from "@/types";
 
 // Book detail sheet (grill / ADR-0011): click a library cover → a slide-in panel
@@ -45,10 +46,7 @@ export function DetailSheet({
 
   const read = () => {
     if (!item) return;
-    sessionStorage.setItem("reader:md5", item.md5);
-    sessionStorage.setItem("reader:title", item.title || item.filename || "");
-    sessionStorage.setItem("reader:filename", item.filename ?? "");
-    window.location.hash = "#/reader";
+    openReader(item.md5, item.title || item.filename || "", item.filename ?? "");
     onOpenChange(false);
   };
   const reveal = () => {

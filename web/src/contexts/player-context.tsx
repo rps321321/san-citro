@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import type { PlayerLoadPayload, PlayerMode } from "@/types";
 import { playAudiobook as playAudiobookIpc } from "@/lib/api-client";
 
@@ -32,15 +32,19 @@ export function usePlayer(): PlayerContextValue {
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [payload, setPayload] = useState<PlayerLoadPayload | null>(null);
   const [mode, setMode] = useState<PlayerMode>("hidden");
+  const playRequestIdRef = useRef(0);
 
   const play = useCallback(async (md5: string) => {
     // The main process returns { md5, detail, progress } (no PLAYER_LOAD push).
+    const requestId = ++playRequestIdRef.current;
     const p = await playAudiobookIpc(md5);
+    if (requestId !== playRequestIdRef.current) return;
     setPayload(p);
     setMode("mini");
   }, []);
 
   const close = useCallback(() => {
+    playRequestIdRef.current += 1;
     setMode("hidden");
     setPayload(null);
   }, []);
