@@ -21,19 +21,26 @@ export function StatusIsland() {
 
   useEffect(() => {
     const procSet = new Set<string>();
-    return onAudiobookStatus(({ md5, status }) => {
+    const clearReadyTimer = () => {
+      clearTimeout(readyTimer.current ?? undefined);
+      readyTimer.current = null;
+    };
+    const unsubscribe = onAudiobookStatus(({ md5, status }) => {
       if (status === "processing") {
         procSet.add(md5);
         setProcessing(procSet.size);
-      } else {
-        if (procSet.delete(md5)) setProcessing(procSet.size);
-        if (status === "ready") {
-          setJustReady(true);
-          if (readyTimer.current) clearTimeout(readyTimer.current);
-          readyTimer.current = setTimeout(() => setJustReady(false), 4000);
-        }
+        return;
       }
+      if (procSet.delete(md5)) setProcessing(procSet.size);
+      if (status !== "ready") return;
+      setJustReady(true);
+      clearReadyTimer();
+      readyTimer.current = setTimeout(() => setJustReady(false), 4000);
     });
+    return () => {
+      unsubscribe();
+      clearReadyTimer();
+    };
   }, []);
 
   const activeDownloads = Array.from(downloads.values()).filter(
@@ -56,7 +63,7 @@ export function StatusIsland() {
   const visible = label !== "";
 
   return (
-    <div className="app-region-no-drag pointer-events-none absolute inset-y-0 left-0 right-[140px] z-50 flex items-center justify-center">
+    <div className="pointer-events-none absolute inset-y-0 left-0 right-[140px] z-50 flex items-center justify-center">
       <AnimatePresence>
         {visible && (
           <motion.button
@@ -68,7 +75,7 @@ export function StatusIsland() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             aria-label={label}
-            className="glass pointer-events-auto flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium text-foreground shadow-sm"
+            className="app-region-no-drag glass pointer-events-auto flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium text-foreground shadow-sm"
           >
             {icon}
             <span className="tabular-nums">{label}</span>

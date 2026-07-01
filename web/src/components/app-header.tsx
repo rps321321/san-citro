@@ -7,7 +7,7 @@ import { StatusIsland } from "@/components/status-island";
 // padding reserves room for the OS window-controls overlay.
 export function AppHeader() {
   return (
-    <header className="app-region-drag relative flex h-9 items-center bg-sidebar pl-4 pr-[140px]">
+    <header className="app-region-drag relative flex h-9 items-center bg-background pl-4 pr-[140px]">
       <StatusIsland />
     </header>
   );

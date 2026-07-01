@@ -78,16 +78,28 @@ export function registerIpcHandlers(
 
   // renderer -> main: recolor the OS window-controls overlay to match the title
   // bar (theme-aware), keeping the 36px height so the buttons fill the band.
+  let lastOverlay: { color: string; symbolColor: string } | null = null;
   ipcMain.on(
     IPC_CHANNELS.SET_TITLEBAR_OVERLAY,
     (_event, opts: { color: string; symbolColor: string }) => {
       const win = getMainWindow();
-      if (win && !win.isDestroyed()) {
-        try {
-          win.setTitleBarOverlay({ ...opts, height: 36 });
-        } catch {
-          /* overlay not enabled on this platform */
-        }
+      if (!win || win.isDestroyed()) return;
+      // Skip no-op repaints — Windows/Chromium can leave the caption buttons
+      // stuck showing their last hover highlight after a programmatic overlay
+      // repaint, so we only touch the native overlay when the color actually
+      // changes, and nudge the window afterward to force the DWM to repaint
+      // the caption-button region cleanly.
+      if (lastOverlay && lastOverlay.color === opts.color && lastOverlay.symbolColor === opts.symbolColor) {
+        return;
+      }
+      lastOverlay = opts;
+      try {
+        win.setTitleBarOverlay({ ...opts, height: 36 });
+        const [w, h] = win.getSize();
+        win.setSize(w, h + 1);
+        win.setSize(w, h);
+      } catch {
+        /* overlay not enabled on this platform */
       }
     }
   );

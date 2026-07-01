@@ -20,18 +20,18 @@ function rgbToHex(value: string): string {
 }
 
 /**
- * Recolors the OS window-controls overlay to match the title-bar background
- * (the sidebar color) for the active theme, so the control area blends into the
- * title bar instead of showing a fixed dark patch. Renders nothing.
+ * Recolors the OS window-controls overlay to match the (opaque) title-bar
+ * background for the active theme, so the control area blends into the title
+ * bar instead of showing a fixed dark patch. Renders nothing.
  */
 export function TitlebarSync() {
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
-    // Read the actual rendered sidebar colors via a hidden probe (resolves CSS
+    // Read the actual rendered body colors via a hidden probe (resolves CSS
     // variables to concrete rgb regardless of the color space used in CSS).
     const probe = document.createElement("div");
-    probe.className = "bg-sidebar text-sidebar-foreground";
+    probe.className = "bg-background text-foreground";
     probe.style.cssText = "position:fixed;left:-9999px;top:0;width:1px;height:1px;";
     document.body.appendChild(probe);
     const cs = getComputedStyle(probe);

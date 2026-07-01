@@ -22,7 +22,7 @@ function ShellInner() {
       <TitlebarSync />
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-background focus:text-foreground focus:rounded-md"
+        className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:z-50 focus-visible:p-4 focus-visible:bg-background focus-visible:text-foreground focus-visible:rounded-md"
       >
         Skip to main content
       </a>
