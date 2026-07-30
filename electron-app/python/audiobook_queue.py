@@ -2,10 +2,12 @@
 
 Audiobook processing (archive extract -> ffprobe -> chapter build) runs in its
 OWN queue and worker pool, NEVER on download slots: a slow extraction must not
-block a download. Jobs are enqueued PEEK-GATED by ``download_manager`` (only
-archives whose listing contains audio reach here as audiobooks); the processor
-is authoritative and exception-safe, driving the ``audiobooks`` table status
-``pending -> processing -> ready | unsupported | error``.
+block a download. Jobs are enqueued by Category-after-Artifact (classify once
+via list_archive / audio extension; only audiobook Artifacts reach here).
+``downloads.media_type`` is stamped on that decision path — this queue does
+not re-stamp. The processor is authoritative and exception-safe, driving the
+``audiobooks`` table status ``pending -> processing -> ready | unsupported |
+error`` (separate from download terminal).
 
 Failure is isolated: a processing exception only sets the audiobook status; it
 never touches the ``downloads`` row. Workers are daemon threads that NEVER die.
@@ -19,8 +21,9 @@ import subprocess
 import threading
 
 from src import audiobook_db, audiobook_processor
-from src.download_history import get_completed_download, set_media_type
+from src.download_history import get_completed_download
 from src.logger import get_logger
+from src.storage_location import resolve_book_file
 
 logger = get_logger()
 
@@ -104,13 +107,13 @@ def enqueue(md5: str, file_path: str, out_dir: str) -> None:
 
 
 def _process_one(md5: str, file_path: str, out_dir: str) -> None:
-    """Process a single job: extract, persist status, stamp media_type, emit."""
+    """Process a single job: extract/chapters + emit status.
+
+    Category (``downloads.media_type``) was already stamped once by
+    Category-after-Artifact before enqueue — do not re-classify or re-stamp
+    here (avoids a second conflicting rule after process).
+    """
     status = audiobook_processor.process_audiobook(md5, file_path, out_dir)
-    # The processor returns "skipped" for a non-audiobook; otherwise the file
-    # produced an audiobook (ready/unsupported/error). classify() is the
-    # authoritative book-vs-audiobook decision for the downloads.media_type.
-    is_audiobook = audiobook_processor.classify(file_path) == "audiobook"
-    set_media_type(md5=md5, media_type="audiobook" if is_audiobook else "book")
     try:
         _get_send_event()("audiobook_status", {"md5": md5, "status": status})
     except Exception:
@@ -148,8 +151,9 @@ def resweep(out_dir: str) -> None:
         if not filename:
             audiobook_db.set_audiobook_status(md5=md5, status="error", error_message="source archive missing")
             continue
-        file_path = os.path.join(out_dir, filename)
-        if os.path.isfile(file_path):
+        # Prefer San Citro book path, then legacy flat (no mass-move).
+        file_path = resolve_book_file(out_dir, filename)
+        if file_path:
             enqueue(md5, file_path, out_dir)
         else:
             audiobook_db.set_audiobook_status(md5=md5, status="error", error_message="source archive missing")

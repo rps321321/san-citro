@@ -21,6 +21,7 @@ from src.audiobook_processor import (
     _build_m4b_chapters,
     _member_is_unsafe,
     _natural_key,
+    apply_category_after_artifact,
     classify,
     process_audiobook,
     sweep_stale_tmp,
@@ -161,6 +162,135 @@ class TestClassify:
             zf.writestr("cover.jpg", b"fake")
         assert classify(str(archive)) == "audiobook"
 
+    def test_should_classify_single_m4b_as_audiobook_not_book_for_not_zip(self) -> None:
+        """Regression: never stamp Book merely because the Artifact is not an archive."""
+        assert classify("/x/book.m4b") == "audiobook"
+        assert classify("/x/chapter.mp3") == "audiobook"
+        assert classify("/x/title.flac") == "audiobook"
+
+
+# ---------------------------------------------------------------------------
+# Category-after-Artifact decision (stamp once + optional enqueue)
+# ---------------------------------------------------------------------------
+class TestApplyCategoryAfterArtifact:
+    def test_single_file_audio_stamps_audiobook_and_enqueues(
+        self, db_redirect: str, tmp_path: Path
+    ) -> None:
+        from src.download_history import record_download_complete, record_download_start
+
+        md5 = "b" * 32
+        audio = tmp_path / "story.mp3"
+        audio.write_bytes(b"mp3")
+        record_download_start(db_redirect, md5=md5, title="Story")
+        record_download_complete(db_redirect, md5=md5, filename=audio.name, filesize_bytes=3)
+        enqueued: list[tuple[str, str, str]] = []
+
+        result = apply_category_after_artifact(
+            md5,
+            str(audio),
+            str(tmp_path),
+            db_path=db_redirect,
+            enqueue_fn=lambda m, p, o: enqueued.append((m, p, o)),
+        )
+
+        assert result == "audiobook"
+        assert len(enqueued) == 1
+        assert enqueued[0][0] == md5
+        import sqlite3
+
+        with sqlite3.connect(db_redirect) as conn:
+            row = conn.execute(
+                "SELECT media_type, status FROM downloads WHERE md5 = ?", (md5,)
+            ).fetchone()
+        assert row[0] == "audiobook"
+        assert row[1] == "completed"
+
+    def test_archive_with_audio_enqueues(self, db_redirect: str, tmp_path: Path) -> None:
+        if not _have_7z():
+            pytest.skip("7z not available")
+        from src.download_history import record_download_complete, record_download_start
+
+        md5 = "c" * 32
+        archive = tmp_path / "ab.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("t.mp3", b"x")
+        record_download_start(db_redirect, md5=md5, title="AB")
+        record_download_complete(db_redirect, md5=md5, filename=archive.name, filesize_bytes=10)
+        enqueued: list[object] = []
+
+        result = apply_category_after_artifact(
+            md5,
+            str(archive),
+            str(tmp_path),
+            db_path=db_redirect,
+            enqueue_fn=lambda m, p, o: enqueued.append(m),
+        )
+        assert result == "audiobook"
+        assert enqueued == [md5]
+
+    def test_archive_without_audio_stamps_book_no_enqueue(
+        self, db_redirect: str, tmp_path: Path
+    ) -> None:
+        if not _have_7z():
+            pytest.skip("7z not available")
+        from src.download_history import record_download_complete, record_download_start
+
+        md5 = "d" * 32
+        archive = tmp_path / "books.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("a.pdf", b"%PDF")
+        record_download_start(db_redirect, md5=md5, title="Books")
+        record_download_complete(db_redirect, md5=md5, filename=archive.name, filesize_bytes=10)
+        enqueued: list[object] = []
+
+        result = apply_category_after_artifact(
+            md5,
+            str(archive),
+            str(tmp_path),
+            db_path=db_redirect,
+            enqueue_fn=lambda m, p, o: enqueued.append(m),
+        )
+        assert result == "book"
+        assert enqueued == []
+        import sqlite3
+
+        with sqlite3.connect(db_redirect) as conn:
+            row = conn.execute(
+                "SELECT media_type FROM downloads WHERE md5 = ?", (md5,)
+            ).fetchone()
+        assert row[0] == "book"
+
+    def test_enqueue_failure_does_not_raise_or_revert_stamp(
+        self, db_redirect: str, tmp_path: Path
+    ) -> None:
+        from src.download_history import record_download_complete, record_download_start
+
+        md5 = "e" * 32
+        audio = tmp_path / "x.m4b"
+        audio.write_bytes(b"m4b")
+        record_download_start(db_redirect, md5=md5, title="X")
+        record_download_complete(db_redirect, md5=md5, filename=audio.name, filesize_bytes=3)
+
+        def bad_enqueue(m, p, o):
+            raise RuntimeError("queue unavailable")
+
+        result = apply_category_after_artifact(
+            md5,
+            str(audio),
+            str(tmp_path),
+            db_path=db_redirect,
+            enqueue_fn=bad_enqueue,
+        )
+        assert result == "audiobook"
+        import sqlite3
+
+        with sqlite3.connect(db_redirect) as conn:
+            row = conn.execute(
+                "SELECT media_type, status FROM downloads WHERE md5 = ?", (md5,)
+            ).fetchone()
+        assert row[0] == "audiobook"
+        assert row[1] == "completed"
+
 
 # ---------------------------------------------------------------------------
 # chapter builders (mocked probe_media — no real m4b needed)
@@ -235,10 +365,10 @@ class TestProcessEndToEnd:
         assert row["container_type"] == "zip"
         chapters = audiobook_db.get_audiobook_chapters(md5=_MD5)
         assert len(chapters) == 1
-        # File landed at audiobooks/<md5>/
-        assert (out_dir / "audiobooks" / _MD5 / "track.mp3").is_file()
-        assert chapters[0]["rel_path"] == f"audiobooks/{_MD5}/track.mp3"
-        assert not (out_dir / "audiobooks" / f"{_MD5}.tmp").exists()
+        # File landed at San Citro/audiobooks/<md5>/
+        assert (out_dir / "San Citro" / "audiobooks" / _MD5 / "track.mp3").is_file()
+        assert chapters[0]["rel_path"] == f"San Citro/audiobooks/{_MD5}/track.mp3"
+        assert not (out_dir / "San Citro" / "audiobooks" / f"{_MD5}.tmp").exists()
         # Source archive is deleted once extraction succeeds.
         assert not archive.exists()
 
@@ -258,9 +388,9 @@ class TestProcessEndToEnd:
         chapters = audiobook_db.get_audiobook_chapters(md5=_MD5)
         rels = [c["rel_path"] for c in chapters]
         assert rels == [
-            f"audiobooks/{_MD5}/disc/chapter 2.mp3",
-            f"audiobooks/{_MD5}/disc/chapter 10.mp3",
-            f"audiobooks/{_MD5}/disc/chapter 34 first half.mp3",
+            f"San Citro/audiobooks/{_MD5}/disc/chapter 2.mp3",
+            f"San Citro/audiobooks/{_MD5}/disc/chapter 10.mp3",
+            f"San Citro/audiobooks/{_MD5}/disc/chapter 34 first half.mp3",
         ]
 
     def test_should_reject_traversal_member_and_write_nothing_outside(self, tmp_path: Path, db_redirect: str) -> None:
@@ -277,8 +407,8 @@ class TestProcessEndToEnd:
         assert status in {"error", "unsupported"}
         # Nothing escaped to the parent of out_dir.
         assert not (tmp_path / "evil.txt").exists()
-        assert not (out_dir / "audiobooks" / _MD5).exists()
-        assert not (out_dir / "audiobooks" / f"{_MD5}.tmp").exists()
+        assert not (out_dir / "San Citro" / "audiobooks" / _MD5).exists()
+        assert not (out_dir / "San Citro" / "audiobooks" / f"{_MD5}.tmp").exists()
         row = audiobook_db.get_audiobook(md5=_MD5)
         assert row is not None and row["status"] in {"error", "unsupported"}
 
@@ -294,7 +424,7 @@ class TestProcessEndToEnd:
 
         status = process_audiobook(_MD5, str(archive), str(out_dir))
         assert status in {"error", "unsupported"}
-        assert not (out_dir / "audiobooks" / _MD5).exists()
+        assert not (out_dir / "San Citro" / "audiobooks" / _MD5).exists()
 
     def test_should_be_idempotent_on_reprocess(self, tmp_path: Path, db_redirect: str) -> None:
         out_dir = tmp_path / "out"
@@ -311,7 +441,7 @@ class TestProcessEndToEnd:
         assert second == "ready"
         chapters = audiobook_db.get_audiobook_chapters(md5=_MD5)
         assert len(chapters) == 1  # not duplicated
-        assert (out_dir / "audiobooks" / _MD5 / "track.mp3").is_file()
+        assert (out_dir / "San Citro" / "audiobooks" / _MD5 / "track.mp3").is_file()
 
 
 # ---------------------------------------------------------------------------
@@ -319,6 +449,7 @@ class TestProcessEndToEnd:
 # ---------------------------------------------------------------------------
 class TestSweepStaleTmp:
     def test_should_delete_stale_tmp_dirs(self, tmp_path: Path) -> None:
+        # Legacy layout root still swept (no mass-move of old packs).
         root = tmp_path / "audiobooks"
         root.mkdir()
         (root / "abc.tmp").mkdir()
@@ -326,6 +457,16 @@ class TestSweepStaleTmp:
         (root / "keep").mkdir()
         removed = sweep_stale_tmp(str(tmp_path))
         assert removed == 2
+        assert (root / "keep").exists()
+        assert not (root / "abc.tmp").exists()
+
+    def test_should_sweep_san_citro_tmp_dirs(self, tmp_path: Path) -> None:
+        root = tmp_path / "San Citro" / "audiobooks"
+        root.mkdir(parents=True)
+        (root / "abc.tmp").mkdir()
+        (root / "keep").mkdir()
+        removed = sweep_stale_tmp(str(tmp_path))
+        assert removed == 1
         assert (root / "keep").exists()
         assert not (root / "abc.tmp").exists()
 

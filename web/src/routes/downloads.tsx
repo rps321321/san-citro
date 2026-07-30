@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Banner } from "@/components/ui/alert";
 import { ConnectionIndicator } from "@/components/connection-indicator";
 
-import { useDownloadStream } from "@/lib/use-sse";
+import { useActiveDownloads } from "@/contexts/active-downloads-context";
 import { cancelDownload } from "@/lib/api-client";
 import { truncateMd5, formatFileSize } from "@/lib/format";
 import { openReader } from "@/lib/reader-nav";
+import { isReadable } from "@/lib/readable-format";
 import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
 import { trackInteraction } from "@/lib/telemetry";
 import type { DownloadStatus } from "@/types";
@@ -199,7 +200,7 @@ function DownloadCard({
             <span className="text-xs text-muted-foreground truncate flex-1" title={dl.filename}>
               {dl.filename}
             </span>
-            {dl.filename.toLowerCase().endsWith(".epub") && dl.md5 && (
+            {isReadable(dl.filename) && dl.md5 && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -253,7 +254,7 @@ function DownloadCard({
 }
 
 export default function DownloadsPage({ embedded = false }: { embedded?: boolean } = {}) {
-  const { downloads, connection, removeDownloads } = useDownloadStream();
+  const { downloads, connection, removeDownloads } = useActiveDownloads();
   const items = Array.from(downloads.values());
 
   const active = items.filter((d) => d.status === "downloading" || d.status === "started");

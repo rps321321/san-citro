@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { openReader } from "@/lib/reader-nav";
+import { isReadable } from "@/lib/readable-format";
 import type { LibraryItem } from "@/types";
 
 // Book detail sheet (grill / ADR-0011): click a library cover → a slide-in panel
@@ -39,9 +40,8 @@ export function DetailSheet({
   item: LibraryItem | null;
   onOpenChange: (open: boolean) => void;
 }) {
-  // Readable in-app via foliate-js (ADR-0014): epub/mobi/azw3/fb2/cbz.
-  const ext = (item?.extension || item?.filename?.split(".").pop() || "").toLowerCase();
-  const isReadable = ["epub", "mobi", "azw3", "azw", "fb2", "fbz", "cbz"].includes(ext);
+  // Readable format policy (ADR-0014 / CONTEXT): same gate as Activity surfaces.
+  const readable = isReadable(item?.extension || item?.filename);
   const size = fmtSize(item?.filesize_bytes ?? null);
 
   const read = () => {
@@ -96,7 +96,7 @@ export function DetailSheet({
             </div>
 
             <SheetFooter>
-              {isReadable && (
+              {readable && (
                 <Button onClick={read}>
                   <BookOpenIcon />
                   Read

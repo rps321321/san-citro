@@ -10,11 +10,14 @@ import { TitlebarSync } from "@/components/titlebar-sync";
 import { InPagePlayer } from "@/components/in-page-player";
 import { CommandPalette } from "@/components/command-palette";
 import { PlayerProvider, usePlayer } from "@/contexts/player-context";
+import { ActiveDownloadsProvider } from "@/contexts/active-downloads-context";
 
 // The persistent SPA shell: sidebar + title bar + routed <Outlet /> + the
 // in-page audiobook player (ADR-0013). The player lives inside SidebarInset (the
 // content column, right of the sidebar) so it overlays content, never the sidebar
 // — the bounding the retired WebContentsView used to do via content-rect IPC.
+// ActiveDownloadsProvider owns the sole getDownloads + onDownloadProgress session
+// subscription; Island / Downloads / Search are views over that store.
 function ShellInner() {
   const { active } = usePlayer();
   return (
@@ -48,7 +51,9 @@ function ShellInner() {
 export default function AppShell() {
   return (
     <PlayerProvider>
-      <ShellInner />
+      <ActiveDownloadsProvider>
+        <ShellInner />
+      </ActiveDownloadsProvider>
     </PlayerProvider>
   );
 }

@@ -30,6 +30,7 @@ import type { HistoryEntry } from "@/types";
 import { trackInteraction, trackFeatureDiscovery, incrementEngagement } from "@/lib/telemetry";
 import { formatFileSize, truncateMd5, formatDate } from "@/lib/format";
 import { openReader } from "@/lib/reader-nav";
+import { isReadable } from "@/lib/readable-format";
 import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
 
 // ---------------------------------------------------------------------------
@@ -322,7 +323,7 @@ export default function HistoryPage() {
                     <div className="flex items-center justify-end gap-1">
                       {entry.status === "completed" &&
                         entry.md5 &&
-                        entry.filename?.toLowerCase().endsWith(".epub") && (
+                        isReadable(entry.filename) && (
                           <Button
                             variant="ghost"
                             size="icon-sm"

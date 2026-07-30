@@ -247,11 +247,15 @@ class AnnasArchiveTool:
         direct_mode: bool = False,
         strategy: DownloadStrategy | None = None,
         base_url: str | None = None,
+        on_progress: Any | None = None,
     ) -> None:
         self.proxies = proxies or []
         self.direct_mode = direct_mode
         self.session = self._setup_resilient_session()
         self._search_session = self._setup_resilient_session()
+        # Optional (downloaded_bytes, total_bytes) callback while writing chunks.
+        # Wired by Download lifecycle; not required for CLI/direct tool use.
+        self.on_progress = on_progress
 
         # Resolve base_url: explicit arg > config file > auto-detect
         if base_url:
@@ -625,6 +629,8 @@ class AnnasArchiveTool:
                         pass
 
                 cancelled = False
+                downloaded_so_far = existing_size
+                progress_cb = self.on_progress
                 with (
                     open(part_path, "ab" if existing_size else "wb") as f,
                     tqdm(
@@ -643,7 +649,15 @@ class AnnasArchiveTool:
                             )
                             break
                         if chunk:
-                            bar.update(f.write(chunk))
+                            written = f.write(chunk)
+                            bar.update(written)
+                            downloaded_so_far += written
+                            if progress_cb is not None:
+                                try:
+                                    progress_cb(downloaded_so_far, total)
+                                except Exception:
+                                    # Progress must never break a download.
+                                    pass
 
                 if cancelled:
                     return None
@@ -667,14 +681,11 @@ class AnnasArchiveTool:
                             logger.error(f"Path traversal blocked after filename detection: {filename!r}")
                             os.remove(part_path)
                             return None
-                # Handle existing file — add (1), (2) suffix if duplicate
-                if os.path.exists(final_path):
-                    base, ext = os.path.splitext(final_path)
-                    counter = 1
-                    while os.path.exists(final_path):
-                        final_path = f"{base} ({counter}){ext}"
-                        counter += 1
-                    filename = os.path.basename(final_path)
+                # Collision policy (storage_location): deterministic (N) suffix.
+                from .storage_location import unique_path
+
+                final_path = unique_path(final_path)
+                filename = os.path.basename(final_path)
                 os.rename(part_path, final_path)
                 logger.info(f"[{md5[:6]}] Completed: {filename}")
                 return final_path

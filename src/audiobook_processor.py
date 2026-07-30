@@ -19,12 +19,23 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from typing import Any
 
 from . import audiobook_db, media_tools
+from .download_history import set_media_type
 from .logger import get_logger
+from .storage_location import (
+    audiobook_dir,
+    audiobook_folder_rel,
+    audiobooks_root,
+    legacy_audiobook_dir,
+)
 
 logger = get_logger()
+
+# Enqueue callback: (md5, file_path, out_dir) — Electron wires audiobook_queue.enqueue.
+EnqueueFn = Callable[[str, str, str], None]
 
 # ---------------------------------------------------------------------------
 # Extension sets
@@ -105,6 +116,64 @@ def classify(path: str) -> str:
     if _is_audio(path):
         return "audiobook"
     return "book"
+
+
+def apply_category_after_artifact(
+    md5: str,
+    file_path: str,
+    out_dir: str,
+    *,
+    db_path: str | None = None,
+    enqueue_fn: EnqueueFn | None = None,
+) -> str:
+    """One Category decision after a completed Artifact; stamp ``media_type`` once.
+
+    Uses :func:`classify` (cheap ``list_archive`` for archives; audio extension
+    for single files). Never stamps Book merely because the Artifact is not a
+    zip — single-file audio is Audiobook and may enter processing.
+
+    - ``audiobook`` → stamp ``media_type='audiobook'`` and call *enqueue_fn*
+      (when provided) so processing can run on the decoupled queue.
+    - ``book`` / other → stamp ``media_type='book'`` and do **not** enqueue
+      (book-only archives skip full extract-as-audiobook).
+
+    Failures are swallowed: a bad classify/enqueue/stamp never raises and
+    never rewrites the completed downloads row beyond best-effort media_type.
+    Returns the stamped media_type (``"audiobook"`` or ``"book"``).
+    """
+    try:
+        category = classify(file_path)
+    except Exception as exc:
+        logger.warning(
+            "category-after-artifact classify failed for %s: %s",
+            md5[:8] if md5 else "?",
+            exc,
+            exc_info=True,
+        )
+        category = "book"
+
+    media_type = "audiobook" if category == "audiobook" else "book"
+
+    try:
+        set_media_type(md5=md5, media_type=media_type, db_path=db_path)
+    except Exception:
+        logger.warning(
+            "category-after-artifact set_media_type failed for %s",
+            md5[:8] if md5 else "?",
+            exc_info=True,
+        )
+
+    if media_type == "audiobook" and enqueue_fn is not None:
+        try:
+            enqueue_fn(md5, file_path, out_dir)
+        except Exception:
+            logger.warning(
+                "category-after-artifact enqueue failed for %s",
+                md5[:8] if md5 else "?",
+                exc_info=True,
+            )
+
+    return media_type
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +380,7 @@ def _scan_audio_files(final_dir: str, out_dir: str) -> list[tuple[str, str]]:
     """Collect audio files under *final_dir*, naturally sorted by rel path.
 
     Returns [(abs_path, rel_path_to_out_dir), ...]. ``rel_path`` looks like
-    ``audiobooks/<md5>/.../track01.mp3``.
+    ``San Citro/audiobooks/<md5>/.../track01.mp3`` (or legacy without San Citro).
     """
     found: list[tuple[str, str]] = []
     for root, _dirs, files in os.walk(final_dir):
@@ -349,20 +418,24 @@ def process_audiobook(md5: str, file_path: str, out_dir: str) -> str:
     and NEVER touches the downloads table.
     """
     try:
-        audiobooks_root = os.path.join(out_dir, "audiobooks")
-        tmp = os.path.join(audiobooks_root, f"{md5}.tmp")
-        final = os.path.join(audiobooks_root, md5)
+        ab_root = audiobooks_root(out_dir)
+        tmp = os.path.join(ab_root, f"{md5}.tmp")
+        final = audiobook_dir(out_dir, md5)
+        legacy_final = legacy_audiobook_dir(out_dir, md5)
 
         # Already processed. The source archive is deleted on success, so a stray
         # re-enqueue must NOT re-classify a now-missing file and flip ready -> error.
+        # Honor both San Citro and legacy pack dirs (no forced mass-move).
         existing = audiobook_db.get_audiobook(md5=md5)
-        if existing and existing.get("status") == "ready" and os.path.isdir(final):
+        if existing and existing.get("status") == "ready" and (
+            os.path.isdir(final) or os.path.isdir(legacy_final)
+        ):
             return "ready"
 
         if classify(file_path) != "audiobook":
             return "skipped"
 
-        os.makedirs(audiobooks_root, exist_ok=True)
+        os.makedirs(ab_root, exist_ok=True)
         _cleanup(tmp)  # stale temp from a crashed prior run
 
         audiobook_db.record_audiobook(md5=md5, status="processing")
@@ -408,7 +481,7 @@ def process_audiobook(md5: str, file_path: str, out_dir: str) -> str:
         audiobook_db.record_audiobook(
             md5=md5,
             container_type=container_type,
-            folder_path=f"audiobooks/{md5}",
+            folder_path=audiobook_folder_rel(md5),
             total_duration_seconds=total_duration,
             track_count=track_count,
             status="ready",
@@ -473,21 +546,25 @@ def _build_chapters(audio_files: list[tuple[str, str]]) -> list[dict[str, Any]]:
 # Startup sweep
 # ---------------------------------------------------------------------------
 def sweep_stale_tmp(out_dir: str) -> int:
-    """Delete leftover ``<out_dir>/audiobooks/*.tmp`` dirs. Returns the count.
+    """Delete leftover ``*.tmp`` dirs under San Citro and legacy audiobooks roots.
 
     Pairs with :func:`audiobook_db.reset_stuck_audiobooks` for the startup sweep:
     this reclaims orphaned extraction temp dirs from a crashed prior session.
     """
-    audiobooks_root = os.path.join(out_dir, "audiobooks")
-    if not os.path.isdir(audiobooks_root):
-        return 0
+    roots = (
+        audiobooks_root(out_dir),
+        os.path.join(out_dir, "audiobooks"),  # legacy layout
+    )
     removed = 0
-    for name in os.listdir(audiobooks_root):
-        if name.endswith(".tmp"):
-            path = os.path.join(audiobooks_root, name)
-            if os.path.isdir(path):
-                shutil.rmtree(path, ignore_errors=True)
-                removed += 1
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for name in os.listdir(root):
+            if name.endswith(".tmp"):
+                path = os.path.join(root, name)
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+                    removed += 1
     if removed:
         logger.info("Swept %d stale audiobook .tmp dir(s)", removed)
     return removed

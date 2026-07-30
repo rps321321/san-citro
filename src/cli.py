@@ -18,8 +18,8 @@ from .config_manager import clamp_concurrency, get_config, get_default_history_d
 from .diagnostics import run_diagnostics
 from .download_history import get_download_history
 from .migrations import SchemaMigrationError, run_migrations
-from .download_job import run_download
-from .download_strategy import create_strategy
+from .download_lifecycle import run_download
+from .download_strategy import DownloadStrategy, create_strategy
 from .logger import get_logger, setup_logging
 from .scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
 from .shutdown import install_signal_handlers, is_cancelled
@@ -136,7 +136,8 @@ def print_download_history(history_db: str | None, limit: int = 20) -> None:
 
 
 def _download_one(
-    tool: AnnasArchiveTool,
+    strategy: DownloadStrategy,
+    proxies: list[str] | None,
     md5: str,
     output_dir: str,
     db_path: str | None,
@@ -145,9 +146,12 @@ def _download_one(
     """Download a single file and return a structured result. Never raises.
 
     Delegates the full tracked lifecycle (history records, terminal-state
-    guard, cancellation) to ``download_job.run_download``. The CLI has no
-    external cancel source, so a fresh per-job Event is passed; process-global
-    Ctrl+C is still honored via ``_is_cancelled`` inside the tool.
+    guard, cancellation) to ``download_lifecycle.run_download``. Passes
+    strategy/proxies only — lifecycle owns the per-job tool so the CLI does
+    not double-construct ``AnnasArchiveTool`` solely to forward flags.
+    The CLI has no external cancel source, so a fresh per-job Event is
+    passed; process-global Ctrl+C is still honored via ``_is_cancelled``
+    inside the tool.
     """
     filename = get_filename_from_db(db_path, md5) or f"{md5}.file"
     title = filename
@@ -158,16 +162,14 @@ def _download_one(
         last_status.update(payload)
 
     start = time.monotonic()
-    # Honor the user's --strategy / --direct choice: the tool was built in
-    # _dispatch with the selected strategy and resolved proxies. Previously this
-    # hardcoded create_strategy("direct"), silently ignoring both flags.
+    # Honor the user's --strategy / --direct choice via first-class args.
     path = run_download(
         md5=md5,
         title=title,
         out_dir=output_dir,
         history_db=history_db,
-        strategy=tool.strategy,
-        proxies=tool.proxies,
+        strategy=strategy,
+        proxies=proxies,
         on_status=on_status,
         cancel=cancel,
     )
@@ -195,7 +197,8 @@ def _download_one(
 
 
 def _run_concurrent_downloads(
-    tool: AnnasArchiveTool,
+    strategy: DownloadStrategy,
+    proxies: list[str] | None,
     targets: list,
     output_dir: str,
     db_path: str | None,
@@ -219,7 +222,8 @@ def _run_concurrent_downloads(
             md5 = item[4]
             future = executor.submit(
                 _download_one,
-                tool,
+                strategy,
+                proxies,
                 md5,
                 output_dir,
                 db_path,
@@ -477,20 +481,38 @@ def _dispatch(args: argparse.Namespace) -> None:
         run_diagnostics(config)
         return
 
-    # ------------------------------------------------------------------
-    # Commands that need the network tool
-    # ------------------------------------------------------------------
+    # Strategy/proxies are first-class: lifecycle constructs per-job tools for
+    # downloads. Only ``fetch`` still needs a session-scoped AnnasArchiveTool.
     try:
         strategy = create_strategy(args.strategy, proxies=active_proxies)
-        tool = AnnasArchiveTool(proxies=active_proxies, direct_mode=args.direct, strategy=strategy)
     except ConnectionError as e:
         console.print(f"\n[bold red]HALT:[/bold red] {e}")
         sys.exit(1)
 
+    tool: AnnasArchiveTool | None = None
+    if args.command == "fetch":
+        try:
+            tool = AnnasArchiveTool(
+                proxies=active_proxies, direct_mode=args.direct, strategy=strategy
+            )
+        except ConnectionError as e:
+            console.print(f"\n[bold red]HALT:[/bold red] {e}")
+            sys.exit(1)
+
     try:
-        _run_network_commands(args, tool, None, active_out, active_concurrency, history_db)
+        _run_network_commands(
+            args,
+            tool,
+            strategy,
+            active_proxies,
+            None,
+            active_out,
+            active_concurrency,
+            history_db,
+        )
     finally:
-        tool.close()
+        if tool is not None:
+            tool.close()
 
 
 def _dict_to_tuple(d: dict) -> tuple:
@@ -510,13 +532,19 @@ def _dict_to_tuple(d: dict) -> tuple:
 
 def _run_network_commands(
     args: argparse.Namespace,
-    tool: AnnasArchiveTool,
+    tool: AnnasArchiveTool | None,
+    strategy: DownloadStrategy,
+    proxies: list[str] | None,
     active_db: str | None,
     active_out: str,
     active_concurrency: int,
     history_db: str | None,
 ) -> None:
-    """Execute commands that require the network tool."""
+    """Execute network-backed commands.
+
+    Download paths receive ``strategy`` / ``proxies`` only — lifecycle owns the
+    per-job tool. ``tool`` is required only for ``fetch``.
+    """
     logger = get_logger()
 
     if args.command == "search":
@@ -615,7 +643,8 @@ def _run_network_commands(
 
         if targets:
             results = _run_concurrent_downloads(
-                tool,
+                strategy,
+                proxies,
                 targets,
                 active_out,
                 active_db,
@@ -625,6 +654,9 @@ def _run_network_commands(
             _print_summary_table(results)
 
     elif args.command == "fetch":
+        if tool is None:
+            console.print("[bold red]Error:[/bold red] fetch requires a network tool session.")
+            sys.exit(1)
         dumps = tool.get_metadata_dumps()
         if dumps:
             latest = dumps[-1]
@@ -641,7 +673,8 @@ def _run_network_commands(
         # Single download also uses the concurrent infrastructure for consistency
         single_target = (None, None, None, None, md5)
         results = _run_concurrent_downloads(
-            tool,
+            strategy,
+            proxies,
             [single_target],
             active_out,
             active_db,

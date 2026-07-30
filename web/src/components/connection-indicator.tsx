@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import type { ConnectionState } from "@/lib/use-sse";
+import type { ConnectionState } from "@/lib/active-downloads";
 
 const PRESENTATION: Record<
   ConnectionState,

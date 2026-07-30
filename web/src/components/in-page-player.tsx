@@ -13,14 +13,15 @@ import {
 } from "lucide-react";
 
 import { usePlayer } from "@/contexts/player-context";
-import { saveAudiobookProgress } from "@/lib/api-client";
+import { mediaUrlForChapter } from "@/lib/playback-policy";
 import type { Chapter } from "@/types";
 
 // The persistent audiobook player, in-page (ADR-0013). The <audio> lives in the
-// shell — outside <Routes> — so playback survives route changes. State (payload,
-// mode) comes from PlayerContext; transport/position is local. NOTE (glass-killer
-// trap): this player must NOT be wrapped in any Motion layout-animated ancestor,
-// or its backdrop-filter will silently blank.
+// shell — outside <Routes> — so playback survives route changes. Transport
+// policy (chapter index, resume, save cadence, next-on-end) lives in
+// PlaybackPolicy via PlayerContext; this component is chrome + audio wiring.
+// NOTE (glass-killer trap): must NOT be wrapped in any Motion layout-animated
+// ancestor, or its backdrop-filter will silently blank.
 
 /** Format seconds as M:SS or H:MM:SS. */
 function formatTime(seconds: number): string {
@@ -34,142 +35,107 @@ function formatTime(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
-const SAVE_INTERVAL_MS = 5000;
-
 export function InPagePlayer() {
-  const { payload, mode, setMode, close } = usePlayer();
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const {
+    payload,
+    mode,
+    setMode,
+    close,
+    policy,
+    bindAudio,
+    session,
+  } = usePlayer();
 
-  const [chapterIndex, setChapterIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [coverFailed, setCoverFailed] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const md5 = payload?.md5 ?? null;
   const chapters: Chapter[] = payload?.detail.chapters ?? [];
   const audiobook = payload?.detail.audiobook ?? null;
+  const chapterIndex = session.chapterIndex;
   const currentChapter = chapters[chapterIndex] ?? null;
+  const isPlaying = session.isPlaying;
+  const currentTime = session.currentTime;
+  const duration = session.duration;
 
-  const seekToRef = useRef(0);
-  const lastSavedRef = useRef(0);
+  // Bind AudioPort to the element for the shared policy instance.
+  const setAudioNode = useCallback(
+    (el: HTMLAudioElement | null) => {
+      audioRef.current = el;
+      bindAudio(el);
+    },
+    [bindAudio]
+  );
 
-  // ---- Load (when a new book is played, payload changes) ------------------
+  // Reset cover-error flag when the loaded book changes.
   useEffect(() => {
-    if (!payload) return;
     setCoverFailed(false);
-    const startIdx = payload.progress
-      ? Math.max(
-          0,
-          payload.detail.chapters.findIndex(
-            (c) => c.chapter_id === payload.progress!.chapter_id
-          )
-        )
-      : 0;
-    setChapterIndex(startIdx);
-    seekToRef.current = payload.progress?.file_position_seconds ?? 0;
-    lastSavedRef.current = 0;
-  }, [payload]);
+  }, [md5]);
 
-  // ---- Load media when the chapter changes --------------------------------
+  // ---- Load media when the chapter (or book) changes ----------------------
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentChapter) return;
-    setCurrentTime(0);
-    setDuration(0);
+    if (!audio || !currentChapter || !md5) return;
     audio.load();
-    void audio.play().catch(() => setIsPlaying(false));
+    void audio.play().catch(() => {
+      policy.onPause();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [md5, currentChapter?.chapter_id]);
 
-  // ---- Progress persistence ----------------------------------------------
-  const persist = useCallback(
-    (positionSeconds: number) => {
-      if (!md5 || !currentChapter) return;
-      void saveAudiobookProgress({
-        md5,
-        chapter_id: currentChapter.chapter_id,
-        file_position_seconds: Math.floor(positionSeconds),
-      }).catch(() => {});
-    },
-    [md5, currentChapter]
-  );
-
-  // Flush the latest position when the window is closing. In-page the <audio> is
-  // part of the React tree, so beforeunload (fires on Electron window close) +
-  // the cleanup below cover teardown (pagehide/visibilitychange no longer needed).
+  // Flush the latest position when the window is closing. In-page the <audio>
+  // is part of the React tree, so beforeunload (Electron window close) +
+  // cleanup cover teardown.
   useEffect(() => {
     const flush = () => {
-      const audio = audioRef.current;
-      if (audio) persist(audio.currentTime);
+      policy.flush();
     };
     window.addEventListener("beforeunload", flush);
     return () => {
       flush();
       window.removeEventListener("beforeunload", flush);
     };
-  }, [persist]);
+  }, [policy]);
 
-  // ---- Transport ----------------------------------------------------------
+  // ---- Transport (delegates to policy) ------------------------------------
   const togglePlay = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) void audio.play().catch(() => {});
-    else audio.pause();
-  }, []);
+    policy.togglePlay();
+  }, [policy]);
 
   const goToChapter = useCallback(
     (index: number, atSeconds = 0) => {
-      if (index < 0 || index >= chapters.length) return;
-      seekToRef.current = atSeconds;
-      lastSavedRef.current = 0;
-      setChapterIndex(index);
+      policy.goToChapter(index, atSeconds);
     },
-    [chapters.length]
+    [policy]
   );
 
   const prevChapter = useCallback(() => {
-    if (chapterIndex > 0) goToChapter(chapterIndex - 1);
-  }, [chapterIndex, goToChapter]);
+    policy.prevChapter();
+  }, [policy]);
 
   const nextChapter = useCallback(() => {
-    if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1);
-  }, [chapterIndex, chapters.length, goToChapter]);
+    policy.nextChapter();
+  }, [policy]);
 
-  const onScrub = useCallback((value: number) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = value;
-    setCurrentTime(value);
-  }, []);
+  const onScrub = useCallback(
+    (value: number) => {
+      policy.seek(value);
+    },
+    [policy]
+  );
 
-  // ---- <audio> event handlers --------------------------------------------
+  // ---- <audio> event handlers → policy ------------------------------------
   const handleLoadedMetadata = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setDuration(audio.duration || 0);
-    if (seekToRef.current > 0) {
-      audio.currentTime = Math.min(seekToRef.current, audio.duration || seekToRef.current);
-      seekToRef.current = 0;
-    }
-  }, []);
+    policy.onLoadedMetadata();
+  }, [policy]);
 
   const handleTimeUpdate = useCallback(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    setCurrentTime(audio.currentTime);
-    const now = Date.now();
-    if (now - lastSavedRef.current >= SAVE_INTERVAL_MS) {
-      lastSavedRef.current = now;
-      persist(audio.currentTime);
-    }
-  }, [persist]);
+    policy.onTimeUpdate();
+  }, [policy]);
 
   const handleEnded = useCallback(() => {
-    persist(duration);
-    if (chapterIndex < chapters.length - 1) goToChapter(chapterIndex + 1);
-    else setIsPlaying(false);
-  }, [persist, duration, chapterIndex, chapters.length, goToChapter]);
+    policy.onEnded();
+  }, [policy]);
 
   // ---- Render -------------------------------------------------------------
   if (!payload || mode === "hidden" || !currentChapter || !md5) return null;
@@ -178,16 +144,17 @@ export function InPagePlayer() {
   const coverUrl = audiobook?.cover_url ?? null;
   const chapterLabel =
     currentChapter.title || `Chapter ${currentChapter.chapter_index + 1}`;
+  const src = mediaUrlForChapter(md5, currentChapter.chapter_id);
 
   const sharedAudio = (
     <audio
-      ref={audioRef}
-      src={`san-citro-media://${md5}/${currentChapter.chapter_id}`}
+      ref={setAudioNode}
+      src={src}
       onLoadedMetadata={handleLoadedMetadata}
       onTimeUpdate={handleTimeUpdate}
       onEnded={handleEnded}
-      onPlay={() => setIsPlaying(true)}
-      onPause={() => setIsPlaying(false)}
+      onPlay={() => policy.onPlay()}
+      onPause={() => policy.onPause()}
       preload="metadata"
     />
   );

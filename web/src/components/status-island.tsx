@@ -4,17 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useNavigate } from "react-router";
 import { DownloadIcon, Loader2Icon, CheckCircle2Icon } from "lucide-react";
-import { useDownloadStream } from "@/lib/use-sse";
+import { useActiveDownloadCount } from "@/contexts/active-downloads-context";
 import { onAudiobookStatus } from "@/lib/api-client";
 
 // Title-bar "Dynamic Island" (ADR-0011): a glass status pill that appears on
 // activity (downloading / processing → ready) and settles to nothing when idle.
 // Click → Downloads. Centered via FLEX and animated with OPACITY ONLY — never a
 // transform on the glass or an ancestor (the containing-block trap blanks
-// backdrop-filter). Owns the live status the old download badge used to show.
+// backdrop-filter). Live download count comes from the shell Active downloads store.
 export function StatusIsland() {
   const navigate = useNavigate();
-  const { downloads } = useDownloadStream();
+  const activeDownloads = useActiveDownloadCount();
   const [processing, setProcessing] = useState(0);
   const [justReady, setJustReady] = useState(false);
   const readyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,10 +42,6 @@ export function StatusIsland() {
       clearReadyTimer();
     };
   }, []);
-
-  const activeDownloads = Array.from(downloads.values()).filter(
-    (d) => d.status === "downloading" || d.status === "started" || d.status === "queued"
-  ).length;
 
   let icon: React.ReactNode = null;
   let label = "";

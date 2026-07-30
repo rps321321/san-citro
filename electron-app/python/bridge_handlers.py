@@ -47,6 +47,7 @@ from src.download_history import (
 )
 from src.library import query_library
 from src.scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
+from src.storage_location import resolve_download_path
 
 logger = logging.getLogger("bridge.handlers")
 
@@ -315,9 +316,10 @@ def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
     """resolve_download_path — return a realpath-contained absolute file path
     for a completed download by md5, or None.
 
-    Used by the main process to back ``showItemInFolder``. The resolved path
-    MUST live inside the configured (validated) downloads directory — any
-    path that escapes it is rejected to prevent revealing arbitrary files.
+    Used by the main process to back ``showItemInFolder`` and the reader.
+    Prefers San Citro layout, then legacy flat / legacy audiobooks paths
+    (ADR-0006). The resolved path MUST live inside the configured downloads
+    directory — escapes are rejected.
     """
     md5 = _validate_md5(params.get("md5", ""))
 
@@ -326,19 +328,11 @@ def handle_resolve_download_path(params: dict[str, Any]) -> str | None:
         return None
 
     out_dir_abs = os.path.realpath(validate_writable_dir(get_config().get("out_dir", "downloads")))
-    file_path = os.path.realpath(os.path.join(out_dir_abs, record["filename"]))
-
-    # Reject path escapes (e.g. a stored filename containing ../).
-    if not file_path.startswith(out_dir_abs + os.sep):
-        return None
-    if not os.path.exists(file_path):
-        # An extracted audiobook deletes its source archive — reveal the extracted
-        # folder instead so "Show in folder" still resolves to something.
-        ab_dir = os.path.realpath(os.path.join(out_dir_abs, "audiobooks", md5))
-        if ab_dir.startswith(out_dir_abs + os.sep) and os.path.isdir(ab_dir):
-            return ab_dir
-        return None
-    return file_path
+    return resolve_download_path(
+        out_dir_abs,
+        filename=record.get("filename"),
+        md5=md5,
+    )
 
 
 def handle_get_chapter_path(params: dict[str, Any]) -> str | None:

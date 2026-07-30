@@ -130,23 +130,22 @@ class TestDownloadCommand:
                 main()
             assert exc.value.code == 1
 
-    @patch("src.cli.AnnasArchiveTool")
+    @patch("src.cli.create_strategy")
     @patch("src.cli._run_concurrent_downloads", return_value=[])
     @patch("src.cli._print_summary_table")
-    def test_should_force_concurrency_1_for_single_download(self, mock_table, mock_run, mock_tool_cls):
-        mock_tool_cls.return_value = MagicMock()
+    def test_should_force_concurrency_1_for_single_download(self, mock_table, mock_run, mock_strategy):
+        mock_strategy.return_value = MagicMock(name="strategy")
         cfg = dict(_BASE_CONFIG, concurrency=7)
         with (
             patch("src.cli.get_config", return_value=cfg),
             patch("src.cli.run_migrations"),
-            patch("src.cli.create_strategy", return_value=MagicMock()),
             patch("src.cli.setup_logging", return_value=MagicMock()),
             patch("sys.argv", ["prog", "--concurrency", "5", "download", "aa" * 16]),
         ):
             main()
         mock_run.assert_called_once()
-        # concurrency is the 6th positional arg; single downloads force it to 1.
-        assert mock_run.call_args[0][5] == 1
+        # Signature: strategy, proxies, targets, out, db, hist, concurrency
+        assert mock_run.call_args[0][6] == 1
 
 
 class TestSearchFilters:
@@ -156,13 +155,11 @@ class TestSearchFilters:
             {"title": "New", "year": "2001", "md5": "bb" * 16},
             {"title": "Unknown", "year": None, "md5": "cc" * 16},
         ]
-        tool = MagicMock()
         with (
             patch("sys.argv", ["cli", "search", "python", "--after", "2000"]),
             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
             patch("src.cli.run_migrations"),
             patch("src.cli.create_strategy", return_value=MagicMock()),
-            patch("src.cli.AnnasArchiveTool", return_value=tool),
             patch("src.cli.scrape_annas_archive", return_value=rows),
             patch("src.cli._print_live_results") as mock_print,
             patch("src.cli.setup_logging", return_value=MagicMock()),
@@ -171,21 +168,19 @@ class TestSearchFilters:
 
         mock_print.assert_called_once()
         assert mock_print.call_args.args[0] == [rows[1]]
-        tool.close.assert_called_once()
 
 
 class TestDownloadOneStrategy:
-    """_download_one must honor the tool's chosen strategy/proxies, not hardcode 'direct'."""
+    """_download_one must pass strategy/proxies into lifecycle (no outer tool)."""
 
-    def test_should_pass_tool_strategy_and_proxies_to_run_download(self):
+    def test_should_pass_strategy_and_proxies_to_run_download(self):
         from src.cli import _download_one
 
-        tool = MagicMock()
-        tool.strategy = MagicMock(name="chrome-strategy")
-        tool.proxies = ["http://proxy:8080"]
+        strategy = MagicMock(name="chrome-strategy")
+        proxies = ["http://proxy:8080"]
         with patch("src.cli.run_download", return_value=None) as mock_run:
-            _download_one(tool, "aa" * 16, "out", None, None)
+            _download_one(strategy, proxies, "aa" * 16, "out", None, None)
 
         kwargs = mock_run.call_args.kwargs
-        assert kwargs["strategy"] is tool.strategy
+        assert kwargs["strategy"] is strategy
         assert kwargs["proxies"] == ["http://proxy:8080"]

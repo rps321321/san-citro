@@ -27,12 +27,17 @@ _Avoid_: "raw row" for an observation that has not yet been contextualized.
 **session_id** is generated per app launch. Every telemetry row carries both.
 
 **Download lifecycle**:
-The states a download moves through: `queued → downloading → completed | failed |
-cancelled`. The last three are **terminal**.
+The states a **single** download moves through: `queued → downloading → completed |
+failed | cancelled`. The last three are **terminal**. Concurrency and the on-screen
+list of in-flight jobs are not part of this concept — they are a view over many
+lifecycles.
+_Avoid_: treating the desktop queue/map as the lifecycle itself; CLI `"success"` as a
+lifecycle status (map it to `completed`).
 
 **Terminal event**:
 The single `download_analytics` row emitted when a download reaches a terminal state,
-carrying its outcome (status, duration, avg speed, size, error). One per download.
+carrying its outcome (status, duration, avg speed, size, error, and transport facts
+when known — strategy, mirror). One per download; never twice.
 _Avoid_: "completion event" (failures and cancellations count too).
 
 **Scrape request**:
@@ -72,8 +77,11 @@ everything by **md5**.
 
 **Category**:
 A download's classification — **Books** or **Audiobooks** — stored as a DB attribute
-(`downloads.media_type`), decided authoritatively by the backend after download (it
-inspects the real file/archive). A *view facet*, not a folder.
+(`downloads.media_type`), decided **once** by inspecting the real Artifact after bytes
+land (archive listing and/or audio extension — never search keywords alone). A *view
+facet*, not a folder. Processing may still run for audiobooks; Category is the stamp,
+not the processing status.
+_Avoid_: stamping `book` from “not a zip”; equating Category with `audiobooks.status`.
 
 **Artifact**:
 What a completed download produces: either a **single file** (epub, pdf, m4b, …) or an
@@ -82,9 +90,12 @@ after which the archive is deleted). A download is therefore a file *or* a folde
 _Avoid_: "the downloaded file" (it may be a folder).
 
 **Metadata spine**:
-The search-result fields (author, year, extension, content_type, cover_url, …) threaded
-from the download click through the IPC/bridge chain and persisted in the `downloads`
-table. Today they are dropped at `startDownload`; the library view depends on them.
+The search-result fields (author, year, extension, content_type, language, publisher,
+cover_url, …) threaded from the download click through the IPC/bridge chain and
+persisted on the `downloads` row at start. The Library view is fed by these fields
+(plus post-download Category), not by re-scraping.
+_Avoid_: implying the spine is optional for Library richness; inventing metadata only
+on disk paths.
 
 ## Language — UI
 
@@ -102,11 +113,26 @@ common. **Decoration, never load-bearing** — AA's coarse **category** (fiction
 the always-present grouping when enrichment is empty. A Library facet. (Decided 2026-06-29.)
 
 **In-page player**:
-The persistent audiobook player — a React component (`InPagePlayer`) in the SPA shell, with its
-`<audio>` mounted **outside the router `<Outlet>`** so playback survives route changes (the SPA has
-no full reloads). State lives in `PlayerContext`; it owns playback + all player UI and streams
-chapters over `san-citro-media://`. See ADR-0013 (Phase 2B retired the ADR-0010 `WebContentsView`).
-_Avoid_: "the player page", "player view" (it is an in-page component, not a page or a separate view).
+The persistent audiobook player in the SPA shell: chrome + transport, with `<audio>` mounted
+**outside the router `<Outlet>`** so playback survives route changes (the SPA has no full
+reloads). Streams chapters over `san-citro-media://`. See ADR-0013 (Phase 2B retired the
+ADR-0010 `WebContentsView`).
+_Avoid_: "the player page", "player view" (it is in-page chrome, not a route).
+
+**Playback policy**:
+Chapter index, resume position, progress-save cadence, and next-chapter-on-end for an
+audiobook session. Distinct from the visual In-page player chrome and from the media protocol.
+_Avoid_: burying policy only inside React markup with no testable seam.
+
+**Active downloads**:
+The live set of Download lifecycles the UI is watching (progress, cancel, terminal badges).
+One session-scoped view over many jobs — not a second status machine and not the Library.
+_Avoid_: "SSE stream", separate Maps per page for the same transfers.
+
+**Readable format**:
+A Book Artifact extension the in-app reader can open (foliate multi-format set). Distinct from
+Category and from “file exists on disk.”
+_Avoid_: hardcoding EPUB-only on some surfaces and multi-format on others.
 
 ## Language — Visual design (ADR-0011)
 

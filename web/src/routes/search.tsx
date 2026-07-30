@@ -48,6 +48,8 @@ import {
   trackSearch, trackInteraction, trackError,
   trackFunnelStep, trackFeatureDiscovery, incrementEngagement,
 } from "@/lib/telemetry";
+import { useActiveDownloads } from "@/contexts/active-downloads-context";
+import { isLiveActiveStatus } from "@/lib/active-downloads";
 
 const EXTENSIONS = ["", "pdf", "epub", "djvu", "mobi", "azw3", "fb2", "txt", "cbr", "cbz"];
 const LANGUAGES = ["", "English", "Russian", "German", "French", "Spanish", "Italian", "Chinese", "Japanese", "Portuguese"];
@@ -101,40 +103,25 @@ function SearchContent() {
   const [data, setData] = useState<SearchResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // In-flight startDownload IPC only — live queued/completed come from the shell store.
   const [downloadingMd5s, setDownloadingMd5s] = useState<Set<string>>(new Set());
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  // Persists across the download lifecycle (NOT cleared in finally) so the row
-  // keeps showing "Queued" after the handoff.
-  const [enqueuedMd5s, setEnqueuedMd5s] = useState<Set<string>>(new Set());
-  // md5s that reached "completed" live via onDownloadProgress this session.
-  const [completedMd5s, setCompletedMd5s] = useState<Set<string>>(new Set());
   const [downloadSuccess, setDownloadSuccess] = useState(false);
   // Set to true when a re-search fails so previously shown results are dimmed/labelled.
   const [resultsStale, setResultsStale] = useState(false);
   // Client-side sort of the current page's results (null = server/scrape order).
   const [sort, setSort] = useState<SortState<SearchSortKey> | null>(null);
 
+  const {
+    downloads: activeDownloads,
+    completedThisSession,
+    applyProgress: applyDownloadProgress,
+  } = useActiveDownloads();
+
   const requestIdRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
   // Focused after pagination so keyboard users don't lose their place.
   const resultsHeadingRef = useRef<HTMLDivElement>(null);
-
-  // Subscribe to live download progress so a row whose md5 reaches "completed"
-  // flips to the green check without a re-search (fixes stale is_downloaded).
-  useEffect(() => {
-    const unsub = window.sanCitro?.onDownloadProgress?.((data) => {
-      const items = Array.isArray(data) ? data : [data];
-      const done = items.filter((d) => d.status === "completed").map((d) => d.md5);
-      if (done.length > 0) {
-        setCompletedMd5s((prev) => {
-          const next = new Set(prev);
-          for (const md5 of done) next.add(md5);
-          return next;
-        });
-      }
-    });
-    return () => unsub?.();
-  }, []);
 
   // Global shortcut: '/' or Ctrl/Cmd+K focuses the search input. Ignored while
   // typing in another field so '/' stays usable as a literal character.
@@ -228,10 +215,11 @@ function SearchContent() {
 
   const handleDownload = async (book: BookRecord) => {
     if (downloadingMd5s.has(book.md5)) return; // guard against double-click
+    if (isLiveActiveStatus(activeDownloads.get(book.md5)?.status ?? "")) return;
     setDownloadError(null);
     setDownloadingMd5s((prev) => new Set(prev).add(book.md5));
     try {
-      await startDownload(book.md5, book.title, {
+      const status = await startDownload(book.md5, book.title, {
         author: book.author,
         year: book.year,
         extension: book.extension,
@@ -243,10 +231,11 @@ function SearchContent() {
       incrementEngagement("downloadStarted");
       trackFunnelStep("search_to_download", "download_clicked", 2, { md5: book.md5 });
       trackFeatureDiscovery("download");
-      // Do NOT optimistically mark as downloaded — the download was only just
-      // enqueued, not completed. Mark it "enqueued" so the row shows a persistent
-      // "Queued" badge, and surface a success banner linking to Downloads.
-      setEnqueuedMd5s((prev) => new Set(prev).add(book.md5));
+      // Feed the startDownload return into the shared store (same apply path as
+      // IPC progress) so Queued shows immediately without a second listener.
+      if (status?.md5) {
+        applyDownloadProgress(status);
+      }
       setDownloadSuccess(true);
     } catch (err) {
       const message =
@@ -528,27 +517,46 @@ function SearchContent() {
                       <TableCell>{formatFileSize(book.filesize_bytes)}</TableCell>
                       <TableCell>{book.language || "-"}</TableCell>
                       <TableCell>
-                        {book.is_downloaded || completedMd5s.has(book.md5) ? (
-                          <span role="img" aria-label="Downloaded" title="Downloaded">
-                            <CheckCircle2Icon className="size-4 text-success" aria-hidden="true" />
-                          </span>
-                        ) : downloadingMd5s.has(book.md5) ? (
-                          <span role="status" aria-label={`Downloading ${book.title}`}>
-                            <LoaderIcon className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
-                            <span className="sr-only">Downloading…</span>
-                          </span>
-                        ) : enqueuedMd5s.has(book.md5) ? (
-                          <Badge variant="outline">Queued</Badge>
-                        ) : (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => handleDownload(book)}
-                            aria-label={`Download ${book.title}`}
-                          >
-                            <DownloadIcon className="size-4" />
-                          </Button>
-                        )}
+                        {(() => {
+                          const live = activeDownloads.get(book.md5);
+                          const liveStatus = live?.status;
+                          const done =
+                            book.is_downloaded ||
+                            completedThisSession.has(book.md5) ||
+                            liveStatus === "completed";
+                          if (done) {
+                            return (
+                              <span role="img" aria-label="Downloaded" title="Downloaded">
+                                <CheckCircle2Icon className="size-4 text-success" aria-hidden="true" />
+                              </span>
+                            );
+                          }
+                          if (
+                            downloadingMd5s.has(book.md5) ||
+                            liveStatus === "downloading" ||
+                            liveStatus === "started"
+                          ) {
+                            return (
+                              <span role="status" aria-label={`Downloading ${book.title}`}>
+                                <LoaderIcon className="size-4 animate-spin text-muted-foreground" aria-hidden="true" />
+                                <span className="sr-only">Downloading…</span>
+                              </span>
+                            );
+                          }
+                          if (liveStatus === "queued") {
+                            return <Badge variant="outline">Queued</Badge>;
+                          }
+                          return (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => handleDownload(book)}
+                              aria-label={`Download ${book.title}`}
+                            >
+                              <DownloadIcon className="size-4" />
+                            </Button>
+                          );
+                        })()}
                       </TableCell>
                     </TableRow>
                   ))

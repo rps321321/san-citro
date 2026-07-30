@@ -102,41 +102,38 @@ class TestDriveMediaType:
 
 
 # ---------------------------------------------------------------------------
-# worker body (_process_one): processes, stamps media_type, emits the event
+# worker body (_process_one): processes + emits; does NOT re-stamp media_type
 # ---------------------------------------------------------------------------
 class TestProcessOne:
-    def test_should_process_set_audiobook_media_type_and_emit(self) -> None:
+    def test_should_process_and_emit_without_restamping_media_type(self) -> None:
+        """Category stamps media_type once before enqueue; queue must not re-stamp."""
         send_event = MagicMock()
         with (
             patch.object(audiobook_queue.audiobook_processor, "process_audiobook", return_value="ready") as proc,
-            patch.object(audiobook_queue.audiobook_processor, "classify", return_value="audiobook"),
-            patch.object(audiobook_queue, "set_media_type") as set_mt,
             patch.object(audiobook_queue, "_get_send_event", return_value=send_event),
+            patch("src.download_history.set_media_type") as set_mt,
         ):
             audiobook_queue._process_one(_MD5, "/out/x.zip", "/out")
 
         proc.assert_called_once_with(_MD5, "/out/x.zip", "/out")
-        set_mt.assert_called_once_with(md5=_MD5, media_type="audiobook")
+        set_mt.assert_not_called()
         send_event.assert_called_once_with("audiobook_status", {"md5": _MD5, "status": "ready"})
 
-    def test_should_set_book_media_type_when_classified_as_book(self) -> None:
+    def test_should_emit_skipped_status_without_media_type_stamp(self) -> None:
         send_event = MagicMock()
         with (
             patch.object(audiobook_queue.audiobook_processor, "process_audiobook", return_value="skipped"),
-            patch.object(audiobook_queue.audiobook_processor, "classify", return_value="book"),
-            patch.object(audiobook_queue, "set_media_type") as set_mt,
             patch.object(audiobook_queue, "_get_send_event", return_value=send_event),
+            patch("src.download_history.set_media_type") as set_mt,
         ):
             audiobook_queue._process_one(_MD5, "/out/x.zip", "/out")
 
-        set_mt.assert_called_once_with(md5=_MD5, media_type="book")
+        set_mt.assert_not_called()
         send_event.assert_called_once_with("audiobook_status", {"md5": _MD5, "status": "skipped"})
 
     def test_should_not_raise_when_event_emit_fails(self) -> None:
         with (
             patch.object(audiobook_queue.audiobook_processor, "process_audiobook", return_value="error"),
-            patch.object(audiobook_queue.audiobook_processor, "classify", return_value="audiobook"),
-            patch.object(audiobook_queue, "set_media_type"),
             patch.object(audiobook_queue, "_get_send_event", side_effect=RuntimeError("no bridge")),
         ):
             # Must swallow the emit failure rather than propagate.
@@ -180,7 +177,7 @@ class TestResweep:
             patch.object(audiobook_queue.audiobook_processor, "sweep_stale_tmp"),
             patch.object(audiobook_queue.audiobook_db, "list_audiobooks", return_value=rows),
             patch.object(audiobook_queue, "get_completed_download", return_value={"filename": "book.zip"}),
-            patch("os.path.isfile", return_value=True),
+            patch.object(audiobook_queue, "resolve_book_file", return_value="/out/San Citro/book.zip"),
             patch.object(audiobook_queue, "enqueue") as enqueue,
             patch.object(audiobook_queue.audiobook_db, "set_audiobook_status") as set_status,
         ):
@@ -189,7 +186,7 @@ class TestResweep:
         enqueue.assert_called_once()
         args = enqueue.call_args.args
         assert args[0] == _MD5
-        assert args[1].replace("\\", "/") == "/out/book.zip"
+        assert args[1].replace("\\", "/") == "/out/San Citro/book.zip"
         assert args[2] == "/out"
         set_status.assert_not_called()
 
@@ -200,7 +197,7 @@ class TestResweep:
             patch.object(audiobook_queue.audiobook_processor, "sweep_stale_tmp"),
             patch.object(audiobook_queue.audiobook_db, "list_audiobooks", return_value=rows),
             patch.object(audiobook_queue, "get_completed_download", return_value={"filename": "gone.zip"}),
-            patch("os.path.isfile", return_value=False),
+            patch.object(audiobook_queue, "resolve_book_file", return_value=None),
             patch.object(audiobook_queue, "enqueue") as enqueue,
             patch.object(audiobook_queue.audiobook_db, "set_audiobook_status") as set_status,
         ):
