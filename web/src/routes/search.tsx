@@ -123,19 +123,19 @@ function SearchContent() {
   // Focused after pagination so keyboard users don't lose their place.
   const resultsHeadingRef = useRef<HTMLDivElement>(null);
 
-  // Global shortcut: '/' or Ctrl/Cmd+K focuses the search input. Ignored while
-  // typing in another field so '/' stays usable as a literal character.
+  // Global shortcut: '/' focuses the search input. Ctrl/Cmd+K is owned solely by
+  // the Command palette (#29). Ignored while typing in another field so '/' stays
+  // usable as a literal character.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      const ctrlK = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k";
       const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey;
-      if (!ctrlK && !slash) return;
+      if (!slash) return;
       const el = document.activeElement;
       const typing =
         el instanceof HTMLInputElement ||
         el instanceof HTMLTextAreaElement ||
         (el instanceof HTMLElement && el.isContentEditable);
-      if (slash && typing) return;
+      if (typing) return;
       e.preventDefault();
       searchInputRef.current?.focus();
       searchInputRef.current?.select();
@@ -158,8 +158,14 @@ function SearchContent() {
     return sorted;
   }, [data, sort]);
 
+  // Optional filter overrides let filter onChange handlers pass the *committed*
+  // values immediately. Calling doSearch after setState without overrides closes
+  // over the previous render's extension/language (stale re-scrape bug #27).
   const doSearch = useCallback(
-    async (pageNum: number = 1) => {
+    async (
+      pageNum: number = 1,
+      overrides?: { extension?: string; language?: string }
+    ) => {
       if (!query.trim()) return;
 
       // NOTE: Do NOT use router.replace() here — in Electron's custom protocol
@@ -170,12 +176,17 @@ function SearchContent() {
 
       const currentRequestId = ++requestIdRef.current;
 
+      const resolvedExtension =
+        overrides && "extension" in overrides ? (overrides.extension ?? "") : extension;
+      const resolvedLanguage =
+        overrides && "language" in overrides ? (overrides.language ?? "") : language;
+
       const params: SearchParams = {
         query: query.trim(),
         page: pageNum,
       };
-      if (extension) params.extension = extension;
-      if (language) params.language = language;
+      if (resolvedExtension) params.extension = resolvedExtension;
+      if (resolvedLanguage) params.language = resolvedLanguage;
 
       try {
         const t0 = Date.now();
@@ -252,23 +263,30 @@ function SearchContent() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    doSearch(1);
+    void doSearch(1);
   };
 
-  // When a filter changes and results are already shown, re-run from page 1 so a
-  // stale filter never silently persists. doSearch reads the latest state via its
-  // deps, so defer to the next tick after setState lands.
-  const rerunIfResults = () => {
-    if (data) setTimeout(() => doSearch(1), 0);
-  };
-
+  // When a filter changes and results are already shown, re-run from page 1 with
+  // the *new* filter values passed explicitly (avoids stale doSearch closure).
   const activeFilterCount = (extension ? 1 : 0) + (language ? 1 : 0);
+
+  const handleExtensionChange = (val: string | null) => {
+    const next = !val || val === "__all" ? "" : val;
+    setExtension(next);
+    if (data) void doSearch(1, { extension: next });
+  };
+
+  const handleLanguageChange = (val: string | null) => {
+    const next = !val || val === "__all" ? "" : val;
+    setLanguage(next);
+    if (data) void doSearch(1, { language: next });
+  };
 
   const handleClearFilters = () => {
     setExtension("");
     setLanguage("");
     trackInteraction("clear_filters", "search");
-    if (data) setTimeout(() => doSearch(1), 0);
+    if (data) void doSearch(1, { extension: "", language: "" });
   };
 
   return (
@@ -285,7 +303,7 @@ function SearchContent() {
               placeholder="Title, author, or ISBN — press / to focus"
               className="pl-9"
               aria-label="Search query"
-              title="Press / or Ctrl+K to focus search"
+              title="Press / to focus search"
             />
           </div>
           <Button type="submit" disabled={isLoading || !query.trim()} aria-busy={isLoading}>
@@ -303,10 +321,7 @@ function SearchContent() {
           <div className="w-40">
             <Select
               value={extension || "__all"}
-              onValueChange={(val) => {
-                setExtension(!val || val === "__all" ? "" : val);
-                rerunIfResults();
-              }}
+              onValueChange={handleExtensionChange}
             >
               <SelectTrigger className="w-full" aria-label="Filter by file extension">
                 <SelectValue>{(value) => (typeof value === "string" && value !== "__all" ? value.toUpperCase() : "All formats")}</SelectValue>
@@ -324,10 +339,7 @@ function SearchContent() {
           <div className="w-40">
             <Select
               value={language || "__all"}
-              onValueChange={(val) => {
-                setLanguage(!val || val === "__all" ? "" : val);
-                rerunIfResults();
-              }}
+              onValueChange={handleLanguageChange}
             >
               <SelectTrigger className="w-full" aria-label="Filter by language">
                 <SelectValue>{(value) => (typeof value === "string" && value !== "__all" ? value : "All languages")}</SelectValue>

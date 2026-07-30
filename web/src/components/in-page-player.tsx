@@ -146,19 +146,6 @@ export function InPagePlayer() {
     currentChapter.title || `Chapter ${currentChapter.chapter_index + 1}`;
   const src = mediaUrlForChapter(md5, currentChapter.chapter_id);
 
-  const sharedAudio = (
-    <audio
-      ref={setAudioNode}
-      src={src}
-      onLoadedMetadata={handleLoadedMetadata}
-      onTimeUpdate={handleTimeUpdate}
-      onEnded={handleEnded}
-      onPlay={() => policy.onPlay()}
-      onPause={() => policy.onPause()}
-      preload="metadata"
-    />
-  );
-
   const cover = (sizeClass: string, iconClass: string) =>
     !coverUrl || coverFailed ? (
       <div className={`${sizeClass} bg-muted flex items-center justify-center rounded-md shrink-0`}>
@@ -175,95 +162,106 @@ export function InPagePlayer() {
       </div>
     );
 
-  if (mode === "expanded") {
-    return (
-      // In-page: a fixed overlay over the content column, below the 36px title bar.
-      <div className="absolute inset-x-0 bottom-0 top-9 z-40 isolate flex flex-col overflow-hidden text-foreground">
-        <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-          {coverUrl && !coverFailed && (
-            <img src={coverUrl} alt="" className="h-full w-full scale-125 object-cover blur-3xl" />
-          )}
-          <div className="absolute inset-0 bg-background/75 backdrop-blur-2xl" />
-        </div>
-        {sharedAudio}
-        <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
-          <span className="truncate text-sm font-semibold" title={title}>{title}</span>
-          <div className="flex items-center gap-1">
-            <IconButton label="Collapse" onClick={() => setMode("mini")}>
-              <ChevronDownIcon className="size-4" />
-            </IconButton>
-            <IconButton label="Close player" onClick={close}>
-              <XIcon className="size-4" />
-            </IconButton>
-          </div>
-        </div>
+  // Single <audio> outside mini/expanded chrome so mode toggles cannot remount
+  // the media element (ticket #28). Only chrome differs between modes.
+  const audioEl = (
+    <audio
+      ref={setAudioNode}
+      src={src}
+      onLoadedMetadata={handleLoadedMetadata}
+      onTimeUpdate={handleTimeUpdate}
+      onEnded={handleEnded}
+      onPlay={() => policy.onPlay()}
+      onPause={() => policy.onPause()}
+      preload="metadata"
+    />
+  );
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-          <nav aria-label="Chapters" className="min-h-0 overflow-y-auto border-r border-border/40 p-2">
-            {chapters.map((c, i) => {
-              const activeCh = i === chapterIndex;
-              return (
-                <button
-                  key={c.chapter_id}
-                  type="button"
-                  onClick={() => goToChapter(i)}
-                  aria-current={activeCh ? "true" : undefined}
-                  className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition ${
-                    activeCh
-                      ? "bg-primary/15 font-medium text-primary shadow-sm backdrop-blur-sm"
-                      : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
-                  }`}
-                >
-                  <span className="w-6 shrink-0 text-right tabular-nums text-xs opacity-60">{i + 1}</span>
-                  <span className="truncate">{c.title || `Chapter ${c.chapter_index + 1}`}</span>
-                </button>
-              );
-            })}
-          </nav>
+  const expandedChrome = (
+    // In-page: a fixed overlay over the content column, below the 36px title bar.
+    <div className="absolute inset-x-0 bottom-0 top-9 z-40 isolate flex flex-col overflow-hidden text-foreground">
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        {coverUrl && !coverFailed && (
+          <img src={coverUrl} alt="" className="h-full w-full scale-125 object-cover blur-3xl" />
+        )}
+        <div className="absolute inset-0 bg-background/75 backdrop-blur-2xl" />
+      </div>
+      <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
+        <span className="truncate text-sm font-semibold" title={title}>{title}</span>
+        <div className="flex items-center gap-1">
+          <IconButton label="Collapse" onClick={() => setMode("mini")}>
+            <ChevronDownIcon className="size-4" />
+          </IconButton>
+          <IconButton label="Close player" onClick={close}>
+            <XIcon className="size-4" />
+          </IconButton>
+        </div>
+      </div>
 
-          <div className="flex min-h-0 flex-col items-center justify-center gap-6 p-8">
-            {cover("aspect-square w-56 max-w-[40vh]", "size-16")}
-            <div className="text-center">
-              <div className="text-lg font-semibold leading-snug">{title}</div>
-              <div className="mt-1 text-sm text-muted-foreground">{chapterLabel}</div>
-            </div>
-            <div className="w-full max-w-md">
-              <Scrubber value={currentTime} max={duration} onChange={onScrub} />
-              <div className="mt-1 flex justify-between text-xs tabular-nums text-muted-foreground">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <IconButton label="Previous chapter" onClick={prevChapter} disabled={chapterIndex === 0}>
-                <SkipBackIcon className="size-5" />
-              </IconButton>
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+        <nav aria-label="Chapters" className="min-h-0 overflow-y-auto border-r border-border/40 p-2">
+          {chapters.map((c, i) => {
+            const activeCh = i === chapterIndex;
+            return (
               <button
+                key={c.chapter_id}
                 type="button"
-                onClick={togglePlay}
-                aria-label={isPlaying ? "Pause" : "Play"}
-                className="flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
+                onClick={() => goToChapter(i)}
+                aria-current={activeCh ? "true" : undefined}
+                className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition ${
+                  activeCh
+                    ? "bg-primary/15 font-medium text-primary shadow-sm backdrop-blur-sm"
+                    : "text-muted-foreground hover:bg-background/50 hover:text-foreground"
+                }`}
               >
-                {isPlaying ? <PauseIcon className="size-6" /> : <PlayIcon className="size-6" />}
+                <span className="w-6 shrink-0 text-right tabular-nums text-xs opacity-60">{i + 1}</span>
+                <span className="truncate">{c.title || `Chapter ${c.chapter_index + 1}`}</span>
               </button>
-              <IconButton label="Next chapter" onClick={nextChapter} disabled={chapterIndex >= chapters.length - 1}>
-                <SkipForwardIcon className="size-5" />
-              </IconButton>
+            );
+          })}
+        </nav>
+
+        <div className="flex min-h-0 flex-col items-center justify-center gap-6 p-8">
+          {cover("aspect-square w-56 max-w-[40vh]", "size-16")}
+          <div className="text-center">
+            <div className="text-lg font-semibold leading-snug">{title}</div>
+            <div className="mt-1 text-sm text-muted-foreground">{chapterLabel}</div>
+          </div>
+          <div className="w-full max-w-md">
+            <Scrubber value={currentTime} max={duration} onChange={onScrub} />
+            <div className="mt-1 flex justify-between text-xs tabular-nums text-muted-foreground">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
             </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <IconButton label="Previous chapter" onClick={prevChapter} disabled={chapterIndex === 0}>
+              <SkipBackIcon className="size-5" />
+            </IconButton>
+            <button
+              type="button"
+              onClick={togglePlay}
+              aria-label={isPlaying ? "Pause" : "Play"}
+              className="flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:opacity-90 focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {isPlaying ? <PauseIcon className="size-6" /> : <PlayIcon className="size-6" />}
+            </button>
+            <IconButton label="Next chapter" onClick={nextChapter} disabled={chapterIndex >= chapters.length - 1}>
+              <SkipForwardIcon className="size-5" />
+            </IconButton>
           </div>
         </div>
       </div>
-    );
-  }
+    </div>
+  );
 
   // mini — a fixed bottom bar over the content column.
-  return (
+  const miniChrome = (
     <div className="absolute inset-x-0 bottom-0 z-30 flex h-[72px] items-center gap-3 px-3 text-foreground">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 border-t border-border/40 bg-background/80 backdrop-blur-xl"
       />
-      {sharedAudio}
       {cover("size-12", "size-5")}
 
       <div className="min-w-0 flex-1">
@@ -299,6 +297,13 @@ export function InPagePlayer() {
         </IconButton>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {audioEl}
+      {mode === "expanded" ? expandedChrome : miniChrome}
+    </>
   );
 }
 

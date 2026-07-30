@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { openReader } from "@/lib/reader-nav";
+import { readerFileDisplayName } from "@/lib/reader-file-name";
 import { isReadable } from "@/lib/readable-format";
 import type { LibraryItem } from "@/types";
 
@@ -46,7 +47,14 @@ export function DetailSheet({
 
   const read = () => {
     if (!item) return;
-    openReader(item.md5, item.title || item.filename || "", item.filename ?? "");
+    // Prefer real filename; when empty, synthesize base.ext so foliate can detect format (#30).
+    const displayName = readerFileDisplayName({
+      md5: item.md5,
+      filename: item.filename,
+      extension: item.extension,
+      title: item.title,
+    });
+    openReader(item.md5, item.title || item.filename || "", displayName);
     onOpenChange(false);
   };
   const reveal = () => {

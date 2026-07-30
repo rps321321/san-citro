@@ -26,6 +26,15 @@ function formatDuration(seconds: number): string {
   return `${m}m ${s}s`;
 }
 
+/**
+ * Label for a 1-based Active downloads queue position.
+ * Pos 1 is next up; later positions report how many jobs are ahead (N-1).
+ */
+export function formatQueuePosition(queuePosition: number): string {
+  if (queuePosition === 1) return "Next in queue";
+  return `${queuePosition - 1} ahead in queue`;
+}
+
 // Exponential moving average weight for speed smoothing (higher = more responsive,
 // lower = smoother). 0.2 gives ~5-sample effective window.
 const EMA_ALPHA = 0.2;
@@ -128,7 +137,7 @@ function DownloadCard({
 
         {queuePosition != null && dl.status === "queued" && (
           <div className="text-xs text-muted-foreground">
-            {queuePosition === 1 ? "Next in queue" : `${queuePosition} ahead in queue`}
+            {formatQueuePosition(queuePosition)}
           </div>
         )}
 
