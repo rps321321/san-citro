@@ -25,42 +25,45 @@ function pushStatus(
 /**
  * Wire electron-updater events and forward each as an UpdateStatus to the
  * renderer. Only meaningful in a packaged build; callers guard on
- * app.isPackaged. `onDownloaded` lets main.ts surface the update via tray.
+ * app.isPackaged. `onStatus` mirrors every status (tray + any main-side UI).
  */
 export function initAutoUpdater(
   getMainWindow: () => BrowserWindow | null,
-  onDownloaded: (status: UpdateStatus) => void
+  onStatus: (status: UpdateStatus) => void
 ): void {
   autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
 
+  const emit = (status: UpdateStatus) => {
+    pushStatus(getMainWindow, status);
+    onStatus(status);
+  };
+
   autoUpdater.on('checking-for-update', () => {
-    pushStatus(getMainWindow, { status: 'checking' });
+    emit({ status: 'checking' });
   });
 
   autoUpdater.on('update-available', (info) => {
-    pushStatus(getMainWindow, { status: 'available', version: info.version });
+    emit({ status: 'available', version: info.version });
   });
 
   autoUpdater.on('update-not-available', () => {
-    pushStatus(getMainWindow, { status: 'not-available' });
+    emit({ status: 'not-available' });
   });
 
   autoUpdater.on('download-progress', (progress) => {
-    pushStatus(getMainWindow, {
+    emit({
       status: 'downloading',
       percent: progress.percent,
     });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
-    const status: UpdateStatus = { status: 'downloaded', version: info.version };
-    pushStatus(getMainWindow, status);
-    onDownloaded(status);
+    emit({ status: 'downloaded', version: info.version });
   });
 
   autoUpdater.on('error', (err) => {
-    pushStatus(getMainWindow, {
+    emit({
       status: 'error',
       message: err == null ? 'Unknown update error' : String(err.message ?? err),
     });
@@ -89,5 +92,6 @@ export async function checkForUpdates(
 }
 
 export function quitAndInstall(): void {
+  log.info('[updater] quitAndInstall requested (status=%s)', currentStatus.status);
   autoUpdater.quitAndInstall();
 }

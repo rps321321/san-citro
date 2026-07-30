@@ -226,6 +226,11 @@ export interface SanCitroApi {
   openExternal(url: string): Promise<void>;
   /** Trigger an electron-updater check; resolves the current update state. */
   checkForUpdates(): Promise<UpdateStatus>;
+  /**
+   * Latest known update state without starting a new feed check.
+   * Used to hydrate UI after a missed push (e.g. already downloaded).
+   */
+  getUpdateStatus(): Promise<UpdateStatus>;
   /** Install a downloaded update and restart the app. */
   quitAndInstall(): Promise<void>;
   /** Subscribe to pushed update-status events. Returns an unsubscribe function. */

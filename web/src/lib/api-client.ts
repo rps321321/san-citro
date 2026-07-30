@@ -188,6 +188,10 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
   return timed("check_for_updates", () => ipc().checkForUpdates());
 }
 
+export async function getUpdateStatus(): Promise<UpdateStatus> {
+  return ipc().getUpdateStatus();
+}
+
 export async function quitAndInstall(): Promise<void> {
   return ipc().quitAndInstall();
 }

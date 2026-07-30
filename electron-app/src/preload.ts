@@ -31,6 +31,7 @@ const IPC_CHANNELS = {
   READ_BOOK_FILE: 'san-citro:readBookFile',
   SHOW_OPEN_DIALOG: 'san-citro:showOpenDialog',
   CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
+  GET_UPDATE_STATUS: 'san-citro:getUpdateStatus',
   QUIT_AND_INSTALL: 'san-citro:quitAndInstall',
   UPDATE_STATUS: 'san-citro:updateStatus',
   SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
@@ -161,6 +162,9 @@ const api = {
 
   checkForUpdates: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CHECK_FOR_UPDATES),
+
+  getUpdateStatus: (): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.GET_UPDATE_STATUS),
 
   quitAndInstall: (): Promise<void> =>
     ipcRenderer.invoke(IPC_CHANNELS.QUIT_AND_INSTALL),

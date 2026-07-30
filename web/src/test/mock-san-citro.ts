@@ -69,6 +69,7 @@ export function createSanCitroMock(
     getAppVersion: async () => "0.0.0-test",
     openExternal: async () => {},
     checkForUpdates: async () => ({ status: "idle" }),
+    getUpdateStatus: async () => ({ status: "idle" }),
     quitAndInstall: async () => {},
     onUpdateStatus: () => noopUnsub,
     listLibrary: async () => ({

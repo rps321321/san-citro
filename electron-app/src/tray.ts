@@ -121,13 +121,22 @@ function buildContextMenu(
       label: `Restart to install update ${latestUpdate.version ?? ''}`.trim(),
       click: () => onQuitAndInstallRef?.(),
     });
+  } else if (
+    latestUpdate.status === 'available' ||
+    latestUpdate.status === 'downloading' ||
+    latestUpdate.status === 'checking'
+  ) {
+    const pct =
+      latestUpdate.status === 'downloading' && latestUpdate.percent != null
+        ? ` ${Math.round(latestUpdate.percent)}%`
+        : '';
+    template.push({
+      label: `Downloading update ${latestUpdate.version ?? ''}${pct}…`.trim(),
+      enabled: false,
+    });
   } else {
     template.push({
-      label:
-        latestUpdate.status === 'available'
-          ? `Downloading update ${latestUpdate.version ?? ''}…`.trim()
-          : 'Check for updates',
-      enabled: latestUpdate.status !== 'available',
+      label: 'Check for updates',
       click: () => onCheckForUpdatesRef?.(),
     });
   }

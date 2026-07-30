@@ -30,6 +30,9 @@ import {
   showOpenDialog,
   getAppVersion,
   checkForUpdates,
+  getUpdateStatus,
+  onUpdateStatus,
+  quitAndInstall,
 } from "@/lib/api-client";
 import {
   trackInteraction, trackSettingsChange, trackFeatureDiscovery,
@@ -124,8 +127,25 @@ export default function SettingsPage() {
       .catch(() => {
         // Version is informational only — leave null if unavailable.
       });
+    // checkForUpdates() resolves when a release is *found* ("available"), not
+    // when the installer is downloaded. Subscribe so UI advances to "downloaded"
+    // and can offer Restart (banner + Settings button).
+    let unsub: (() => void) | undefined;
+    try {
+      unsub = onUpdateStatus((s) => {
+        if (!cancelled) setUpdateStatus(s);
+      });
+      void getUpdateStatus()
+        .then((s) => {
+          if (!cancelled) setUpdateStatus(s);
+        })
+        .catch(() => {});
+    } catch {
+      /* browser / no bridge */
+    }
     return () => {
       cancelled = true;
+      unsub?.();
     };
   }, []);
 
@@ -544,7 +564,7 @@ export default function SettingsPage() {
             <span className="font-mono text-xs">{appVersion ?? "Unknown"}</span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Button
               variant="outline"
               onClick={handleCheckForUpdates}
@@ -561,6 +581,18 @@ export default function SettingsPage() {
               )}
               {isCheckingUpdate ? "Checking…" : "Check for updates"}
             </Button>
+            {updateStatus?.status === "downloaded" && (
+              <Button
+                variant="default"
+                onClick={() => {
+                  trackInteraction("quit_and_install", "settings");
+                  void quitAndInstall();
+                }}
+              >
+                Restart to install
+                {updateStatus.version ? ` v${updateStatus.version}` : ""}
+              </Button>
+            )}
             {updateStatus && (
               <span className="text-xs text-muted-foreground">
                 {updateStatusLabel(updateStatus)}

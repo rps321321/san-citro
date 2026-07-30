@@ -3,7 +3,7 @@ import { promises as fsp } from 'fs';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { registerSimpleRelays, requireMd5 } from './python-commands';
-import { checkForUpdates, quitAndInstall } from './updater';
+import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updater';
 
 /**
  * Register all IPC handlers.
@@ -126,6 +126,12 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC_CHANNELS.CHECK_FOR_UPDATES, () => {
     return checkForUpdates(app.isPackaged);
+  });
+
+  // Latest known status without re-checking the feed (hydrate banner/settings
+  // after a missed push, or when download finished while UI only saw "available").
+  ipcMain.handle(IPC_CHANNELS.GET_UPDATE_STATUS, () => {
+    return getUpdateStatus();
   });
 
   ipcMain.handle(IPC_CHANNELS.QUIT_AND_INSTALL, () => {
