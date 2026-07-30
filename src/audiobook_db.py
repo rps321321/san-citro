@@ -5,41 +5,20 @@ This module owns the four audiobook table accessors (``audiobooks``,
 It reuses :func:`download_history._connect` so it shares the same connection
 pragmas (WAL, busy_timeout, and crucially ``foreign_keys = ON`` for FK cascades).
 
-Schema creation lives in :mod:`migrations`. :func:`_ensure_audiobook_tables` is a
-safety net that runs migrations once per path so isolated unit tests still work;
-production entry points must call :func:`migrations.run_migrations` at startup.
+Schema ownership lives in :mod:`migrations`. Callers must run
+:func:`migrations.run_migrations` before using these helpers; query/write paths
+never CREATE/ALTER or invoke migrations.
 """
 
 from __future__ import annotations
 
-import threading
 from datetime import UTC, datetime
 from typing import Any
 
-from .download_history import _connect, _ensure_table, _resolve_db_path
+from .download_history import _connect
 from .logger import get_logger
 
 logger = get_logger()
-
-# Lazy-init flag per db_path to avoid redundant migration runs on every call.
-_initialized_dbs: set[str] = set()
-_init_lock = threading.Lock()
-
-
-def _ensure_audiobook_tables(db_path: str | None = None) -> None:
-    """Ensure audiobook schema exists once per db_path via canonical migrations."""
-    resolved = _resolve_db_path(db_path)
-    if resolved in _initialized_dbs:
-        return
-    with _init_lock:
-        # Double-check after acquiring the lock.
-        if resolved in _initialized_dbs:
-            return
-        # Lazy import avoids a circular dependency with migrations.
-        from .migrations import run_migrations
-
-        run_migrations(resolved)
-        _initialized_dbs.add(resolved)
 
 
 def record_audiobook(
@@ -57,7 +36,6 @@ def record_audiobook(
         logger.warning("record_audiobook called without an md5 — skipping")
         return
 
-    _ensure_audiobook_tables(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -104,7 +82,6 @@ def set_audiobook_status(
         logger.warning("set_audiobook_status called without an md5 — skipping")
         return
 
-    _ensure_audiobook_tables(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -135,7 +112,6 @@ def replace_chapters(
         logger.warning("replace_chapters called without an md5 — skipping")
         return
 
-    _ensure_audiobook_tables(db_path)
     rows = [
         (
             md5,
@@ -170,7 +146,6 @@ def get_audiobook(db_path: str | None = None, md5: str = "") -> dict[str, Any] |
     """Return the audiobook row for an md5, or None."""
     if not md5:
         return None
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         row = conn.execute("SELECT * FROM audiobooks WHERE md5 = ?", (md5,)).fetchone()
         return dict(row) if row else None
@@ -180,7 +155,6 @@ def get_audiobook_chapters(db_path: str | None = None, md5: str = "") -> list[di
     """Return all chapters for an md5, ordered by ``chapter_index``."""
     if not md5:
         return []
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         cursor = conn.execute(
             "SELECT * FROM audiobook_chapters WHERE md5 = ? ORDER BY chapter_index",
@@ -191,7 +165,6 @@ def get_audiobook_chapters(db_path: str | None = None, md5: str = "") -> list[di
 
 def get_chapter(db_path: str | None = None, chapter_id: int = 0) -> dict[str, Any] | None:
     """Return a single chapter row by its ``chapter_id``, or None."""
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT * FROM audiobook_chapters WHERE chapter_id = ?",
@@ -202,8 +175,6 @@ def get_chapter(db_path: str | None = None, chapter_id: int = 0) -> dict[str, An
 
 def list_audiobooks(db_path: str | None = None) -> list[dict[str, Any]]:
     """Return all audiobooks joined with download title/cover_url, newest first."""
-    _ensure_audiobook_tables(db_path)
-    _ensure_table(db_path)  # the LEFT JOIN needs the downloads table to exist
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -223,7 +194,6 @@ def get_audiobook_progress(db_path: str | None = None, md5: str = "") -> dict[st
     """Return the saved playback progress for an md5, or None."""
     if not md5:
         return None
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         row = conn.execute(
             "SELECT * FROM audiobook_progress WHERE md5 = ?",
@@ -243,7 +213,6 @@ def save_audiobook_progress(
         logger.warning("save_audiobook_progress called without an md5 — skipping")
         return
 
-    _ensure_audiobook_tables(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -270,7 +239,6 @@ def add_bookmark(
     label: str | None = None,
 ) -> int:
     """Insert a bookmark and return its new ``bookmark_id``."""
-    _ensure_audiobook_tables(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -289,7 +257,6 @@ def list_bookmarks(db_path: str | None = None, md5: str = "") -> list[dict[str, 
     """Return all bookmarks for an md5, oldest first."""
     if not md5:
         return []
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         cursor = conn.execute(
             "SELECT * FROM audiobook_bookmarks WHERE md5 = ? ORDER BY created_at, bookmark_id",
@@ -304,7 +271,6 @@ def delete_bookmark(db_path: str | None = None, md5: str = "", bookmark_id: int 
         logger.warning("delete_bookmark called without an md5 — skipping")
         return
 
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         conn.execute(
             "DELETE FROM audiobook_bookmarks WHERE bookmark_id = ? AND md5 = ?",
@@ -319,7 +285,6 @@ def delete_audiobook(db_path: str | None = None, md5: str = "") -> None:
         logger.warning("delete_audiobook called without an md5 — skipping")
         return
 
-    _ensure_audiobook_tables(db_path)
     with _connect(db_path) as conn:
         conn.execute("DELETE FROM audiobooks WHERE md5 = ?", (md5,))
         conn.commit()
@@ -333,7 +298,6 @@ def reset_stuck_audiobooks(db_path: str | None = None) -> int:
     'processing' means the previous session died mid-extraction. Returns the
     number of rows reset.
     """
-    _ensure_audiobook_tables(db_path)
     now = datetime.now(UTC).isoformat()
     with _connect(db_path) as conn:
         cursor = conn.execute(

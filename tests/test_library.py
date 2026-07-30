@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -28,6 +30,7 @@ from src.library import (
     VARIANT_BOOK,
     query_library,
 )
+from src.migrations import run_migrations
 
 _BOOK_A = "a" * 32
 _BOOK_B = "b" * 32
@@ -39,8 +42,10 @@ _INCOMPLETE = "f" * 32
 
 @pytest.fixture()
 def lib_db(tmp_path: Path) -> str:
-    """Temp SQLite path; schema is created on first write via migrations."""
-    return str(tmp_path / "library.db")
+    """Temp SQLite path migrated via the production path."""
+    db_path = str(tmp_path / "library.db")
+    run_migrations(db_path)
+    return db_path
 
 
 def _complete_book(
@@ -179,6 +184,25 @@ def _seed_mixed(db: str) -> None:
     )
     # Non-completed must never appear
     record_download_start(db, md5=_INCOMPLETE, title="In Progress")
+
+
+# ---------------------------------------------------------------------------
+# Schema ownership — query path must not migrate
+# ---------------------------------------------------------------------------
+
+
+class TestQueryPathDoesNotLazyMigrate:
+    def test_query_library_fails_without_schema_and_does_not_migrate(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "bare_library.db")
+        with patch("src.migrations.run_migrations") as mock_mig:
+            with pytest.raises(sqlite3.OperationalError):
+                query_library(db_path)
+        mock_mig.assert_not_called()
+        with sqlite3.connect(db_path) as conn:
+            tables = {
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+        assert "downloads" not in tables
 
 
 # ---------------------------------------------------------------------------

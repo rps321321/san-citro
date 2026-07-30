@@ -1,7 +1,11 @@
-"""Download history tracking backed by a local SQLite database."""
+"""Download history tracking backed by a local SQLite database.
+
+Schema ownership lives in :mod:`migrations`. Callers (CLI, bridge) must run
+:func:`migrations.run_migrations` before using these helpers. Query/write
+paths never CREATE/ALTER or invoke migrations.
+"""
 
 import sqlite3
-import threading
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,11 +14,8 @@ from .logger import get_logger
 
 logger = get_logger()
 
-# Lazy-init flag per db_path to avoid redundant CREATE TABLE on every call
-_initialized_dbs: set[str] = set()
-_init_lock = threading.Lock()
-
-# Nullable metadata columns added by a guarded migration (name -> SQLite type).
+# Nullable metadata columns (name -> SQLite type). Allow-list for
+# record_download_start meta keys only; schema is owned by migrations.
 _META_COLUMNS: dict[str, str] = {
     "author": "TEXT",
     "year": "INTEGER",
@@ -44,42 +45,14 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
     return conn
 
 
-def _ensure_table(db_path: str | None = None) -> None:
-    """Ensure schema exists once per db_path via canonical migrations (safety net).
-
-    Production entry points (CLI, bridge) must call :func:`migrations.run_migrations`
-    at startup. This remains so isolated unit tests and late call sites still work.
-    Schema ownership lives in :mod:`migrations`, not here.
-    """
-    resolved = _resolve_db_path(db_path)
-    if resolved in _initialized_dbs:
-        return
-    with _init_lock:
-        # Double-check after acquiring the lock
-        if resolved in _initialized_dbs:
-            return
-        # Lazy import avoids a circular dependency with migrations.
-        from .migrations import run_migrations
-
-        run_migrations(resolved)
-        _initialized_dbs.add(resolved)
-
-
-def _migrate_meta_columns(conn: sqlite3.Connection) -> None:
-    """Add any missing nullable metadata columns. Idempotent every launch.
-
-    ``ALTER TABLE ADD COLUMN`` is not idempotent on its own, so we read the
-    existing columns via ``PRAGMA table_info`` and only add the missing ones.
-    """
-    existing = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
-    for name, col_type in _META_COLUMNS.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE downloads ADD COLUMN {name} {col_type}")
-
-
 def init_downloads_table(db_path: str | None = None) -> None:
-    """Public entry point kept for backwards compatibility."""
-    _ensure_table(db_path)
+    """Deprecated: explicit setup only — thin wrapper around run_migrations.
+
+    Prefer :func:`migrations.run_migrations`. Not called from query/write helpers.
+    """
+    from .migrations import run_migrations
+
+    run_migrations(_resolve_db_path(db_path))
 
 
 def cleanup_orphaned_downloads(db_path: str | None = None) -> int:
@@ -89,7 +62,6 @@ def cleanup_orphaned_downloads(db_path: str | None = None) -> int:
     previous session was killed (e.g., Task Manager, power loss). Returns
     the number of rows updated.
     """
-    _ensure_table(db_path)
     now = datetime.now(UTC).isoformat()
     with _connect(db_path) as conn:
         cursor = conn.execute(
@@ -123,7 +95,6 @@ def record_download_start(
         logger.warning("record_download_start called without an md5 — skipping")
         return
 
-    _ensure_table(db_path)
     now = datetime.now(UTC).isoformat()
 
     # Only persist known meta columns that are present and non-None.
@@ -169,7 +140,6 @@ def record_download_complete(
         logger.warning("record_download_complete called without an md5 — skipping")
         return
 
-    _ensure_table(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -198,7 +168,6 @@ def record_download_failed(
         logger.warning("record_download_failed called without an md5 — skipping")
         return
 
-    _ensure_table(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -225,7 +194,6 @@ def record_download_cancelled(
         logger.warning("record_download_cancelled called without an md5 — skipping")
         return
 
-    _ensure_table(db_path)
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
@@ -247,8 +215,6 @@ def get_download_history(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """Return the most recent downloads, newest first."""
-    _ensure_table(db_path)
-
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -267,7 +233,6 @@ def get_completed_download(db_path: str | None = None, md5: str = "") -> dict[st
     """Return the completed download record for an md5, or None."""
     if not md5:
         return None
-    _ensure_table(db_path)
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -288,8 +253,6 @@ def is_downloaded(db_path: str | None = None, md5: str = "") -> bool:
     if not md5:
         return False
 
-    _ensure_table(db_path)
-
     with _connect(db_path) as conn:
         cursor = conn.execute(
             "SELECT 1 FROM downloads WHERE md5 = ? AND status = 'completed'",
@@ -307,7 +270,6 @@ def get_completed_md5s(db_path: str | None = None, md5s: list[str] | None = None
     md5_list = [m for m in (md5s or []) if m]
     if not md5_list:
         return set()
-    _ensure_table(db_path)
     placeholders = ",".join("?" for _ in md5_list)
     with _connect(db_path) as conn:
         rows = conn.execute(
@@ -319,7 +281,6 @@ def get_completed_md5s(db_path: str | None = None, md5s: list[str] | None = None
 
 def list_library(db_path: str | None = None) -> list[dict[str, Any]]:
     """Return all completed downloads with full metadata, newest first."""
-    _ensure_table(db_path)
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
@@ -335,9 +296,7 @@ def list_library(db_path: str | None = None) -> list[dict[str, Any]]:
 
 
 def get_download_stats(db_path: str | None = None) -> dict[str, Any]:
-    """Return aggregate download stats. Never raises on an empty/new DB."""
-    _ensure_table(db_path)
-
+    """Return aggregate download stats (schema must already exist)."""
     with _connect(db_path) as conn:
         counts = conn.execute("SELECT status, COUNT(*) AS n FROM downloads GROUP BY status").fetchall()
         total_size = conn.execute(
@@ -367,7 +326,6 @@ def set_media_type(md5: str, media_type: str, db_path: str | None = None) -> Non
         logger.warning("set_media_type called without an md5 — skipping")
         return
 
-    _ensure_table(db_path)
     with _connect(db_path) as conn:
         conn.execute(
             "UPDATE downloads SET media_type = ? WHERE md5 = ?",
@@ -383,7 +341,6 @@ def backfill_media_type(db_path: str | None = None) -> int:
     Safe to call repeatedly — only updates rows where media_type IS NULL and
     status = 'completed'. Returns the number of rows updated.
     """
-    _ensure_table(db_path)
     with _connect(db_path) as conn:
         cursor = conn.execute(
             "UPDATE downloads SET media_type = 'book' WHERE status = 'completed' AND media_type IS NULL"

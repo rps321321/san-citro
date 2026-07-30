@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from typing import TYPE_CHECKING
+from unittest.mock import patch
 
 import pytest
 
@@ -11,7 +12,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from src.audiobook_db import (
-    _ensure_audiobook_tables,
     add_bookmark,
     delete_audiobook,
     delete_bookmark,
@@ -28,14 +28,17 @@ from src.audiobook_db import (
     set_audiobook_status,
 )
 from src.download_history import _connect, record_download_complete, record_download_start
+from src.migrations import run_migrations
 
 _MD5 = "a" * 32
 
 
 @pytest.fixture()
 def audio_db(tmp_path: Path) -> str:
-    """Provide a temporary SQLite database path for each test."""
-    return str(tmp_path / "test_audiobooks.db")
+    """Temporary history DB migrated via the production path."""
+    db_path = str(tmp_path / "test_audiobooks.db")
+    run_migrations(db_path)
+    return db_path
 
 
 def _sample_chapters() -> list[dict[str, object]]:
@@ -67,25 +70,36 @@ def _sample_chapters() -> list[dict[str, object]]:
     ]
 
 
-class TestEnsureTables:
+class TestSchemaViaMigrations:
     def test_should_create_all_four_tables_when_database_is_new(self, audio_db: str) -> None:
-        _ensure_audiobook_tables(audio_db)
-
         with sqlite3.connect(audio_db) as conn:
             tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
         assert {"audiobooks", "audiobook_chapters", "audiobook_progress", "audiobook_bookmarks"} <= tables
 
-    def test_should_be_idempotent_when_called_twice(self, audio_db: str) -> None:
-        _ensure_audiobook_tables(audio_db)
-        _ensure_audiobook_tables(audio_db)
-        # No exception means success.
+    def test_should_be_idempotent_when_called_twice(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "idem.db")
+        run_migrations(db_path)
+        run_migrations(db_path)
 
     def test_should_create_lookup_indexes(self, audio_db: str) -> None:
-        _ensure_audiobook_tables(audio_db)
         with sqlite3.connect(audio_db) as conn:
             indexes = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
         assert {"idx_chapters_md5", "idx_bookmarks_md5"} <= indexes
+
+
+class TestQueryPathDoesNotLazyMigrate:
+    def test_list_audiobooks_fails_without_schema_and_does_not_migrate(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "bare_audio.db")
+        with patch("src.migrations.run_migrations") as mock_mig:
+            with pytest.raises(sqlite3.OperationalError):
+                list_audiobooks(db_path)
+        mock_mig.assert_not_called()
+        with sqlite3.connect(db_path) as conn:
+            tables = {
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+        assert "audiobooks" not in tables
 
 
 class TestForeignKeysEnabled:
@@ -136,7 +150,6 @@ class TestRecordAudiobook:
             record_audiobook(audio_db, md5=_MD5, status="bogus")
 
     def test_should_return_none_when_md5_unknown(self, audio_db: str) -> None:
-        _ensure_audiobook_tables(audio_db)
         assert get_audiobook(audio_db, "nope") is None
 
 
@@ -229,7 +242,6 @@ class TestGetChapter:
         assert fetched["rel_path"] == "01.mp3"
 
     def test_should_return_none_when_chapter_id_unknown(self, audio_db: str) -> None:
-        _ensure_audiobook_tables(audio_db)
         assert get_chapter(audio_db, 999999) is None
 
 

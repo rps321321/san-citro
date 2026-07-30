@@ -14,7 +14,7 @@ from __future__ import annotations
 from itertools import groupby
 from typing import Any
 
-from .download_history import _connect, _ensure_table
+from .download_history import _connect
 
 # ---------------------------------------------------------------------------
 # Public constants
@@ -226,8 +226,6 @@ def query_library(
     content_type = _blank_to_none(content_type)
     extension = _blank_to_none(extension)
     language = _blank_to_none(language)
-
-    _ensure_table(db_path)
 
     with _connect(db_path) as conn:
         cursor = conn.execute(

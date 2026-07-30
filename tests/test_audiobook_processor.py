@@ -81,11 +81,9 @@ def db_redirect(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
         "src.download_history.get_default_history_db_path",
         lambda: db_file,
     )
-    # Clear the lazy-init caches so the fresh temp DB gets its tables.
-    audiobook_db._initialized_dbs.clear()
-    import src.download_history as dh
+    from src.migrations import run_migrations
 
-    dh._initialized_dbs.clear()
+    run_migrations(db_file)
     return db_file
 
 

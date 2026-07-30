@@ -2,11 +2,11 @@
 
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from src.download_history import (
-    _migrate_meta_columns,
     backfill_media_type,
     get_completed_md5s,
     get_download_history,
@@ -20,21 +20,9 @@ from src.download_history import (
     record_download_start,
     set_media_type,
 )
+from src.migrations import run_migrations
 
-# The legacy (pre-metadata) schema, used to prove the guarded migration adds
-# only the missing columns and is safe to run repeatedly.
-_LEGACY_SCHEMA = """
-    CREATE TABLE downloads (
-        md5             TEXT PRIMARY KEY,
-        title           TEXT,
-        filename        TEXT,
-        status          TEXT,
-        started_at      TIMESTAMP,
-        completed_at    TIMESTAMP,
-        filesize_bytes  INTEGER,
-        error           TEXT
-    )
-"""
+# Metadata columns expected on a fully migrated downloads table.
 _META_COLUMNS = (
     "author",
     "year",
@@ -48,21 +36,22 @@ _META_COLUMNS = (
 
 @pytest.fixture()
 def history_db(tmp_path: Path) -> str:
-    """Provide a temporary SQLite database path for each test."""
-    return str(tmp_path / "test_history.db")
+    """Temporary history DB migrated via the production path."""
+    db_path = str(tmp_path / "test_history.db")
+    run_migrations(db_path)
+    return db_path
 
 
-class TestInitDownloadsTable:
-    def test_should_create_table_when_database_is_new(self, history_db: str) -> None:
-        init_downloads_table(history_db)
+class TestSchemaViaMigrations:
+    def test_should_create_table_when_database_is_new(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "fresh.db")
+        run_migrations(db_path)
 
-        with sqlite3.connect(history_db) as conn:
+        with sqlite3.connect(db_path) as conn:
             cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='downloads'")
             assert cursor.fetchone() is not None
 
     def test_should_have_expected_columns_when_table_created(self, history_db: str) -> None:
-        init_downloads_table(history_db)
-
         with sqlite3.connect(history_db) as conn:
             cursor = conn.execute("PRAGMA table_info(downloads)")
             columns = {row[1] for row in cursor.fetchall()}
@@ -76,7 +65,6 @@ class TestInitDownloadsTable:
             "completed_at",
             "filesize_bytes",
             "error",
-            # Metadata-spine columns added by the guarded migration.
             "author",
             "year",
             "extension",
@@ -88,10 +76,40 @@ class TestInitDownloadsTable:
         }
         assert columns == expected
 
-    def test_should_be_idempotent_when_called_twice(self, history_db: str) -> None:
-        init_downloads_table(history_db)
-        init_downloads_table(history_db)
-        # No exception means success
+    def test_should_be_idempotent_when_called_twice(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "twice.db")
+        run_migrations(db_path)
+        run_migrations(db_path)
+
+    def test_init_downloads_table_is_thin_wrapper_of_run_migrations(self, tmp_path: Path) -> None:
+        """Deprecated explicit-setup helper must only call run_migrations once."""
+        db_path = str(tmp_path / "wrapper.db")
+        with patch("src.migrations.run_migrations") as mock_mig:
+            init_downloads_table(db_path)
+        mock_mig.assert_called_once_with(db_path)
+
+
+class TestQueryPathDoesNotLazyMigrate:
+    def test_get_download_history_fails_without_schema_and_does_not_create_it(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = str(tmp_path / "bare.db")
+        with patch("src.migrations.run_migrations") as mock_mig:
+            with pytest.raises(sqlite3.OperationalError):
+                get_download_history(db_path)
+        mock_mig.assert_not_called()
+        with sqlite3.connect(db_path) as conn:
+            tables = {
+                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+        assert "downloads" not in tables
+
+    def test_record_download_start_does_not_call_run_migrations(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "bare_write.db")
+        with patch("src.migrations.run_migrations") as mock_mig:
+            with pytest.raises(sqlite3.OperationalError):
+                record_download_start(db_path, md5="abc", title="T")
+        mock_mig.assert_not_called()
 
 
 class TestRecordDownloadStart:
@@ -162,7 +180,6 @@ class TestRecordDownloadStart:
         assert row["status"] == "cancelled"
 
     def test_should_skip_when_md5_is_empty(self, history_db: str) -> None:
-        init_downloads_table(history_db)
         record_download_start(history_db, md5="", title="No MD5")
 
         with sqlite3.connect(history_db) as conn:
@@ -260,7 +277,6 @@ class TestIsDownloaded:
         assert is_downloaded(history_db, md5="bad1") is False
 
     def test_should_return_false_when_md5_not_found(self, history_db: str) -> None:
-        init_downloads_table(history_db)
         assert is_downloaded(history_db, md5="nonexistent") is False
 
     def test_should_return_false_when_md5_is_empty(self, history_db: str) -> None:
@@ -368,55 +384,6 @@ class TestRecordDownloadStartMeta:
         assert row["year"] == 2020
 
 
-class TestGuardedMetaMigration:
-    def test_should_add_missing_columns_to_legacy_table(self, history_db: str) -> None:
-        # Build a legacy table that predates the metadata-spine columns.
-        with sqlite3.connect(history_db) as conn:
-            conn.executescript(_LEGACY_SCHEMA)
-            conn.commit()
-
-        with sqlite3.connect(history_db) as conn:
-            conn.row_factory = sqlite3.Row
-            _migrate_meta_columns(conn)
-            conn.commit()
-            cols = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
-
-        for col in _META_COLUMNS:
-            assert col in cols
-
-    def test_should_be_safe_to_run_twice(self, history_db: str) -> None:
-        with sqlite3.connect(history_db) as conn:
-            conn.executescript(_LEGACY_SCHEMA)
-            conn.commit()
-
-        with sqlite3.connect(history_db) as conn:
-            conn.row_factory = sqlite3.Row
-            _migrate_meta_columns(conn)
-            # Second run must be a no-op, not an "duplicate column" error.
-            _migrate_meta_columns(conn)
-            conn.commit()
-            cols = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
-
-        for col in _META_COLUMNS:
-            assert col in cols
-
-    def test_should_preserve_existing_rows_through_migration(self, history_db: str) -> None:
-        with sqlite3.connect(history_db) as conn:
-            conn.executescript(_LEGACY_SCHEMA)
-            conn.execute("INSERT INTO downloads (md5, title, status) VALUES ('legacy1', 'Old Row', 'completed')")
-            conn.commit()
-
-        with sqlite3.connect(history_db) as conn:
-            conn.row_factory = sqlite3.Row
-            _migrate_meta_columns(conn)
-            conn.commit()
-            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'legacy1'").fetchone()
-
-        assert row["title"] == "Old Row"
-        assert row["status"] == "completed"
-        assert row["author"] is None
-
-
 class TestListLibrary:
     def test_should_return_completed_downloads_with_all_library_fields(self, history_db: str) -> None:
         meta = {
@@ -490,27 +457,9 @@ class TestListLibrary:
 
 
 class TestMediaTypeColumn:
-    def test_should_have_media_type_column_after_init(self, history_db: str) -> None:
-        init_downloads_table(history_db)
-
+    def test_should_have_media_type_column_after_migration(self, history_db: str) -> None:
         with sqlite3.connect(history_db) as conn:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(downloads)")}
-
-        assert "media_type" in cols
-
-    def test_should_be_idempotent_on_legacy_table(self, history_db: str) -> None:
-        # Build a legacy table that lacks media_type.
-        with sqlite3.connect(history_db) as conn:
-            conn.executescript(_LEGACY_SCHEMA)
-            conn.commit()
-
-        # Two runs of the migration must not raise.
-        with sqlite3.connect(history_db) as conn:
-            conn.row_factory = sqlite3.Row
-            _migrate_meta_columns(conn)
-            _migrate_meta_columns(conn)
-            conn.commit()
-            cols = {row["name"] for row in conn.execute("PRAGMA table_info(downloads)")}
 
         assert "media_type" in cols
 
@@ -623,7 +572,6 @@ class TestSetMediaType:
         assert row["media_type"] == "audiobook"
 
     def test_should_be_no_op_when_md5_is_empty(self, history_db: str) -> None:
-        init_downloads_table(history_db)
         set_media_type("", "book", history_db)  # must not raise
 
         with sqlite3.connect(history_db) as conn:
@@ -631,14 +579,11 @@ class TestSetMediaType:
         assert count == 0
 
     def test_should_be_no_op_when_md5_not_found(self, history_db: str) -> None:
-        init_downloads_table(history_db)
         set_media_type("nonexistent", "book", history_db)  # must not raise
 
 
 class TestForeignKeyPragma:
     def test_should_have_foreign_keys_enabled_on_new_connection(self, history_db: str) -> None:
-        init_downloads_table(history_db)
-
         from src.download_history import _connect
 
         with _connect(history_db) as conn:
