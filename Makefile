@@ -1,4 +1,4 @@
-.PHONY: all test lint typecheck format install clean
+.PHONY: all test lint typecheck format install clean deps-inventory
 
 # Default target runs the full CI suite
 all: lint typecheck test
@@ -6,7 +6,12 @@ all: lint typecheck test
 # Install all development dependencies
 install:
 	python -m pip install --upgrade pip
-	pip install -r requirements-dev.txt
+	pip install -e ".[dev]"
+
+# Full dependency inventory dump → .cache/deps-inventory/ (gitignored).
+# Regenerable; scored decisions live in docs/plans/deps-upgrade-backlog.md
+deps-inventory:
+	python scripts/deps_inventory.py
 
 # Run the test suite with coverage reporting
 test:

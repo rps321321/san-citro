@@ -40,6 +40,9 @@ htmlcov/
 coverage.xml
 .coverage
 
+# Regenerable local caches (deps inventory dumps, etc.)
+.cache/
+
 # IDE
 .idea/
 .vscode/
