@@ -108,7 +108,8 @@ def print_download_history(history_db: str | None, limit: int = 20) -> None:
         elif status_raw == "failed":
             status = "[bold red]failed[/bold red]"
         elif status_raw == "started":
-            status = "[bold yellow]started[/bold yellow]"
+            # History-internal row from record_download_start; public lifecycle says downloading.
+            status = "[bold yellow]downloading[/bold yellow]"
         else:
             status = status_raw
 

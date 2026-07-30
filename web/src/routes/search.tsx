@@ -533,8 +533,7 @@ function SearchContent() {
                           }
                           if (
                             downloadingMd5s.has(book.md5) ||
-                            liveStatus === "downloading" ||
-                            liveStatus === "started"
+                            liveStatus === "downloading"
                           ) {
                             return (
                               <span role="status" aria-label={`Downloading ${book.title}`}>

@@ -8,7 +8,8 @@
  * views over the same store.
  */
 
-import type { DownloadStatus } from "@/types";
+import type { DownloadStatus, LiveDownloadStatus } from "@/types";
+import { normalizeDownloadStatus } from "@/lib/status";
 
 /** Auto-remove terminal entries from the live list after this window. */
 export const TERMINAL_RETENTION_MS = 60_000;
@@ -42,7 +43,15 @@ export function isTerminalStatus(status: string): boolean {
 }
 
 export function isLiveActiveStatus(status: string): boolean {
-  return status === "queued" || status === "downloading" || status === "started";
+  const s = normalizeDownloadStatus(status);
+  return s === "queued" || s === "downloading";
+}
+
+/** Coerce inbound IPC payloads onto public live statuses. */
+export function normalizeLiveDownload(item: DownloadStatus): DownloadStatus {
+  const status = normalizeDownloadStatus(item.status) as LiveDownloadStatus;
+  if (status === item.status) return item;
+  return { ...item, status };
 }
 
 export interface ActiveDownloadsStore {
@@ -122,8 +131,11 @@ export function createActiveDownloadsStore(options?: {
     const next = new Map(downloads);
     let completedChanged = false;
     let nextCompleted = completedThisSession;
+    const normalizedItems: DownloadStatus[] = [];
 
-    for (const d of items) {
+    for (const raw of items) {
+      const d = normalizeLiveDownload(raw);
+      normalizedItems.push(d);
       next.set(d.md5, d);
       if (d.status === "completed") {
         if (!nextCompleted.has(d.md5)) {
@@ -141,7 +153,7 @@ export function createActiveDownloadsStore(options?: {
       completedThisSession = nextCompleted;
     }
 
-    for (const d of items) {
+    for (const d of normalizedItems) {
       if (isTerminalStatus(d.status)) {
         scheduleEviction(d.md5);
       } else {

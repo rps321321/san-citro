@@ -31,7 +31,7 @@ import { trackInteraction, trackFeatureDiscovery, incrementEngagement } from "@/
 import { formatFileSize, truncateMd5, formatDate } from "@/lib/format";
 import { openReader } from "@/lib/reader-nav";
 import { isReadable } from "@/lib/readable-format";
-import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
+import { getStatusLabel, getStatusVariant } from "@/lib/status";
 
 // ---------------------------------------------------------------------------
 // Export helpers
@@ -83,20 +83,13 @@ function exportToJson(entries: HistoryEntry[]): void {
   );
 }
 
-type KnownStatus = keyof typeof STATUS_LABELS;
-
-const KNOWN_STATUSES = new Set<string>(Object.keys(STATUS_LABELS));
-
-/** History status can be any string; fall back to title-casing unknown values. */
+/** History status can be any string; legacy ``started`` maps to Downloading. */
 function statusLabel(status: string): string {
-  if (KNOWN_STATUSES.has(status)) return STATUS_LABELS[status as KnownStatus];
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  return getStatusLabel(status);
 }
 
 function statusVariant(status: string) {
-  return KNOWN_STATUSES.has(status)
-    ? getStatusVariant(status as KnownStatus)
-    : "outline";
+  return getStatusVariant(status);
 }
 
 // Cap rendered rows so a multi-thousand-entry history stays responsive. Export

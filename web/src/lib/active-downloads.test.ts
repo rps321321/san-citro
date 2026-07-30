@@ -91,8 +91,30 @@ describe("isTerminalStatus / isLiveActiveStatus", () => {
     assert.equal(isTerminalStatus("downloading"), false);
     assert.equal(isLiveActiveStatus("queued"), true);
     assert.equal(isLiveActiveStatus("downloading"), true);
+    // Legacy DB/IPC "started" normalizes to downloading (not a public live status).
     assert.equal(isLiveActiveStatus("started"), true);
     assert.equal(isLiveActiveStatus("completed"), false);
+  });
+
+  test("hydrate coerces legacy started status to downloading", () => {
+    const fake = createFakeTimers();
+    const store = createActiveDownloadsStore({ timers: fake.timers });
+    // Simulate pre-cleanup IPC payload that still said "started".
+    const legacy = {
+      md5: "a".repeat(32),
+      title: "Legacy",
+      status: "started",
+      progress_percent: 0,
+      total_bytes: 0,
+      downloaded_bytes: 0,
+      error: null,
+      filename: null,
+      file_path: null,
+      started_at: null,
+    } as unknown as DownloadStatus;
+    store.hydrate([legacy]);
+    assert.equal(store.getByMd5("a".repeat(32))?.status, "downloading");
+    store.reset();
   });
 });
 

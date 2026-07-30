@@ -28,10 +28,18 @@ export interface SearchResponse {
   has_prev: boolean;
 }
 
+/** Live Download lifecycle statuses (CONTEXT.md). History DB may still store internal rows. */
+export type LiveDownloadStatus =
+  | "queued"
+  | "downloading"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
 export interface DownloadStatus {
   md5: string;
   title: string;
-  status: "queued" | "started" | "downloading" | "completed" | "failed" | "cancelled";
+  status: LiveDownloadStatus;
   progress_percent: number;
   total_bytes: number;
   downloaded_bytes: number;
@@ -47,7 +55,8 @@ export interface HistoryEntry {
   md5: string;
   title: string | null;
   filename: string | null;
-  status: "queued" | "started" | "downloading" | "completed" | "failed" | "cancelled" | (string & {});
+  /** History may include internal DB values (e.g. started, interrupted) not used on the live UI. */
+  status: LiveDownloadStatus | "started" | "interrupted" | (string & {});
   started_at: string | null;
   completed_at: string | null;
   filesize_bytes: number | null;

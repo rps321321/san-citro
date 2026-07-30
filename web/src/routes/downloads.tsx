@@ -14,7 +14,7 @@ import { cancelDownload } from "@/lib/api-client";
 import { truncateMd5, formatFileSize } from "@/lib/format";
 import { openReader } from "@/lib/reader-nav";
 import { isReadable } from "@/lib/readable-format";
-import { getStatusVariant, STATUS_LABELS } from "@/lib/status";
+import { getStatusLabel, getStatusVariant } from "@/lib/status";
 import { trackInteraction } from "@/lib/telemetry";
 import type { DownloadStatus } from "@/types";
 
@@ -52,8 +52,8 @@ function DownloadCard({
   const emaSpeedRef = useRef<number>(0);
   const [displayedSpeed, setDisplayedSpeed] = useState(0);
 
-  const isActive = dl.status === "downloading" || dl.status === "started";
-  // "Indeterminate" phase: active but no bytes progress yet (queued->started ramp-up)
+  const isActive = dl.status === "downloading";
+  // Indeterminate phase: downloading but no byte progress yet (worker ramp-up)
   const isIndeterminate = isActive && (dl.progress_percent ?? 0) <= 0;
 
   // Recompute EMA speed each shared tick (no per-card interval).
@@ -117,7 +117,7 @@ function DownloadCard({
             {dl.title || "Untitled"}
           </CardTitle>
           <Badge variant={getStatusVariant(dl.status)}>
-            {cancelling ? "Cancelling…" : (STATUS_LABELS[dl.status] ?? dl.status)}
+            {cancelling ? "Cancelling…" : getStatusLabel(dl.status)}
           </Badge>
         </div>
       </CardHeader>
@@ -144,7 +144,7 @@ function DownloadCard({
               className="relative h-1.5 w-full rounded-full bg-muted"
             >
               {isIndeterminate ? (
-                /* Indeterminate pulse during queued->started ramp-up */
+                /* Indeterminate pulse during downloading with no byte progress yet */
                 <div className="h-full w-full overflow-hidden rounded-full bg-primary/40 motion-safe:animate-pulse" />
               ) : (
                 <>
@@ -257,7 +257,7 @@ export default function DownloadsPage({ embedded = false }: { embedded?: boolean
   const { downloads, connection, removeDownloads } = useActiveDownloads();
   const items = Array.from(downloads.values());
 
-  const active = items.filter((d) => d.status === "downloading" || d.status === "started");
+  const active = items.filter((d) => d.status === "downloading");
   const queued = items.filter((d) => d.status === "queued");
   const terminal = items.filter((d) =>
     d.status === "completed" || d.status === "failed" || d.status === "cancelled"
