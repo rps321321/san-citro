@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   PYTHON_COMMANDS,
+  RETIRED_PLAYER_CHANNEL_KEYS,
   RETIRED_PLAYER_CHANNELS,
   listAllPythonMethods,
   listRendererFacingCommands,
@@ -131,6 +132,38 @@ test('listSimpleRelays returns only mode=relay', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Exactly-once identities at each adapter (descriptor / channels / API)
+// ---------------------------------------------------------------------------
+
+test('renderer-facing commands have unique method, channel, and apiName', () => {
+  const facing = listRendererFacingCommands();
+  const methods = facing.map((c) => c.method);
+  const channels = facing.map((c) => c.channel!);
+  const apiNames = facing.map((c) => c.apiName!);
+  assert.equal(new Set(methods).size, methods.length, 'duplicate descriptor method');
+  assert.equal(new Set(channels).size, channels.length, 'duplicate descriptor channel');
+  assert.equal(new Set(apiNames).size, apiNames.length, 'duplicate descriptor apiName');
+});
+
+test('each Python method appears once in listAllPythonMethods', () => {
+  const methods = listAllPythonMethods();
+  assert.equal(new Set(methods).size, methods.length);
+  // Shared usesMethods (e.g. get_audiobook_detail for play composite) dedupe.
+  assert.ok(methods.includes('get_audiobook_detail'));
+  assert.ok(methods.includes('get_chapter_path'));
+});
+
+test('simple relays do not overlap composite channels', () => {
+  const relayChannels = new Set(listSimpleRelays().map((c) => c.channel!));
+  for (const cmd of PYTHON_COMMANDS.filter((c) => c.mode === 'composite')) {
+    assert.ok(
+      !relayChannels.has(cmd.channel!),
+      `composite ${cmd.method} must not be auto-relayed on ${cmd.channel}`
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Channel agreement: descriptor ⊆ types IPC_CHANNELS ⊆ preload allowlist
 // ---------------------------------------------------------------------------
 
@@ -234,6 +267,57 @@ test('no orphan Python-registered methods outside descriptor usesMethods', () =>
 });
 
 // ---------------------------------------------------------------------------
+// Electron registration (descriptor ↔ ipc-handlers explicit composites)
+// ---------------------------------------------------------------------------
+
+test('each composite channel is registered exactly once in ipc-handlers', () => {
+  const ipc = readSrc('ipc-handlers.ts');
+  // Strip comments so retirement notes do not count as registrations.
+  const code = ipc
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+
+  for (const cmd of PYTHON_COMMANDS.filter((c) => c.mode === 'composite')) {
+    // Composites use IPC_CHANNELS.KEY form, not raw string literals.
+    const key = Object.entries(IPC_CHANNELS).find(([, v]) => v === cmd.channel)?.[0];
+    assert.ok(key, `no IPC_CHANNELS key for ${cmd.channel}`);
+    const re = new RegExp(`ipcMain\\.handle\\(\\s*IPC_CHANNELS\\.${key}\\b`, 'g');
+    const matches = code.match(re) ?? [];
+    assert.equal(
+      matches.length,
+      1,
+      `composite ${cmd.method} handle count for ${key}: ${matches.length}`
+    );
+  }
+});
+
+test('registerSimpleRelays is invoked exactly once from ipc-handlers', () => {
+  const ipc = readSrc('ipc-handlers.ts');
+  const code = ipc
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  const matches = code.match(/\bregisterSimpleRelays\s*\(/g) ?? [];
+  assert.equal(matches.length, 1, `registerSimpleRelays call count: ${matches.length}`);
+});
+
+test('each Python register_method name appears exactly once in bridge_handlers', () => {
+  const src = readPythonHandlers();
+  const counts = new Map<string, number>();
+  const re = /register_method\(\s*["']([a-z_]+)["']/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    counts.set(m[1], (counts.get(m[1]) ?? 0) + 1);
+  }
+  for (const [name, n] of counts) {
+    assert.equal(n, 1, `register_method(${name}) count=${n}`);
+  }
+  // Every descriptor method must be among those exactly-once registrations.
+  for (const method of listAllPythonMethods()) {
+    assert.equal(counts.get(method), 1, `missing or multi register_method: ${method}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Retired WebContentsView channels (ADR-0013)
 // ---------------------------------------------------------------------------
 
@@ -244,7 +328,17 @@ test('retired player channels absent as live string literals', () => {
     types: readSrc('types.ts'),
     preload: readSrc('preload.ts'),
     ipc: readSrc('ipc-handlers.ts'),
+    main: readSrc('main.ts'),
   };
+
+  assert.ok(
+    RETIRED_PLAYER_CHANNELS.includes('san-citro:player:active'),
+    'denylist must include player:active'
+  );
+  assert.ok(
+    RETIRED_PLAYER_CHANNELS.includes('san-citro:player:content-rect'),
+    'denylist must include player:content-rect'
+  );
 
   for (const ch of RETIRED_PLAYER_CHANNELS) {
     for (const [label, src] of Object.entries(sources)) {
@@ -265,11 +359,17 @@ test('retired player channels absent as live string literals', () => {
   }
 });
 
-test('retired PLAYER_LOAD / SET_MODE / REQUEST_MODE keys absent from IPC_CHANNELS', () => {
+test('retired PLAYER_* keys absent from IPC_CHANNELS (incl. ACTIVE / CONTENT_RECT)', () => {
   const keys = Object.keys(IPC_CHANNELS);
-  for (const bad of ['PLAYER_LOAD', 'PLAYER_SET_MODE', 'PLAYER_REQUEST_MODE', 'PLAYER_ACTIVE', 'PLAYER_CONTENT_RECT']) {
+  for (const bad of RETIRED_PLAYER_CHANNEL_KEYS) {
     assert.ok(!keys.includes(bad), `IPC_CHANNELS still has key ${bad}`);
   }
+});
+
+test('no player-view / player-preload source modules remain', () => {
+  // ADR-0013 deleted WebContentsView player; only stale dist/ may linger.
+  assert.ok(!fs.existsSync(srcFile('player-view.ts')));
+  assert.ok(!fs.existsSync(srcFile('player-preload.ts')));
 });
 
 // ---------------------------------------------------------------------------

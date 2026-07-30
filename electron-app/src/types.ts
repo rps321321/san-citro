@@ -31,7 +31,8 @@ export interface JsonRpcError {
 // Python-backed relays/composites are also listed in python-commands.ts;
 // OS-only and push channels live here only.
 // Retired WebContentsView player IPC (ADR-0013) intentionally absent:
-// PLAYER_LOAD / PLAYER_SET_MODE / PLAYER_REQUEST_MODE.
+// PLAYER_LOAD / PLAYER_SET_MODE / PLAYER_REQUEST_MODE / PLAYER_ACTIVE /
+// PLAYER_CONTENT_RECT (bounds chrome for the deleted overlay).
 
 export const IPC_CHANNELS = {
   SEARCH: 'san-citro:search',

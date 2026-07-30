@@ -226,11 +226,26 @@ export function listAllPythonMethods(): string[] {
   return [...methods].sort();
 }
 
-/** Retired WebContentsView player channels (ADR-0013) — must stay absent. */
+/**
+ * Retired WebContentsView player channels (ADR-0013) — must stay absent from
+ * all live command representations (types, preload, IPC handlers, renderer).
+ * Includes load/mode and the bounds/active/content-rect chrome used by ADR-0010.
+ */
 export const RETIRED_PLAYER_CHANNELS: readonly string[] = [
   'san-citro:player:load',
   'san-citro:player:setMode',
   'san-citro:player:requestMode',
+  'san-citro:player:active',
+  'san-citro:player:content-rect',
+];
+
+/** IPC_CHANNELS object keys that must never reappear (ADR-0013). */
+export const RETIRED_PLAYER_CHANNEL_KEYS: readonly string[] = [
+  'PLAYER_LOAD',
+  'PLAYER_SET_MODE',
+  'PLAYER_REQUEST_MODE',
+  'PLAYER_ACTIVE',
+  'PLAYER_CONTENT_RECT',
 ];
 
 /**
