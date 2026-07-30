@@ -178,6 +178,20 @@ class TestRecordDownloadStart:
 
         assert row["status"] == "cancelled"
 
+    def test_should_not_overwrite_completed_with_cancelled(self, history_db: str) -> None:
+        """Late cancel must not clobber a successful completion (symmetric with complete/failed)."""
+        record_download_start(history_db, md5="abc123", title="Job")
+        record_download_complete(history_db, md5="abc123", filename="f.pdf", filesize_bytes=100)
+        record_download_cancelled(history_db, md5="abc123")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'abc123'").fetchone()
+
+        assert row["status"] == "completed"
+        assert row["filename"] == "f.pdf"
+        assert row["filesize_bytes"] == 100
+
     def test_should_skip_when_md5_is_empty(self, history_db: str) -> None:
         record_download_start(history_db, md5="", title="No MD5")
 

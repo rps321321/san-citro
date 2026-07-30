@@ -39,6 +39,10 @@ class DownloadEntry:
     started_at: float | None = None  # unix timestamp
     telemetry_emitted: bool = False  # guard: download_analytics row sent once
     meta: dict[str, Any] = field(default_factory=dict)  # search-result metadata; not serialised
+    # Set when the worker thread fully exits (including after queue-only cancel).
+    # Prevents re-enqueue from spawning a second writer for the same md5 while an
+    # older worker is still waiting on the concurrency slot or winding down.
+    finished: threading.Event = field(default_factory=threading.Event)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -176,8 +180,16 @@ def enqueue(md5: str, title: str, meta: dict[str, Any] | None = None) -> dict[st
     """
     with _lock:
         _prune_terminal()  # Prevent unbounded dict growth
-        if md5 in _downloads and _downloads[md5].status in ("queued", "downloading"):
-            return _downloads[md5].to_dict()
+        existing = _downloads.get(md5)
+        if existing is not None:
+            # Active job: idempotent return.
+            if existing.status in ("queued", "downloading"):
+                return existing.to_dict()
+            # Terminal in the UI but worker still alive (queued-behind-slot cancel,
+            # mid-flight cancel, or post-terminal cleanup). Replacing the map entry
+            # would start a second worker against the same md5/.part file.
+            if not existing.finished.is_set():
+                return existing.to_dict()
 
         entry = DownloadEntry(md5=md5, title=title, meta=meta or {})
         _downloads[md5] = entry
@@ -185,7 +197,7 @@ def enqueue(md5: str, title: str, meta: dict[str, Any] | None = None) -> dict[st
 
     t = threading.Thread(
         target=_download_worker,
-        args=(md5,),
+        args=(md5, entry),
         daemon=True,
         name=f"dl-{md5[:8]}",
     )
@@ -218,6 +230,10 @@ def cancel(md5: str) -> dict[str, Any]:
             # History + queue-only terminal: only when lifecycle will not also run.
             was_queued_only = prior_status == "queued"
             if was_queued_only:
+                # Worker never entered transport (may still be blocked on the
+                # concurrency slot). Mark finished so a retry can re-enqueue
+                # immediately; the stale worker no-ops via entry-identity check.
+                entry.finished.set()
                 _emit_queue_only_terminal(entry)
         result = entry.to_dict()
 
@@ -244,24 +260,35 @@ def get_all_statuses() -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def _download_worker(md5: str) -> None:
+def _download_worker(md5: str, entry: DownloadEntry) -> None:
     """Run on a background thread: perform the download and emit events.
 
     Acquires a concurrency semaphore so at most N downloads run simultaneously.
     The entry stays in "queued" status while waiting for a slot.
+
+    ``entry`` is the exact object this worker owns. After the slot is acquired we
+    re-check map identity so a superseded worker never adopts a newer entry.
     """
     sem = _get_concurrency_semaphore()
     send_event = _get_send_event()
 
-    # Wait for a concurrency slot — entry stays "queued" during this time
-    sem.acquire()
     try:
-        _download_worker_inner(md5, send_event)
+        # Wait for a concurrency slot — entry stays "queued" during this time
+        sem.acquire()
+        try:
+            with _lock:
+                # Map was replaced (or pruned) while we waited — do not touch the
+                # newer job or re-enter run_download for a cancelled predecessor.
+                if _downloads.get(md5) is not entry:
+                    return
+            _download_worker_inner(md5, entry, send_event)
+        finally:
+            sem.release()
     finally:
-        sem.release()
+        entry.finished.set()
 
 
-def _download_worker_inner(md5: str, send_event) -> None:
+def _download_worker_inner(md5: str, entry: DownloadEntry, send_event) -> None:
     """Inner download logic, runs after concurrency slot is acquired.
 
     Delegates the full tracked lifecycle (history records + terminal-state
@@ -273,7 +300,8 @@ def _download_worker_inner(md5: str, send_event) -> None:
     via ``on_terminal_fact`` (wired to ``telemetry_emitter``).
     """
     with _lock:
-        entry = _downloads[md5]
+        if _downloads.get(md5) is not entry:
+            return
         # Check if cancelled while waiting in queue
         if entry.cancel_flag.is_set():
             entry.status = "cancelled"

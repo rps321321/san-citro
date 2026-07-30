@@ -197,12 +197,15 @@ def record_download_cancelled(
     now = datetime.now(UTC).isoformat()
 
     with _connect(db_path) as conn:
+        # Symmetric with complete/failed: never clobber a terminal success.
+        # A late cancel (re-enqueue race, double-click, queue-only vs worker)
+        # must not rewrite completed → cancelled.
         conn.execute(
             """
             UPDATE downloads
             SET status       = 'cancelled',
                 completed_at = ?
-            WHERE md5 = ?
+            WHERE md5 = ? AND status NOT IN ('completed', 'cancelled')
             """,
             (now, md5),
         )

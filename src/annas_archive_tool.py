@@ -614,9 +614,25 @@ class AnnasArchiveTool:
                 verify=True,
             )
 
+            # 416 Range Not Satisfiable: .part may already be complete — fall through to MD5.
             if res.status_code != 416:
                 res.raise_for_status()
-                total = int(res.headers.get("content-length", 0)) + existing_size
+
+                # Resume only on true Partial Content. If the server ignores Range
+                # and returns 200 with the full body, appending would corrupt .part
+                # (prefix + full body), fail MD5, and delete resume progress.
+                if existing_size and res.status_code == 206:
+                    write_mode = "ab"
+                    total = existing_size + int(res.headers.get("content-length", 0))
+                    initial_bytes = existing_size
+                else:
+                    if existing_size and res.status_code == 200:
+                        logger.info(
+                            f"[{md5[:6]}] Server ignored Range — restarting download from byte 0"
+                        )
+                    write_mode = "wb"
+                    total = int(res.headers.get("content-length", 0))
+                    initial_bytes = 0
 
                 # Write total size to a sidecar so the progress poller can
                 # compute a meaningful percentage without polling the tool internals.
@@ -629,14 +645,14 @@ class AnnasArchiveTool:
                         pass
 
                 cancelled = False
-                downloaded_so_far = existing_size
+                downloaded_so_far = initial_bytes
                 progress_cb = self.on_progress
                 with (
-                    open(part_path, "ab" if existing_size else "wb") as f,
+                    open(part_path, write_mode) as f,
                     tqdm(
                         desc=f"Downloading {filename[:25]}",
                         total=total,
-                        initial=existing_size,
+                        initial=initial_bytes,
                         unit="iB",
                         unit_scale=True,
                     ) as bar,
