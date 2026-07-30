@@ -8,7 +8,7 @@
  * - shared telemetry context (device_id, session_id, app_version)
  * - auth headers + Supabase delivery
  * - ordinary batch queue / flush coordination
- * - first-class immediate delivery for heatmap + replay chunks
+ * - first-class immediate delivery for heatmap, frustration, experiments, replay
  *
  * Policies (ADR-0001–0003):
  * - Ordinary facts: batch ~30s or max 50
@@ -631,6 +631,81 @@ export function submitReplayChunk(fact: ReplayChunkFact): void {
       events: fact.events,
       event_count: fact.event_count,
       compressed_size_bytes: fact.compressed_size_bytes,
+    },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Interaction analytics facts — frustration + experiment assignment/conversion
+// (capture modules own detection/assignment; this module owns table + context + delivery)
+// ---------------------------------------------------------------------------
+
+export type FrustrationSignalType =
+  | "rage_click"
+  | "dead_click"
+  | "rapid_retry"
+  | "error_then_action";
+
+export interface FrustrationSignalFact {
+  signal_type: FrustrationSignalType;
+  page_path: string;
+  target_selector: string;
+  target_text: string;
+  click_count: number;
+  time_window_ms: number;
+}
+
+export interface ExperimentAssignmentFact {
+  experiment_name: string;
+  variant: string;
+}
+
+export interface ExperimentConversionFact {
+  experiment_name: string;
+  variant: string;
+  conversion_event: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** Submit a frustration signal (immediate delivery; identity context). */
+export function submitFrustrationSignal(fact: FrustrationSignalFact): void {
+  void deliverImmediate("frustration_signals", [
+    {
+      ...identityContext(),
+      signal_type: fact.signal_type,
+      page_path: fact.page_path,
+      target_selector: fact.target_selector,
+      target_text: fact.target_text,
+      click_count: fact.click_count,
+      time_window_ms: fact.time_window_ms,
+    },
+  ]);
+}
+
+/** Submit an experiment assignment (immediate delivery; identity context). */
+export function submitExperimentAssignment(
+  fact: ExperimentAssignmentFact
+): void {
+  void deliverImmediate("ab_experiments", [
+    {
+      ...identityContext(),
+      experiment_name: fact.experiment_name,
+      variant: fact.variant,
+    },
+  ]);
+}
+
+/** Submit an experiment conversion (immediate delivery; identity context). */
+export function submitExperimentConversion(
+  fact: ExperimentConversionFact
+): void {
+  void deliverImmediate("ab_conversions", [
+    {
+      ...identityContext(),
+      experiment_name: fact.experiment_name,
+      variant: fact.variant,
+      conversion_event: fact.conversion_event,
+      metadata: fact.metadata || {},
     },
   ]);
 }

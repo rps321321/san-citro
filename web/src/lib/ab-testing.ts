@@ -2,16 +2,22 @@
 
 /**
  * Simple A/B testing framework — deterministic variant assignment
- * based on device_id, with conversion tracking via Supabase.
+ * based on device_id, with conversion tracking via typed telemetry facts.
+ *
+ * Assignment + local cache live here. Table mapping, telemetry context, and
+ * delivery are owned by the telemetry deep module
+ * (submitExperimentAssignment / submitExperimentConversion).
  */
 
-import { getDeviceId, getSessionId } from "./telemetry";
+import {
+  getDeviceId,
+  submitExperimentAssignment,
+  submitExperimentConversion,
+} from "./telemetry";
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-
-import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const STORAGE_KEY = "san-citro:ab-assignments";
 
@@ -56,34 +62,12 @@ function saveAssignments(assignments: Record<string, string>): void {
 const recordedThisSession = new Set<string>();
 
 // ---------------------------------------------------------------------------
-// Supabase helpers
-// ---------------------------------------------------------------------------
-
-async function insertRow(table: string, row: Record<string, unknown>): Promise<void> {
-  if (!isSupabaseConfigured()) return;
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify(row),
-    });
-  } catch {
-    // Silently drop — A/B tracking should never break the app.
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
  * Get the variant for an experiment. Deterministic: same device always gets
- * the same variant. Records assignment in Supabase on first call per
+ * the same variant. Records assignment via telemetry on first call per
  * experiment per session.
  */
 export function getVariant(experimentName: string, variants: string[]): string {
@@ -97,12 +81,10 @@ export function getVariant(experimentName: string, variants: string[]): string {
     if (assignments[experimentName] && variants.includes(assignments[experimentName])) {
       const variant = assignments[experimentName];
 
-      // Record to Supabase once per session
+      // Record once per session
       if (!recordedThisSession.has(experimentName)) {
         recordedThisSession.add(experimentName);
-        insertRow("ab_experiments", {
-          device_id: deviceId,
-          session_id: getSessionId(),
+        submitExperimentAssignment({
           experiment_name: experimentName,
           variant,
         });
@@ -120,11 +102,9 @@ export function getVariant(experimentName: string, variants: string[]): string {
     assignments[experimentName] = variant;
     saveAssignments(assignments);
 
-    // Record to Supabase
+    // Record assignment
     recordedThisSession.add(experimentName);
-    insertRow("ab_experiments", {
-      device_id: deviceId,
-      session_id: getSessionId(),
+    submitExperimentAssignment({
       experiment_name: experimentName,
       variant,
     });
@@ -146,15 +126,12 @@ export function trackConversion(
   metadata?: Record<string, unknown>
 ): void {
   try {
-    const deviceId = getDeviceId();
     const assignments = loadAssignments();
     const variant = assignments[experimentName];
 
     if (!variant) return; // No assignment — nothing to track
 
-    insertRow("ab_conversions", {
-      device_id: deviceId,
-      session_id: getSessionId(),
+    submitExperimentConversion({
       experiment_name: experimentName,
       variant,
       conversion_event: conversionEvent,

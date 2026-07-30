@@ -2,16 +2,20 @@
 
 /**
  * Frustration signal detection — identifies rage clicks, dead clicks,
- * rapid retries, and error-then-action patterns, then sends them to Supabase.
+ * rapid retries, and error-then-action patterns.
+ *
+ * Capture + dedup live here. Table mapping, telemetry context, and delivery
+ * are owned by the telemetry deep module (submitFrustrationSignal).
  */
 
-import { getDeviceId, getSessionId } from "./telemetry";
+import {
+  submitFrustrationSignal,
+  type FrustrationSignalType,
+} from "./telemetry";
 
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-
-import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const RAGE_CLICK_THRESHOLD = 3;
 const RAGE_CLICK_WINDOW_MS = 1_000;
@@ -31,7 +35,7 @@ const INTERACTIVE_SELECTORS = [
 // Types
 // ---------------------------------------------------------------------------
 
-type SignalType = "rage_click" | "dead_click" | "rapid_retry" | "error_then_action";
+type SignalType = FrustrationSignalType;
 
 interface ClickRecord {
   timestamp: number;
@@ -101,39 +105,28 @@ function markSent(type: SignalType, selector: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Supabase sender
+// Fact submission (delivery owned by telemetry deep module)
 // ---------------------------------------------------------------------------
 
-async function sendSignal(
+function sendSignal(
   signalType: SignalType,
   selector: string,
   targetText: string,
   clickCount: number,
   timeWindowMs: number
-): Promise<void> {
-  if (!isSupabaseConfigured()) return;
+): void {
   if (isDuplicate(signalType, selector)) return;
   markSent(signalType, selector);
 
   try {
-    await fetch(`${SUPABASE_URL}/rest/v1/frustration_signals`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({
-        device_id: getDeviceId(),
-        session_id: getSessionId(),
-        signal_type: signalType,
-        page_path: window.location.pathname,
-        target_selector: selector,
-        target_text: targetText,
-        click_count: clickCount,
-        time_window_ms: timeWindowMs,
-      }),
+    submitFrustrationSignal({
+      signal_type: signalType,
+      page_path:
+        typeof window !== "undefined" ? window.location.pathname : "",
+      target_selector: selector,
+      target_text: targetText,
+      click_count: clickCount,
+      time_window_ms: timeWindowMs,
     });
   } catch {
     // Silently drop — frustration detection should never break the app.

@@ -24,6 +24,9 @@ import {
   incrementEngagement,
   startSession,
   submitClickHeatmap,
+  submitExperimentAssignment,
+  submitExperimentConversion,
+  submitFrustrationSignal,
   submitMouseTracking,
   submitReplayChunk,
   submitScrollDepth,
@@ -396,6 +399,101 @@ describe("heatmap and replay facts", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Frustration + experiment interaction analytics facts
+// ---------------------------------------------------------------------------
+
+describe("frustration and experiment facts", () => {
+  test("submitFrustrationSignal uses identity context and frustration_signals table", async () => {
+    const { delivered, transport } = createCaptureTransport();
+    __setTelemetryTransportForTests(transport);
+    __setTelemetryConfiguredForTests(true);
+
+    submitFrustrationSignal({
+      signal_type: "rage_click",
+      page_path: "/search",
+      target_selector: "button#go",
+      target_text: "Go",
+      click_count: 4,
+      time_window_ms: 800,
+    });
+    await settle();
+
+    assert.equal(delivered.length, 1);
+    assert.equal(delivered[0].table, "frustration_signals");
+    const row = delivered[0].rows[0];
+    assert.equal(row.signal_type, "rage_click");
+    assert.equal(row.page_path, "/search");
+    assert.equal(row.target_selector, "button#go");
+    assert.equal(row.target_text, "Go");
+    assert.equal(row.click_count, 4);
+    assert.equal(row.time_window_ms, 800);
+    assert.equal(row.session_id, getSessionId());
+    assert.equal(row.device_id, getDeviceId());
+    assert.equal("app_version" in row, false);
+  });
+
+  test("submitExperimentAssignment / submitExperimentConversion map tables", async () => {
+    const { delivered, transport } = createCaptureTransport();
+    __setTelemetryTransportForTests(transport);
+    __setTelemetryConfiguredForTests(true);
+
+    submitExperimentAssignment({
+      experiment_name: "sidebar_layout",
+      variant: "compact",
+    });
+    submitExperimentConversion({
+      experiment_name: "sidebar_layout",
+      variant: "compact",
+      conversion_event: "download_started",
+      metadata: { md5: "abc" },
+    });
+    await settle();
+
+    const tables = delivered.map((d) => d.table).sort();
+    assert.deepEqual(tables, ["ab_conversions", "ab_experiments"]);
+
+    const assignment = delivered.find((d) => d.table === "ab_experiments")!;
+    assert.equal(assignment.rows[0].experiment_name, "sidebar_layout");
+    assert.equal(assignment.rows[0].variant, "compact");
+    assert.equal(assignment.rows[0].session_id, getSessionId());
+    assert.equal(assignment.rows[0].device_id, getDeviceId());
+    assert.equal("app_version" in assignment.rows[0], false);
+
+    const conversion = delivered.find((d) => d.table === "ab_conversions")!;
+    assert.equal(conversion.rows[0].conversion_event, "download_started");
+    assert.deepEqual(conversion.rows[0].metadata, { md5: "abc" });
+    assert.equal(conversion.rows[0].session_id, getSessionId());
+  });
+
+  test("frustration/experiment deliver immediately (not via ordinary batch queue)", async () => {
+    const { delivered, transport } = createCaptureTransport();
+    __setTelemetryTransportForTests(transport);
+    __setTelemetryConfiguredForTests(true);
+
+    trackEvent("queued-only");
+    assert.equal(__getOrdinaryQueueLengthForTests(), 1);
+
+    submitFrustrationSignal({
+      signal_type: "dead_click",
+      page_path: "/",
+      target_selector: "div",
+      target_text: "",
+      click_count: 1,
+      time_window_ms: 0,
+    });
+    submitExperimentAssignment({
+      experiment_name: "x",
+      variant: "a",
+    });
+    await settle();
+
+    assert.equal(__getOrdinaryQueueLengthForTests(), 1);
+    assert.ok(delivered.some((d) => d.table === "frustration_signals"));
+    assert.ok(delivered.some((d) => d.table === "ab_experiments"));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Batch / flush policies
 // ---------------------------------------------------------------------------
 
@@ -518,6 +616,20 @@ describe("resilience", () => {
       event_count: 0,
       compressed_size_bytes: 0,
     });
+    submitFrustrationSignal({
+      signal_type: "rapid_retry",
+      page_path: "/",
+      target_selector: "button",
+      target_text: "Retry",
+      click_count: 2,
+      time_window_ms: 100,
+    });
+    submitExperimentAssignment({ experiment_name: "e", variant: "a" });
+    submitExperimentConversion({
+      experiment_name: "e",
+      variant: "a",
+      conversion_event: "c",
+    });
     await settle();
 
     assert.equal(delivered.length, 0);
@@ -544,6 +656,20 @@ describe("resilience", () => {
         events: [],
         event_count: 0,
         compressed_size_bytes: 0,
+      });
+      submitFrustrationSignal({
+        signal_type: "error_then_action",
+        page_path: "/",
+        target_selector: "a",
+        target_text: "x",
+        click_count: 1,
+        time_window_ms: 0,
+      });
+      submitExperimentAssignment({ experiment_name: "e", variant: "b" });
+      submitExperimentConversion({
+        experiment_name: "e",
+        variant: "b",
+        conversion_event: "done",
       });
     });
     await settle();
