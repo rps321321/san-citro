@@ -402,7 +402,10 @@ def handle_save_audiobook_progress(params: dict[str, Any]) -> dict[str, Any]:
 
 
 def handle_list_library(params: dict[str, Any]) -> dict[str, Any]:
-    """list_library — DB-driven Library query (filters, sort, facets).
+    """list_library — sole Library collection path (SQLite → query_library).
+
+    Returns one result with discriminated Book/Audiobook variants
+    (``media_type`` / ``variant``). Detail and player commands stay separate.
 
     Optional params: media_kind (books|audiobooks|all), content_type, extension,
     language, sort (author|year|title|recent). Returns items + facets + counts.

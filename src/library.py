@@ -1,8 +1,13 @@
 """DB-driven Library query module (ADR-0006).
 
 Owns SQLite joins, Books/Audiobooks classification, filters, sorting, and facet
-derivation. The renderer only holds transient view state (tab, grid/list) and
-presentation; it must not re-infer classification or reconstruct facets.
+derivation. This is the **sole** Library collection path: bridge
+``list_library`` → :func:`query_library` → renderer. There is no parallel
+``download_history.list_library`` API.
+
+The renderer only holds transient view state (tab, grid/list) and presentation;
+it must not re-infer classification or reconstruct facets. Audiobook detail and
+player commands remain separate from this collection query.
 
 Classification uses authoritative ``downloads.media_type`` (set by the backend
 after artifact inspection). Completed rows with NULL media_type are treated as

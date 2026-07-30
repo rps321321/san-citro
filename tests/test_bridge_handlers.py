@@ -144,6 +144,118 @@ def test_handle_list_library_propagates_value_error():
         bridge_handlers.handle_list_library({"sort": "nope"})
 
 
+def test_handle_list_library_returns_unified_variants_from_sqlite(tmp_path):
+    """End-to-end: SQLite → query_library → list_library bridge (no dual path).
+
+    Proves Book/Audiobook discrimination via authoritative media_type, with
+    Book-specific vs Audiobook-specific fields, while detail/player stay separate
+    commands (list_library is the sole Library collection path).
+    """
+    from src.audiobook_db import record_audiobook
+    from src.download_history import record_download_complete, record_download_start
+    from src.migrations import run_migrations
+
+    db_path = str(tmp_path / "library_e2e.db")
+    run_migrations(db_path)
+
+    book_md5 = "a" * 32
+    audio_md5 = "b" * 32
+
+    record_download_start(
+        db_path,
+        md5=book_md5,
+        title="Pride and Prejudice",
+        meta={
+            "author": "Jane Austen",
+            "year": 1813,
+            "extension": "epub",
+            "content_type": "fiction",
+            "language": "English",
+            "publisher": "T. Egerton",
+            "cover_url": "https://example.com/pride.jpg",
+            "media_type": "book",
+        },
+    )
+    record_download_complete(
+        db_path, md5=book_md5, filename="pride.epub", filesize_bytes=512000
+    )
+
+    record_download_start(
+        db_path,
+        md5=audio_md5,
+        title="The Hobbit Audio",
+        meta={
+            "author": "Tolkien",
+            "extension": "zip",
+            "media_type": "audiobook",
+        },
+    )
+    record_download_complete(
+        db_path, md5=audio_md5, filename="hobbit.zip", filesize_bytes=9000
+    )
+    record_audiobook(
+        db_path,
+        md5=audio_md5,
+        container_type="zip",
+        folder_path=f"audiobooks/{audio_md5}",
+        total_duration_seconds=3600.0,
+        track_count=12,
+        status="ready",
+    )
+
+    with patch.object(bridge_handlers, "_get_history_db", return_value=db_path):
+        result = bridge_handlers.handle_list_library({"media_kind": "all", "sort": "title"})
+
+    assert result["total_eligible"] == 2
+    assert result["filtered_count"] == 2
+    by_md5 = {item["md5"]: item for item in result["items"]}
+
+    book = by_md5[book_md5]
+    assert book["variant"] == "book"
+    assert book["media_type"] == "book"
+    assert book["extension"] == "epub"
+    assert book["language"] == "English"
+    assert book["content_type"] == "fiction"
+    assert book["publisher"] == "T. Egerton"
+    assert book["status"] is None
+    assert book["track_count"] is None
+    assert book["total_duration_seconds"] is None
+
+    audio = by_md5[audio_md5]
+    assert audio["variant"] == "audiobook"
+    assert audio["media_type"] == "audiobook"
+    assert audio["status"] == "ready"
+    assert audio["track_count"] == 12
+    assert audio["total_duration_seconds"] == 3600.0
+    assert audio["container_type"] == "zip"
+    assert audio["folder_path"] == f"audiobooks/{audio_md5}"
+
+    # media_type authority: media_kind filter uses backend classification
+    with patch.object(bridge_handlers, "_get_history_db", return_value=db_path):
+        books_only = bridge_handlers.handle_list_library({"media_kind": "books"})
+        audios_only = bridge_handlers.handle_list_library({"media_kind": "audiobooks"})
+    assert [i["md5"] for i in books_only["items"]] == [book_md5]
+    assert [i["md5"] for i in audios_only["items"]] == [audio_md5]
+
+
+def test_handle_list_library_uses_query_library_not_download_history():
+    """Regression: Library page path must not call download_history.list_library."""
+    import inspect
+
+    import src.download_history as download_history
+    import src.library as library_mod
+
+    assert not hasattr(download_history, "list_library"), (
+        "download_history.list_library was removed; Library uses src.library.query_library"
+    )
+    assert hasattr(library_mod, "query_library")
+    # Handler is bound to the deep-module query, not a history list.
+    assert bridge_handlers.query_library is library_mod.query_library
+    source = inspect.getsource(bridge_handlers.handle_list_library)
+    assert "query_library" in source
+    assert "download_history.list_library" not in source
+
+
 # ---------------------------------------------------------------------------
 # handle_list_audiobooks
 # ---------------------------------------------------------------------------
