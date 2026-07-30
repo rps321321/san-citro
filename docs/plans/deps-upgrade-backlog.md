@@ -11,7 +11,8 @@ Scored decisions from the regenerable inventory dump. **This file is the durable
 | Regenerator | `python scripts/deps_inventory.py` or `make deps-inventory` |
 | Cadence | On demand + **before each Release tag** |
 | Scope | Python + `electron-app` + `web` package graphs only |
-| Non-goals | Bumping deps in this doc’s PR; binaries; vendored foliate-js; CI fail-on-vuln |
+| Non-goals (of inventory itself) | Blind bulk upgrades; binaries; vendored foliate-js; CI fail-on-vuln |
+| First do-now wave | Applied: remove `epubjs`; next/eslint-config-next **16.2.12**; react-router **^8.3.0**; requests **~=2.33.0** |
 
 ---
 
@@ -111,14 +112,14 @@ Package version identity drift (follow-up F2): electron-app **1.2.0** (shipped),
 
 Scores use the rubric above applied to this dump’s `score_effort1` ÷ human effort. Advisory IDs are npm audit `source` ids or GHSA/CVE/PYSEC from pip-audit.
 
-### `do-now`
+### `do-now` (applied)
 
 | Rank | Package | Surface | Sev | Od | Effort | Score | Action | Notes / assumptions |
 |---|---|---|---|---|---|---|---|---|
-| 1 | **epubjs** (+ `@xmldom/xmldom`) | web | high | 1 | **S** | **8** | **Remove** direct dep (prefer over 0.4.x major) | Declared `^0.3.93`; only appears in `package.json` / lock — no app imports. High via transitive `@xmldom/xmldom`. Foliate-js is the reader (ADR-0014). **Assumption:** no hidden dynamic import. |
-| 2 | **next** (+ postcss, sharp cascade) | web | high | 1 (patch) | **S** | **8** | Bump **16.2.9 → 16.2.12** (and `eslint-config-next` to match) | npm sources 1124170/1124171/1124184. Audit fix is non-major. Re-run `web` build + unit/component tests. **Assumption:** static export / Electron embed path stays green on patch. |
-| 3 | **react-router** (+ path-to-regexp cascade) | web | high | 2 (minor) | **M** | **8** | Bump **8.0.1 → 8.3.0** | `score_effort1=16` ÷ M=2 → 8. npm source 1124282. App uses `react-router` in shell/sidebar/reader links. Effort M for route/regression smoke. May clear **path-to-regexp** high. |
-| 4 | **requests** | python | mod | 1 | **S** | **4** | Bump pin to **≥2.33.0** (`pyproject` `~=2.32` → allow 2.33) | Installed **2.32.5**. CVE-2026-25645 / GHSA-gc5v-m9x4-r6x2 / PYSEC-2026-2275 — zip extract temp path. **Direct prod** dep. Standard HTTP usage less exposed than `extract_zipped_paths()`. |
+| 1 | **epubjs** (+ `@xmldom/xmldom`) | web | high | 1 | **S** | **8** | **DONE — removed** | Foliate-js is the reader (ADR-0014). |
+| 2 | **next** (+ postcss, sharp cascade) | web | high | 1 (patch) | **S** | **8** | **DONE — 16.2.12** (+ `eslint-config-next`) | Installed **16.2.12**. npm audit may still flag next with a noisy major-downgrade “fix”. |
+| 3 | **react-router** | web | high | 2 (minor) | **M** | **8** | **DONE — ^8.3.0** | path-to-regexp high may remain via **shadcn → express** (not react-router). |
+| 4 | **requests** | python | mod | 1 | **S** | **4** | **DONE — ~=2.33.0** | Pin allows 2.33.x. |
 
 ### `soon`
 
@@ -183,17 +184,16 @@ Scores use the rubric above applied to this dump’s `score_effort1` ÷ human ef
 
 ---
 
-## Suggested first upgrade wave (when executing)
+## First upgrade wave — done
 
-Single PR or 2–3 tiny PRs, **after** re-running inventory — **separate from landing this inventory/backlog**:
+Applied on master (same wave as this note):
 
-1. Remove **epubjs** from `web` (+ lockfile).  
-2. Bump **next** + **eslint-config-next** → 16.2.12.  
-3. Bump **react-router** → 8.3.0.  
-4. Relax/bump **requests** (and optionally **tqdm**) in `pyproject.toml`.  
-5. Re-run `python scripts/deps_inventory.py` and paste a short “audit delta” into the PR.
+1. Removed **epubjs** from `web` (+ lockfile).  
+2. Bumped **next** + **eslint-config-next** → 16.2.12.  
+3. Bumped **react-router** → ^8.3.0.  
+4. Bumped **requests** → ~=2.33.0 in `pyproject.toml`.
 
-**Gates:** `web` lint/tests/build; `python -m pytest`; electron `tsc`; no installer work required for 1–4.
+**Gates run:** web unit + component tests green; `python -m pytest` 424 passed. Remaining web highs are mostly transitive (shadcn/tooling) — see `soon`.
 
 ---
 
