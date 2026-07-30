@@ -165,11 +165,17 @@ def main() -> None:
 
     # Schema evolution first — fail loudly if the history DB cannot be evolved.
     from src.config_manager import get_config, get_default_history_db_path
-    from src.migrations import run_migrations
+    from src.migrations import SchemaMigrationError, run_migrations
 
     config = get_config()
     history_db = config.get("history_db") or get_default_history_db_path()
-    run_migrations(history_db)
+    try:
+        run_migrations(history_db)
+    except SchemaMigrationError as exc:
+        msg = f"HALT: database schema migration failed: {exc}"
+        logger.critical(msg, exc_info=True)
+        print(msg, file=sys.stderr)
+        sys.exit(1)
 
     # Clean up downloads orphaned by a previous unclean shutdown (best-effort)
     try:

@@ -26,6 +26,27 @@ if TYPE_CHECKING:
 
 logger = get_logger()
 
+
+class SchemaMigrationError(Exception):
+    """Raised when schema evolution fails; callers must halt normal startup.
+
+    Attributes:
+        db_path: Path of the database that failed to migrate (when known).
+        version: Migration version that failed (when known).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        db_path: str | None = None,
+        version: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.db_path = db_path
+        self.version = version
+
+
 # Nullable metadata columns on downloads (name -> SQLite type).
 _DOWNLOAD_META_COLUMNS: dict[str, str] = {
     "author": "TEXT",
@@ -138,11 +159,20 @@ def run_migrations(db_path: str) -> int:
     """Apply all pending migrations to *db_path* and return the count applied.
 
     Each migration runs inside its own transaction.  If a migration fails the
-    transaction is rolled back and the error is re-raised so the caller can
-    fail startup clearly.  Already-applied migrations are skipped, making the
-    function safe to call repeatedly.
+    transaction is rolled back and a :class:`SchemaMigrationError` is raised
+    (wrapping the original cause) so the caller can fail startup clearly.
+    Already-applied migrations are skipped, making the function safe to call
+    repeatedly.
     """
-    conn = _connect(db_path)
+    try:
+        conn = _connect(db_path)
+    except Exception as exc:
+        raise SchemaMigrationError(
+            f"Database schema migration failed for {db_path}: {exc}",
+            db_path=db_path,
+            version=None,
+        ) from exc
+
     try:
         cursor = conn.cursor()
 
@@ -168,13 +198,26 @@ def run_migrations(db_path: str) -> int:
                 )
                 conn.commit()
                 applied += 1
-            except Exception:
+            except Exception as exc:
                 conn.rollback()
                 logger.error(f"Migration v{mig.version} failed — rolled back.")
-                raise
+                raise SchemaMigrationError(
+                    f"Database schema migration failed for {db_path} "
+                    f"at version {mig.version}: {exc}",
+                    db_path=db_path,
+                    version=mig.version,
+                ) from exc
 
         logger.info(f"Applied {applied} migration(s). Now at version {pending[-1].version}.")
         return applied
+    except SchemaMigrationError:
+        raise
+    except Exception as exc:
+        raise SchemaMigrationError(
+            f"Database schema migration failed for {db_path}: {exc}",
+            db_path=db_path,
+            version=None,
+        ) from exc
     finally:
         conn.close()
 

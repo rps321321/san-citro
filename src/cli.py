@@ -17,7 +17,7 @@ from .annas_archive_tool import AnnasArchiveTool
 from .config_manager import clamp_concurrency, get_config, get_default_history_db_path, set_config_path
 from .diagnostics import run_diagnostics
 from .download_history import get_download_history
-from .migrations import run_migrations
+from .migrations import SchemaMigrationError, run_migrations
 from .download_job import run_download
 from .download_strategy import create_strategy
 from .logger import get_logger, setup_logging
@@ -428,6 +428,11 @@ def main() -> None:
     except KeyboardInterrupt:
         # Signal handler already printed the message; exit cleanly.
         sys.exit(130)
+    except SchemaMigrationError as e:
+        # Explicit schema-failure signal (also handled in _dispatch; belt-and-braces).
+        console.print(f"[bold red]HALT:[/bold red] database schema migration failed: {e}")
+        get_logger().critical(f"Schema migration failed: {e}", exc_info=True)
+        sys.exit(1)
     except RuntimeError as e:
         # Raised by scrape_annas_archive when the site is unreachable.
         console.print(f"[bold red]Error:[/bold red] {e}")
@@ -455,7 +460,12 @@ def _dispatch(args: argparse.Namespace) -> None:
     history_db = config.get("history_db")  # None -> resolved to platform data dir
 
     # Schema evolution before any DB-dependent command (fail loudly on error)
-    run_migrations(history_db or get_default_history_db_path())
+    db_path = history_db or get_default_history_db_path()
+    try:
+        run_migrations(db_path)
+    except SchemaMigrationError as e:
+        console.print(f"[bold red]HALT:[/bold red] database schema migration failed: {e}")
+        sys.exit(1)
 
     # ------------------------------------------------------------------
     # Commands that don't need the network tool

@@ -10,6 +10,7 @@ import pytest
 
 from src import migrations as migrations_mod
 from src.migrations import (
+    SchemaMigrationError,
     get_current_version,
     get_migration_history,
     get_registered_migrations,
@@ -419,11 +420,37 @@ class TestFailingMigrationRollback:
             fn=_boom,
         )
         try:
-            with pytest.raises(RuntimeError, match="injected migration failure"):
+            with pytest.raises(SchemaMigrationError, match="injected migration failure") as exc_info:
                 run_migrations(db_path)
 
+            assert exc_info.value.db_path == db_path
+            assert exc_info.value.version == fail_version
+            assert isinstance(exc_info.value.__cause__, RuntimeError)
             assert get_current_version(db_path) == version_before
             assert not _table_exists(db_path, "_migration_probe")
+        finally:
+            migrations_mod._MIGRATIONS.pop(fail_version, None)
+
+    def test_should_wrap_failure_with_db_path_and_version_in_message(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "named_fail.db")
+        run_migrations(db_path)
+        fail_version = get_current_version(db_path) + 1
+
+        def _boom(cursor: sqlite3.Cursor) -> None:
+            raise RuntimeError("boom")
+
+        migrations_mod._MIGRATIONS[fail_version] = migrations_mod.MigrationEntry(
+            version=fail_version,
+            description="Named fail",
+            fn=_boom,
+        )
+        try:
+            with pytest.raises(SchemaMigrationError) as exc_info:
+                run_migrations(db_path)
+            msg = str(exc_info.value)
+            assert db_path in msg
+            assert str(fail_version) in msg
+            assert "schema" in msg.lower() or "migration" in msg.lower()
         finally:
             migrations_mod._MIGRATIONS.pop(fail_version, None)
 
@@ -474,6 +501,34 @@ class TestProductionWiring:
             main()
 
         mock_mig.assert_called_once_with("/tmp/default_hist.db")
+
+    def test_cli_halts_on_migration_failure_without_running_history(self, tmp_path: Path) -> None:
+        from src.cli import main
+
+        history = str(tmp_path / "cli_halt.db")
+        cfg = {"out_dir": "downloads", "proxies": [], "concurrency": 2, "history_db": history}
+        err = SchemaMigrationError(
+            f"Database schema migration failed for {history} at version 99: boom",
+            db_path=history,
+            version=99,
+        )
+
+        with (
+            patch("sys.argv", ["cli", "history", "-n", "5"]),
+            patch("src.cli.get_config", return_value=cfg),
+            patch("src.cli.setup_logging", return_value=MagicMock()),
+            patch("src.cli.print_download_history") as mock_hist,
+            patch("src.cli.run_migrations", side_effect=err),
+            patch("src.cli.console") as mock_console,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+
+        assert exc_info.value.code == 1
+        mock_hist.assert_not_called()
+        printed = " ".join(str(c) for c in mock_console.print.call_args_list)
+        assert "HALT" in printed
+        assert "schema" in printed.lower() or "migration" in printed.lower()
 
     def test_bridge_main_runs_migrations_before_orphan_cleanup(self, tmp_path: Path) -> None:
         import importlib
@@ -527,6 +582,53 @@ class TestProductionWiring:
         assert call_order[0].startswith("migrate:")
         assert "cleanup" in call_order
         assert call_order.index("cleanup") > 0
+
+    def test_bridge_main_exits_on_migration_failure_before_cleanup(self, tmp_path: Path) -> None:
+        import importlib
+        import sys
+
+        bridge_dir = Path(__file__).resolve().parents[1] / "electron-app" / "python"
+        if str(bridge_dir) not in sys.path:
+            sys.path.insert(0, str(bridge_dir))
+
+        if "bridge" in sys.modules:
+            bridge = importlib.reload(sys.modules["bridge"])
+        else:
+            bridge = importlib.import_module("bridge")
+
+        history = str(tmp_path / "bridge_fail.db")
+        err = SchemaMigrationError(
+            f"Database schema migration failed for {history} at version 2: boom",
+            db_path=history,
+            version=2,
+        )
+        empty_stdin = MagicMock()
+        empty_stdin.__iter__ = MagicMock(return_value=iter([]))
+
+        with (
+            patch("src.config_manager.get_config", return_value={"history_db": history, "out_dir": str(tmp_path)}),
+            patch("src.config_manager.get_default_history_db_path", return_value=history),
+            patch("src.migrations.run_migrations", side_effect=err),
+            patch("src.download_history.cleanup_orphaned_downloads") as mock_cleanup,
+            patch.object(sys, "stdin", MagicMock(buffer=empty_stdin)),
+            patch.object(bridge.logger, "critical") as mock_critical,
+            patch.object(bridge.logger, "info") as mock_info,
+            patch.dict(
+                "sys.modules",
+                {
+                    "bridge_handlers": MagicMock(register_handlers=MagicMock()),
+                    "audiobook_queue": MagicMock(resweep=MagicMock()),
+                },
+            ),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            bridge.main()
+
+        assert exc_info.value.code == 1
+        mock_cleanup.assert_not_called()
+        mock_critical.assert_called()
+        ready_calls = [c for c in mock_info.call_args_list if c.args and "Bridge ready" in str(c.args[0])]
+        assert ready_calls == []
 
 
 # ---------------------------------------------------------------------------
