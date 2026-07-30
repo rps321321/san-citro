@@ -151,3 +151,23 @@ the **content layer** (lists, cards, the library/reading surface) stays **solid*
 The single brand accent — a citrus orange from the logo — used with Apple restraint (active nav,
 primary buttons, focus rings, the playing chapter). Not a general fill; glass + grays carry the
 rest. _Avoid_: Apple system blue, or multiple accent hues.
+
+## Language — Distribution (ADR-0015)
+
+**Installer**:
+The Windows program that first puts San Citro on this machine — a **polished per-user NSIS Setup**
+(branded wizard, fixed path, Start Menu + Desktop shortcuts). It is **unsigned** by policy
+(SmartScreen may warn). Not a portable folder and not a store package.
+_Avoid_: "portable zip", "MSI", "signed build" (signing is explicitly out of scope).
+
+**Release**:
+A versioned public drop of the Installer (and update metadata) on **GitHub Releases**, produced by
+tagging `vX.Y.Z`. The in-app updater consumes that Release so already-installed copies upgrade
+without a manual reinstall ritual.
+_Avoid_: ad-hoc unversioned uploads; treating a local `release/` folder alone as the ship surface.
+
+**App state**:
+Settings, history DBs, session/device identity, and other Electron profile data that survive
+reinstall and **must not** be wiped by the uninstaller by default. Distinct from [[#Storage location]]
+(the books on disk under `…/San Citro/`).
+_Avoid_: calling download files "app data"; equating uninstall with deleting the Library.

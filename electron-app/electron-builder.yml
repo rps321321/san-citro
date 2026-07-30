@@ -1,5 +1,9 @@
+# Polished Windows Installer (ADR-0015 / CONTEXT: Installer, Release, App state).
+# Unsigned by policy. Per-user, fixed path, branded NSIS, stable artifact names.
 appId: com.sancitro.desktop
 productName: San Citro
+# Stable name for GH Releases + electron-updater (no spaces).
+artifactName: San-Citro-Setup-${version}.${ext}
 
 directories:
   output: release
@@ -27,14 +31,26 @@ publish:
 win:
   target: nsis
   icon: resources/icon.ico
+  # No signing — SmartScreen may warn on first download (ADR-0015).
 
 nsis:
   oneClick: false
-  allowToChangeInstallationDirectory: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  allowElevation: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  shortcutName: San Citro
   installerIcon: resources/icon.ico
   uninstallerIcon: resources/icon.ico
+  installerHeader: resources/nsis/installerHeader.bmp
+  installerSidebar: resources/nsis/installerSidebar.bmp
+  license: resources/nsis/license.txt
+  # Keep App state; never wipe Storage location (downloads live elsewhere).
   deleteAppDataOnUninstall: false
 
+# mac/linux targets remain for local experiments; Release CI is Windows-only.
 mac:
   target: dmg
   icon: resources/icon.icns

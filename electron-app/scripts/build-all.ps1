@@ -42,14 +42,21 @@ finally {
 }
 Write-Host ""
 
-# Step 4: Package with electron-builder
+# Step 4: Package with electron-builder (unsigned Installer; no auto-publish)
 Write-Host "=== [4/4] Packaging Electron app ==="
 Push-Location $electronDir
 try {
-    npx electron-builder --win
+    $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
+    npx electron-builder --win --publish never
 
     if ($LASTEXITCODE -ne 0) {
         throw "electron-builder failed with exit code $LASTEXITCODE"
+    }
+
+    Write-Host "=== Package smoke ==="
+    node ./scripts/package-smoke.mjs --dir release --version-from package.json
+    if ($LASTEXITCODE -ne 0) {
+        throw "package-smoke failed with exit code $LASTEXITCODE"
     }
 }
 finally {
@@ -60,4 +67,6 @@ Write-Host ""
 Write-Host "============================================"
 Write-Host "  Build complete!"
 Write-Host "  Installer output: electron-app/release/"
+Write-Host "  Stable name: San-Citro-Setup-<version>.exe"
+Write-Host "  Tag vX.Y.Z on GitHub to publish a Release (ADR-0015)."
 Write-Host "============================================"

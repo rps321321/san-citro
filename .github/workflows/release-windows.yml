@@ -1,0 +1,122 @@
+# Tag-driven Windows Installer Release (ADR-0015).
+# Tag vX.Y.Z → full package pipeline → package smoke → GitHub Release assets.
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-windows-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package-and-publish:
+    name: Build, smoke, publish Installer
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            electron-app/package-lock.json
+            web/package-lock.json
+
+      - name: Derive version from tag
+        id: ver
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "Tag must be vX.Y.Z (semver), got: $TAG"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION"
+
+      - name: Sync package.json version to tag
+        shell: bash
+        working-directory: electron-app
+        run: |
+          node -e "
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('package.json','utf8'));
+            p.version = process.env.VER;
+            fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          "
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+
+      - name: Build Python bridge
+        shell: pwsh
+        working-directory: electron-app
+        run: ./scripts/build-python.ps1
+
+      - name: Build web renderer
+        shell: pwsh
+        working-directory: electron-app
+        run: ./scripts/build-web.ps1
+
+      - name: Install Electron deps and compile main
+        shell: pwsh
+        working-directory: electron-app
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+          npx tsc
+          if ($LASTEXITCODE -ne 0) { throw "tsc failed" }
+
+      - name: Package Windows Installer (no publish yet)
+        shell: pwsh
+        working-directory: electron-app
+        run: |
+          # Unsigned by policy (ADR-0015); do not discover certs.
+          $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
+          npx electron-builder --win --publish never
+          if ($LASTEXITCODE -ne 0) { throw "electron-builder failed" }
+
+      - name: Package smoke
+        shell: pwsh
+        working-directory: electron-app
+        run: |
+          node ./scripts/package-smoke.mjs --dir release --version ${{ steps.ver.outputs.version }}
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: San Citro ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          files: |
+            electron-app/release/San-Citro-Setup-${{ steps.ver.outputs.version }}.exe
+            electron-app/release/San-Citro-Setup-${{ steps.ver.outputs.version }}.exe.blockmap
+            electron-app/release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts (workflow retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: san-citro-setup-${{ steps.ver.outputs.version }}
+          path: |
+            electron-app/release/San-Citro-Setup-${{ steps.ver.outputs.version }}.exe
+            electron-app/release/San-Citro-Setup-${{ steps.ver.outputs.version }}.exe.blockmap
+            electron-app/release/latest.yml
+          if-no-files-found: error

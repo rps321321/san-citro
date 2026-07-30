@@ -7,10 +7,12 @@
   "main": "dist/main.js",
   "scripts": {
     "dev": "tsc && electron .",
-    "build": "tsc && electron-builder --win",
+    "build": "tsc && electron-builder --win --publish never",
     "build:python": "powershell ./scripts/build-python.ps1",
     "build:web": "powershell ./scripts/build-web.ps1",
-    "build:all": "powershell ./scripts/build-all.ps1"
+    "build:all": "powershell ./scripts/build-all.ps1",
+    "package:smoke": "node ./scripts/package-smoke.mjs --dir release --version-from package.json",
+    "test:package-smoke": "node --test ./scripts/package-smoke.test.mjs"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

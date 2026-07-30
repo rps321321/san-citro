@@ -29,6 +29,35 @@ There is no `requirements.txt`; all dependencies are declared in `pyproject.toml
 Chrome automation (`undetected-chromedriver`, `selenium`) and TLS impersonation
 (`curl_cffi`) are core dependencies, so a plain install is download-ready.
 
+### San Citro desktop Installer (Windows)
+
+Polished **per-user NSIS** Setup (ADR-0015): fixed install path, Start Menu + Desktop
+shortcuts, license + branded wizard, **unsigned** (Windows SmartScreen may warn on first
+download — that is expected).
+
+**Install from a Release:** download `San-Citro-Setup-X.Y.Z.exe` from
+[GitHub Releases](https://github.com/rps321321/san-citro/releases). Prefer that over loose
+folders so in-app auto-update can find the next Release.
+
+**Cut a Release (maintainers):**
+
+1. Bump is driven by the tag: create and push `vX.Y.Z` (semver with a leading `v`).
+2. GitHub Actions workflow **Release Windows** builds the full pipeline on
+   `windows-latest`, runs package smoke, and publishes Setup + `latest.yml` + blockmap.
+3. Installed copies upgrade via electron-updater from that Release feed.
+
+**Local package (no publish):**
+
+```powershell
+cd electron-app
+./scripts/build-all.ps1
+# or: npm run build   # after python + web artifacts exist
+npm run package:smoke
+```
+
+Uninstall keeps **App state** (settings/history). It does **not** delete your library
+files under the download **Storage location** (`…/San Citro/`).
+
 ## Configuration
 
 Settings live in a JSON file under the platform config directory
