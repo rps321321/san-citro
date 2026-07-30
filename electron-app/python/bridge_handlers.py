@@ -44,8 +44,8 @@ from src.download_history import (
     get_completed_md5s,
     get_download_history,
     get_download_stats,
-    list_library,
 )
+from src.library import query_library
 from src.scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
 
 logger = logging.getLogger("bridge.handlers")
@@ -401,15 +401,28 @@ def handle_save_audiobook_progress(params: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True}
 
 
-def handle_list_library(params: dict[str, Any]) -> list[dict[str, Any]]:
-    """list_library — completed downloads with full metadata."""
+def handle_list_library(params: dict[str, Any]) -> dict[str, Any]:
+    """list_library — DB-driven Library query (filters, sort, facets).
+
+    Optional params: media_kind (books|audiobooks|all), content_type, extension,
+    language, sort (author|year|title|recent). Returns items + facets + counts.
+    """
+    params = params or {}
     try:
-        rows = list_library(db_path=_get_history_db())
+        return query_library(
+            db_path=_get_history_db(),
+            media_kind=params.get("media_kind") or "all",
+            content_type=params.get("content_type"),
+            extension=params.get("extension"),
+            language=params.get("language"),
+            sort=params.get("sort") or "recent",
+        )
+    except ValueError:
+        # Invalid media_kind / sort — surface as a client error, not a generic failure.
+        raise
     except Exception as exc:
         logger.error("Failed to retrieve library: %s", exc, exc_info=True)
         raise RuntimeError("Failed to retrieve library.") from exc
-
-    return rows
 
 
 def handle_list_audiobooks(params: dict[str, Any]) -> list[dict[str, Any]]:

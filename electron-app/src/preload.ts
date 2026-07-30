@@ -7,7 +7,11 @@ import { contextBridge, ipcRenderer } from 'electron';
 // NOTE: with sandbox:true a preload may only require `electron` + a tiny
 // allowlist (events/timers/url) — a local `require('./types')` throws and
 // silently breaks contextBridge. So the channel strings are inlined here;
-// they MUST stay in sync with IPC_CHANNELS in ./types.ts.
+// they MUST stay in sync with IPC_CHANNELS in ./types.ts and the descriptors
+// in ./python-commands.ts (contract tests enforce this).
+//
+// Retired WebContentsView player IPC (ADR-0013) intentionally absent:
+// PLAYER_LOAD / SET_MODE / REQUEST_MODE / ACTIVE / CONTENT_RECT.
 const IPC_CHANNELS = {
   SEARCH: 'san-citro:search',
   START_DOWNLOAD: 'san-citro:startDownload',
@@ -36,8 +40,6 @@ const IPC_CHANNELS = {
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
   PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
   SAVE_AUDIOBOOK_PROGRESS: 'san-citro:saveAudiobookProgress',
-  PLAYER_ACTIVE: 'san-citro:player:active',
-  PLAYER_CONTENT_RECT: 'san-citro:player:contentRect',
   SET_TITLEBAR_OVERLAY: 'san-citro:setTitlebarOverlay',
 } as const;
 
@@ -50,7 +52,7 @@ const api = {
   startDownload: (params: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.START_DOWNLOAD, params),
 
-  // #2: Accept md5 string, wrap it as { md5 } object for the bridge
+  // Accept md5 string, wrap it as { md5 } object for the bridge
   cancelDownload: (md5: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.CANCEL_DOWNLOAD, { md5 }),
 
@@ -60,8 +62,8 @@ const api = {
   getHistory: (params?: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_HISTORY, params),
 
-  listLibrary: (): Promise<unknown> =>
-    ipcRenderer.invoke(IPC_CHANNELS.LIST_LIBRARY),
+  listLibrary: (params?: Record<string, unknown>): Promise<unknown> =>
+    ipcRenderer.invoke(IPC_CHANNELS.LIST_LIBRARY, params ?? {}),
 
   listAudiobooks: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.LIST_AUDIOBOOKS),
@@ -79,7 +81,7 @@ const api = {
     };
   },
 
-  // --- Persistent audiobook player ---
+  // --- In-page audiobook player (ADR-0013) ---
 
   // Start (or switch to) playing an audiobook; resolves { md5, detail, progress }.
   playAudiobook: (md5: string): Promise<unknown> =>
@@ -92,27 +94,6 @@ const api = {
     file_position_seconds: number;
   }): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.SAVE_AUDIOBOOK_PROGRESS, p),
-
-  // Notifies the page when the player becomes active/inactive (and its mode) so
-  // it can reserve ~72px of bottom padding for the mini-bar.
-  onPlayerActive: (callback: (data: unknown) => void): (() => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
-      callback(data);
-    };
-    ipcRenderer.on(IPC_CHANNELS.PLAYER_ACTIVE, listener);
-    return () => {
-      ipcRenderer.removeListener(IPC_CHANNELS.PLAYER_ACTIVE, listener);
-    };
-  },
-
-  // Report the body region (right of the sidebar) so the player view is bounded
-  // to it and never covers the sidebar. Sent on resize / sidebar toggle.
-  setPlayerContentRect: (rect: {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  }): void => ipcRenderer.send(IPC_CHANNELS.PLAYER_CONTENT_RECT, rect),
 
   // Theme-sync the OS window-controls overlay colors to the title bar.
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }): void =>

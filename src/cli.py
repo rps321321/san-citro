@@ -14,12 +14,10 @@ from rich.console import Console
 from rich.table import Table
 
 from .annas_archive_tool import AnnasArchiveTool
-from .config_manager import clamp_concurrency, get_config, set_config_path
+from .config_manager import clamp_concurrency, get_config, get_default_history_db_path, set_config_path
 from .diagnostics import run_diagnostics
-from .download_history import (
-    get_download_history,
-    init_downloads_table,
-)
+from .download_history import get_download_history
+from .migrations import run_migrations
 from .download_job import run_download
 from .download_strategy import create_strategy
 from .logger import get_logger, setup_logging
@@ -456,8 +454,8 @@ def _dispatch(args: argparse.Namespace) -> None:
     active_concurrency = clamp_concurrency(args.concurrency or config.get("concurrency", 2))
     history_db = config.get("history_db")  # None -> resolved to platform data dir
 
-    # Initialize download history table early
-    init_downloads_table(history_db)
+    # Schema evolution before any DB-dependent command (fail loudly on error)
+    run_migrations(history_db or get_default_history_db_path())
 
     # ------------------------------------------------------------------
     # Commands that don't need the network tool

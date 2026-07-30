@@ -1,12 +1,13 @@
 """Audiobook metadata store backed by the local SQLite download_history database.
 
-This module owns the four audiobook tables (``audiobooks``, ``audiobook_chapters``,
-``audiobook_progress``, ``audiobook_bookmarks``) and their accessor functions. It
-reuses :func:`download_history._connect` so it shares the same connection pragmas
-(WAL, busy_timeout, and crucially ``foreign_keys = ON`` for the FK cascades below).
+This module owns the four audiobook table accessors (``audiobooks``,
+``audiobook_chapters``, ``audiobook_progress``, ``audiobook_bookmarks``).
+It reuses :func:`download_history._connect` so it shares the same connection
+pragmas (WAL, busy_timeout, and crucially ``foreign_keys = ON`` for FK cascades).
 
-Tables are created lazily via :func:`_ensure_audiobook_tables`, mirroring the
-``_ensure_table`` pattern in :mod:`download_history`.
+Schema creation lives in :mod:`migrations`. :func:`_ensure_audiobook_tables` is a
+safety net that runs migrations once per path so isolated unit tests still work;
+production entry points must call :func:`migrations.run_migrations` at startup.
 """
 
 from __future__ import annotations
@@ -20,13 +21,13 @@ from .logger import get_logger
 
 logger = get_logger()
 
-# Lazy-init flag per db_path to avoid redundant CREATE TABLE on every call.
+# Lazy-init flag per db_path to avoid redundant migration runs on every call.
 _initialized_dbs: set[str] = set()
 _init_lock = threading.Lock()
 
 
 def _ensure_audiobook_tables(db_path: str | None = None) -> None:
-    """Create the four audiobook tables once per db_path, guarded by a lock."""
+    """Ensure audiobook schema exists once per db_path via canonical migrations."""
     resolved = _resolve_db_path(db_path)
     if resolved in _initialized_dbs:
         return
@@ -34,55 +35,10 @@ def _ensure_audiobook_tables(db_path: str | None = None) -> None:
         # Double-check after acquiring the lock.
         if resolved in _initialized_dbs:
             return
-        with _connect(db_path) as conn:
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS audiobooks (
-                    md5                     TEXT PRIMARY KEY,
-                    container_type          TEXT,
-                    folder_path             TEXT,
-                    total_duration_seconds  REAL,
-                    track_count             INTEGER,
-                    status                  TEXT NOT NULL DEFAULT 'pending'
-                                            CHECK (status IN ('pending','processing','ready','unsupported','error')),
-                    error_message           TEXT,
-                    created_at              TIMESTAMP,
-                    updated_at              TIMESTAMP
-                );
+        # Lazy import avoids a circular dependency with migrations.
+        from .migrations import run_migrations
 
-                CREATE TABLE IF NOT EXISTS audiobook_chapters (
-                    chapter_id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                    md5                     TEXT NOT NULL REFERENCES audiobooks(md5) ON DELETE CASCADE,
-                    chapter_index           INTEGER NOT NULL,
-                    rel_path                TEXT NOT NULL,
-                    file_size               INTEGER,
-                    title                   TEXT,
-                    start_offset_seconds    REAL NOT NULL DEFAULT 0,
-                    duration_seconds        REAL,
-                    UNIQUE (md5, chapter_index)
-                );
-
-                CREATE TABLE IF NOT EXISTS audiobook_progress (
-                    md5                     TEXT PRIMARY KEY REFERENCES audiobooks(md5) ON DELETE CASCADE,
-                    chapter_id              INTEGER REFERENCES audiobook_chapters(chapter_id) ON DELETE SET NULL,
-                    file_position_seconds   REAL,
-                    updated_at              TIMESTAMP
-                );
-
-                CREATE TABLE IF NOT EXISTS audiobook_bookmarks (
-                    bookmark_id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                    md5                     TEXT NOT NULL REFERENCES audiobooks(md5) ON DELETE CASCADE,
-                    chapter_id              INTEGER,
-                    file_position_seconds   REAL NOT NULL,
-                    label                   TEXT,
-                    created_at              TIMESTAMP
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_chapters_md5 ON audiobook_chapters(md5);
-                CREATE INDEX IF NOT EXISTS idx_bookmarks_md5 ON audiobook_bookmarks(md5);
-                """
-            )
-            conn.commit()
+        run_migrations(resolved)
         _initialized_dbs.add(resolved)
 
 

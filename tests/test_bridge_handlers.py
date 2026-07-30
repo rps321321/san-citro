@@ -34,43 +34,114 @@ def test_search_has_next_uses_scraper_page_size():
     assert result["has_next"] is False
 
 
-def test_handle_list_library_returns_rows():
-    fake_rows = [
-        {
-            "md5": "a" * 32,
-            "title": "Test Book",
-            "filename": "test.epub",
-            "author": "Author A",
-            "year": "2020",
-            "extension": "epub",
-            "content_type": "book",
-            "language": "en",
-            "publisher": "Publisher X",
-            "cover_url": "https://example.com/cover.jpg",
-            "filesize_bytes": 1024,
-            "completed_at": "2024-01-01T00:00:00",
-        }
-    ]
+def test_handle_list_library_returns_query_result():
+    fake_result = {
+        "items": [
+            {
+                "md5": "a" * 32,
+                "title": "Test Book",
+                "filename": "test.epub",
+                "author": "Author A",
+                "year": 2020,
+                "extension": "epub",
+                "content_type": "fiction",
+                "language": "en",
+                "publisher": "Publisher X",
+                "cover_url": "https://example.com/cover.jpg",
+                "filesize_bytes": 1024,
+                "completed_at": "2024-01-01T00:00:00",
+                "media_type": "book",
+                "variant": "book",
+                "status": None,
+                "container_type": None,
+                "folder_path": None,
+                "total_duration_seconds": None,
+                "track_count": None,
+                "error_message": None,
+            }
+        ],
+        "facets": {
+            "content_types": ["fiction"],
+            "extensions": ["epub"],
+            "languages": ["en"],
+        },
+        "total_eligible": 1,
+        "filtered_count": 1,
+    }
 
     with (
-        patch.object(bridge_handlers, "list_library", return_value=fake_rows),
+        patch.object(bridge_handlers, "query_library", return_value=fake_result) as mock_q,
+        patch.object(bridge_handlers, "_get_history_db", return_value="/tmp/history.db"),
+    ):
+        result = bridge_handlers.handle_list_library(
+            {
+                "media_kind": "books",
+                "sort": "author",
+                "content_type": "fiction",
+                "extension": "epub",
+                "language": "en",
+            }
+        )
+
+    assert result == fake_result
+    assert result["items"][0]["md5"] == "a" * 32
+    mock_q.assert_called_once_with(
+        db_path="/tmp/history.db",
+        media_kind="books",
+        content_type="fiction",
+        extension="epub",
+        language="en",
+        sort="author",
+    )
+
+
+def test_handle_list_library_defaults_when_params_empty():
+    fake_result = {
+        "items": [],
+        "facets": {"content_types": [], "extensions": [], "languages": []},
+        "total_eligible": 0,
+        "filtered_count": 0,
+    }
+
+    with (
+        patch.object(bridge_handlers, "query_library", return_value=fake_result) as mock_q,
         patch.object(bridge_handlers, "_get_history_db", return_value=None),
     ):
         result = bridge_handlers.handle_list_library({})
 
-    assert result == fake_rows
-    assert result[0]["md5"] == "a" * 32
+    assert result == fake_result
+    mock_q.assert_called_once_with(
+        db_path=None,
+        media_kind="all",
+        content_type=None,
+        extension=None,
+        language=None,
+        sort="recent",
+    )
 
 
 def test_handle_list_library_propagates_error():
     import pytest
 
     with (
-        patch.object(bridge_handlers, "list_library", side_effect=OSError("db gone")),
+        patch.object(bridge_handlers, "query_library", side_effect=OSError("db gone")),
         patch.object(bridge_handlers, "_get_history_db", return_value=None),
         pytest.raises(RuntimeError, match="Failed to retrieve library"),
     ):
         bridge_handlers.handle_list_library({})
+
+
+def test_handle_list_library_propagates_value_error():
+    import pytest
+
+    with (
+        patch.object(
+            bridge_handlers, "query_library", side_effect=ValueError("Invalid sort")
+        ),
+        patch.object(bridge_handlers, "_get_history_db", return_value=None),
+        pytest.raises(ValueError, match="Invalid sort"),
+    ):
+        bridge_handlers.handle_list_library({"sort": "nope"})
 
 
 # ---------------------------------------------------------------------------
@@ -385,3 +456,45 @@ def test_registration_includes_new_audiobook_player_methods():
     assert "get_chapter_path" in registered, "get_chapter_path not registered"
     assert "get_audiobook_progress" in registered, "get_audiobook_progress not registered"
     assert "save_audiobook_progress" in registered, "save_audiobook_progress not registered"
+
+
+# Canonical Python-backed method set (must match electron-app/src/python-commands.ts usesMethods).
+_EXPECTED_PYTHON_METHODS = frozenset(
+    {
+        "search",
+        "start_download",
+        "cancel_download",
+        "get_downloads",
+        "get_history",
+        "get_stats",
+        "get_settings",
+        "update_settings",
+        "reload_config",
+        "run_diagnostics",
+        "resolve_download_path",
+        "set_telemetry_context",
+        "list_library",
+        "list_audiobooks",
+        "get_audiobook_detail",
+        "get_chapter_path",
+        "get_audiobook_progress",
+        "save_audiobook_progress",
+    }
+)
+
+
+def test_registration_matches_desktop_command_descriptor_set():
+    """Python registry must equal the descriptor's usesMethods set (Phase 4 contract)."""
+    registered: dict[str, object] = {}
+
+    def fake_register(name: str, fn: object) -> None:
+        registered[name] = fn
+
+    with patch("bridge.register_method", fake_register):
+        bridge_handlers.register_handlers()
+
+    actual = frozenset(registered)
+    missing = _EXPECTED_PYTHON_METHODS - actual
+    extra = actual - _EXPECTED_PYTHON_METHODS
+    assert not missing, f"Python registry missing methods: {sorted(missing)}"
+    assert not extra, f"Python registry has unexpected methods: {sorted(extra)}"

@@ -2,7 +2,10 @@
 
 /**
  * Session recorder — captures DOM replay events via rrweb and uploads
- * compressed chunks to the `replay_chunks` table in Supabase.
+ * compressed chunks to the `replay_chunks` table via the telemetry deep module.
+ *
+ * Buffer policy (interval / max size) lives here. Table mapping, identity
+ * context, headers, and delivery are owned by `submitReplayChunk`.
  *
  * Recording is privacy-conscious: all input values are masked and mouse
  * movement is disabled (handled by a separate tracker). Errors are
@@ -10,7 +13,7 @@
  */
 
 import { record } from "rrweb";
-import { getDeviceId, getSessionId } from "./telemetry";
+import { submitReplayChunk } from "./telemetry";
 
 // rrweb v2 alpha — typed as its documented event shape
 interface RRWebEvent {
@@ -23,8 +26,6 @@ interface RRWebEvent {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-
-import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
 
 const FLUSH_INTERVAL_MS = 10_000;
 const MAX_BUFFER_SIZE = 100;
@@ -43,43 +44,23 @@ let isRecording = false;
 // Flush logic
 // ---------------------------------------------------------------------------
 
-async function sendChunk(events: RRWebEvent[]): Promise<void> {
+function sendChunk(events: RRWebEvent[]): void {
   if (events.length === 0) return;
-  if (!isSupabaseConfigured()) return;
 
   const payload = JSON.stringify(events);
   const compressedSizeBytes = new Blob([payload]).size;
   const currentChunkIndex = chunkIndex++;
 
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/replay_chunks`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify([
-        {
-          session_id: getSessionId(),
-          device_id: getDeviceId(),
-          chunk_index: currentChunkIndex,
-          events,
-          event_count: events.length,
-          compressed_size_bytes: compressedSizeBytes,
-        },
-      ]),
+    submitReplayChunk({
+      chunk_index: currentChunkIndex,
+      events,
+      event_count: events.length,
+      compressed_size_bytes: compressedSizeBytes,
     });
-
-    if (!res.ok) {
-      console.debug(
-        `[session-recorder] Failed to send chunk ${currentChunkIndex}: ${res.status}`
-      );
-    }
   } catch {
     // Silently drop — recording should never break the app
-    console.debug("[session-recorder] Network error sending chunk");
+    console.debug("[session-recorder] Failed to submit chunk");
   }
 }
 
@@ -111,24 +92,25 @@ export function startRecording(): void {
   if (isRecording || typeof window === "undefined") return;
 
   try {
-    stopFn = record({
-      emit(event: RRWebEvent) {
-        try {
-          eventBuffer.push(event);
+    stopFn =
+      record({
+        emit(event: RRWebEvent) {
+          try {
+            eventBuffer.push(event);
 
-          if (eventBuffer.length >= MAX_BUFFER_SIZE) {
-            flushBuffer();
+            if (eventBuffer.length >= MAX_BUFFER_SIZE) {
+              flushBuffer();
+            }
+          } catch {
+            // Never let event handling break the app
           }
-        } catch {
-          // Never let event handling break the app
-        }
-      },
-      maskAllInputs: true,
-      sampling: {
-        mousemove: false,
-        scroll: 150,
-      },
-    }) ?? null;
+        },
+        maskAllInputs: true,
+        sampling: {
+          mousemove: false,
+          scroll: 150,
+        },
+      }) ?? null;
 
     isRecording = true;
 

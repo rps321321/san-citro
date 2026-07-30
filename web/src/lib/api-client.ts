@@ -6,7 +6,8 @@ import type {
   DiagnosticResult,
   UpdateStatus,
   SanCitroApi,
-  LibraryItem,
+  LibraryQueryParams,
+  LibraryQueryResult,
   Audiobook,
   AudiobookDetail,
   PlayerLoadPayload,
@@ -95,8 +96,10 @@ export async function getHistory(): Promise<HistoryEntry[]> {
 
 // --------------- Library ---------------
 
-export async function listLibrary(): Promise<LibraryItem[]> {
-  return timed("list_library", () => ipc().listLibrary());
+export async function listLibrary(
+  params?: LibraryQueryParams
+): Promise<LibraryQueryResult> {
+  return timed("list_library", () => ipc().listLibrary(params));
 }
 
 // --------------- Audiobooks ---------------

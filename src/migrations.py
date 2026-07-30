@@ -1,13 +1,18 @@
-"""Lightweight SQLite database migration system.
+"""Lightweight SQLite schema-evolution module.
 
-Provides a decorator-based migration registry, version tracking via a
-``schema_version`` table, and idempotent ``run_migrations`` that applies
-only pending migrations inside individual transactions.
+Sole production owner of the history DB shape. CLI and the Python bridge must
+call :func:`run_migrations` before any query, cleanup, queue recovery, or
+command registration that depends on persisted data.
+
+Each migration runs in its own transaction. Version rows are written only on
+success; failures roll back and re-raise so startup fails clearly.
+
+Connection pragmas match :func:`download_history._connect` (WAL, busy_timeout,
+NORMAL synchronous, foreign_keys ON) so evolution and query paths behave the same.
 """
 
 from __future__ import annotations
 
-import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -21,9 +26,17 @@ if TYPE_CHECKING:
 
 logger = get_logger()
 
-# Whitelist patterns for DDL-safe column name/type validation (compiled once).
-_VALID_COL_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
-_VALID_COL_TYPE = re.compile(r"^[A-Z]+$")
+# Nullable metadata columns on downloads (name -> SQLite type).
+_DOWNLOAD_META_COLUMNS: dict[str, str] = {
+    "author": "TEXT",
+    "year": "INTEGER",
+    "extension": "TEXT",
+    "content_type": "TEXT",
+    "language": "TEXT",
+    "publisher": "TEXT",
+    "cover_url": "TEXT",
+    "media_type": "TEXT",
+}
 
 # ---------------------------------------------------------------------------
 # Migration registry
@@ -67,6 +80,21 @@ def get_registered_migrations() -> list[MigrationEntry]:
 
 
 # ---------------------------------------------------------------------------
+# Connection (same pragmas as download_history._connect)
+# ---------------------------------------------------------------------------
+
+
+def _connect(db_path: str) -> sqlite3.Connection:
+    """Open a connection with WAL / busy_timeout / foreign_keys for safe concurrent access."""
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+# ---------------------------------------------------------------------------
 # Version helpers
 # ---------------------------------------------------------------------------
 
@@ -81,7 +109,7 @@ def get_current_version(db_path: str) -> int:
     """Return the highest applied migration version, or 0 if none."""
     if not Path(db_path).exists():
         return 0
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         cursor = conn.cursor()
         if not _has_schema_version_table(cursor):
             return 0
@@ -93,7 +121,7 @@ def get_migration_history(db_path: str) -> list[dict]:
     """Return the full migration history for display purposes."""
     if not Path(db_path).exists():
         return []
-    with sqlite3.connect(db_path) as conn:
+    with _connect(db_path) as conn:
         cursor = conn.cursor()
         if not _has_schema_version_table(cursor):
             return []
@@ -111,18 +139,17 @@ def run_migrations(db_path: str) -> int:
 
     Each migration runs inside its own transaction.  If a migration fails the
     transaction is rolled back and the error is re-raised so the caller can
-    decide how to proceed.  Already-applied migrations are skipped, making the
+    fail startup clearly.  Already-applied migrations are skipped, making the
     function safe to call repeatedly.
     """
-    conn = sqlite3.connect(db_path)
+    conn = _connect(db_path)
     try:
-        conn.execute("PRAGMA journal_mode = WAL")
         cursor = conn.cursor()
 
         current = 0
         if _has_schema_version_table(cursor):
             cursor.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version")
-            current = cursor.fetchone()[0]
+            current = int(cursor.fetchone()[0])
 
         pending = [m for m in get_registered_migrations() if m.version > current]
         if not pending:
@@ -153,7 +180,12 @@ def run_migrations(db_path: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Concrete migrations
+# Concrete migrations (canonical history DB shape)
+#
+# Production never shipped the old records/ingest migrations, so the registered
+# set is consolidated here. New databases must NOT create bulk-metadata tables
+# (records, ingest_metadata). If those tables already exist on a legacy DB they
+# are left untouched — no DROP, no rewrite.
 # ---------------------------------------------------------------------------
 
 
@@ -168,8 +200,9 @@ def _m1(cursor: sqlite3.Cursor) -> None:
     """)
 
 
-@migration(2, "Create downloads table for tracking file downloads")
+@migration(2, "Create downloads table with full metadata columns")
 def _m2(cursor: sqlite3.Cursor) -> None:
+    # Full shape for brand-new tables. IF NOT EXISTS leaves existing tables alone.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS downloads (
             md5             TEXT PRIMARY KEY,
@@ -179,104 +212,88 @@ def _m2(cursor: sqlite3.Cursor) -> None:
             started_at      TIMESTAMP,
             completed_at    TIMESTAMP,
             filesize_bytes  INTEGER,
-            error           TEXT
+            error           TEXT,
+            author          TEXT,
+            year            INTEGER,
+            extension       TEXT,
+            content_type    TEXT,
+            language        TEXT,
+            publisher       TEXT,
+            cover_url       TEXT,
+            media_type      TEXT
         )
     """)
+
+    # Adoption: unversioned / partial downloads tables get missing columns only.
+    cursor.execute("PRAGMA table_info(downloads)")
+    existing = {row[1] for row in cursor.fetchall()}
+    base_and_meta = [
+        ("title", "TEXT"),
+        ("filename", "TEXT"),
+        ("status", "TEXT"),
+        ("started_at", "TIMESTAMP"),
+        ("completed_at", "TIMESTAMP"),
+        ("filesize_bytes", "INTEGER"),
+        ("error", "TEXT"),
+        *list(_DOWNLOAD_META_COLUMNS.items()),
+    ]
+    for col_name, col_type in base_and_meta:
+        if col_name not in existing:
+            logger.info(f"  Adding missing column: downloads.{col_name} ({col_type})")
+            cursor.execute(f"ALTER TABLE downloads ADD COLUMN {col_name} {col_type}")
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_downloads_status ON downloads(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_downloads_started_at ON downloads(started_at)")
 
 
-@migration(3, "Create ingest_metadata table for tracking data ingestion runs")
+@migration(3, "Create audiobook tables with indexes and foreign keys")
 def _m3(cursor: sqlite3.Cursor) -> None:
+    # Individual executes (not executescript) so the outer migration transaction
+    # stays intact — sqlite3.Cursor.executescript issues an implicit COMMIT.
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS ingest_metadata (
-            filename TEXT PRIMARY KEY,
-            file_size INTEGER,
-            records_added INTEGER,
-            completed_at TIMESTAMP,
-            byte_offset INTEGER
+        CREATE TABLE IF NOT EXISTS audiobooks (
+            md5                     TEXT PRIMARY KEY,
+            container_type          TEXT,
+            folder_path             TEXT,
+            total_duration_seconds  REAL,
+            track_count             INTEGER,
+            status                  TEXT NOT NULL DEFAULT 'pending'
+                                    CHECK (status IN ('pending','processing','ready','unsupported','error')),
+            error_message           TEXT,
+            created_at              TIMESTAMP,
+            updated_at              TIMESTAMP
         )
     """)
-
-
-@migration(4, "Ensure records table has all expected columns")
-def _m4(cursor: sqlite3.Cursor) -> None:
-    # Ensure the records table exists first.  On a brand-new database the
-    # table may not have been created by init_db yet, so we create it with
-    # the full canonical schema.
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS records (
-            md5 TEXT PRIMARY KEY,
-            title TEXT,
-            author TEXT,
-            year TEXT,
-            extension TEXT,
-            language TEXT,
-            filesize_bytes INTEGER,
-            isbn13 TEXT,
-            publisher TEXT,
-            description TEXT,
-            source TEXT,
-            added_at TEXT
+        CREATE TABLE IF NOT EXISTS audiobook_chapters (
+            chapter_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            md5                     TEXT NOT NULL REFERENCES audiobooks(md5) ON DELETE CASCADE,
+            chapter_index           INTEGER NOT NULL,
+            rel_path                TEXT NOT NULL,
+            file_size               INTEGER,
+            title                   TEXT,
+            start_offset_seconds    REAL NOT NULL DEFAULT 0,
+            duration_seconds        REAL,
+            UNIQUE (md5, chapter_index)
         )
     """)
-
-    # Back-fill any columns that may be missing on databases created with an
-    # older or partial schema.  We check every expected column and ALTER TABLE
-    # ADD COLUMN for any that are absent.
-    cursor.execute("PRAGMA table_info(records)")
-    existing_columns = {row[1] for row in cursor.fetchall()}
-
-    # Full list of expected non-PK columns (md5 is always present as PK).
-    expected_columns = [
-        ("title", "TEXT"),
-        ("author", "TEXT"),
-        ("year", "TEXT"),
-        ("extension", "TEXT"),
-        ("language", "TEXT"),
-        ("filesize_bytes", "INTEGER"),
-        ("isbn13", "TEXT"),
-        ("publisher", "TEXT"),
-        ("description", "TEXT"),
-        ("source", "TEXT"),
-        ("added_at", "TEXT"),
-    ]
-
-    for col_name, col_type in expected_columns:
-        if col_name not in existing_columns:
-            # Whitelist-validate to prevent DDL injection (even though values are hardcoded)
-            assert _VALID_COL_NAME.match(col_name), f"Invalid column name: {col_name}"
-            assert _VALID_COL_TYPE.match(col_type), f"Invalid column type: {col_type}"
-            logger.info(f"  Adding missing column: records.{col_name} ({col_type})")
-            cursor.execute(f"ALTER TABLE records ADD COLUMN {col_name} {col_type}")
-
-    # Ensure standard indexes exist (idempotent)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_extension ON records(extension)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_language ON records(language)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_year ON records(year)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_isbn13 ON records(isbn13)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_records_added_at ON records(added_at)")
-
-
-@migration(5, "Add records_processed column to ingest_metadata for record-count-based resume")
-def _m5(cursor: sqlite3.Cursor) -> None:
-    """Replace byte-offset resume with record-count resume.
-
-    Zstd is a streaming codec — seeking to an arbitrary compressed byte
-    offset produces garbage.  The new ``records_processed`` column tracks
-    how many records have been seen so that resume can decompress from the
-    beginning and skip the already-processed records.
-
-    The old ``byte_offset`` column is kept for backward compatibility but
-    is no longer written or used for resume logic.
-    """
-    cursor.execute("PRAGMA table_info(ingest_metadata)")
-    existing_cols = {row[1] for row in cursor.fetchall()}
-    if "records_processed" not in existing_cols:
-        cursor.execute("ALTER TABLE ingest_metadata ADD COLUMN records_processed INTEGER DEFAULT 0")
-    # Backfill: set records_processed = records_added for incomplete runs so
-    # that an in-progress ingest can resume correctly after the upgrade.
-    cursor.execute(
-        "UPDATE ingest_metadata SET records_processed = records_added "
-        "WHERE records_processed IS NULL OR records_processed = 0"
-    )
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audiobook_progress (
+            md5                     TEXT PRIMARY KEY REFERENCES audiobooks(md5) ON DELETE CASCADE,
+            chapter_id              INTEGER REFERENCES audiobook_chapters(chapter_id) ON DELETE SET NULL,
+            file_position_seconds   REAL,
+            updated_at              TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audiobook_bookmarks (
+            bookmark_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            md5                     TEXT NOT NULL REFERENCES audiobooks(md5) ON DELETE CASCADE,
+            chapter_id              INTEGER,
+            file_position_seconds   REAL NOT NULL,
+            label                   TEXT,
+            created_at              TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_chapters_md5 ON audiobook_chapters(md5)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_bookmarks_md5 ON audiobook_bookmarks(md5)")

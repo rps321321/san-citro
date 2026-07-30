@@ -17,6 +17,11 @@ both emitters write correlated, well-formed rows: `device_id`, `session_id`,
 skips emitting.
 _Avoid_: "credentials", "config" (those are only part of it).
 
+**Telemetry fact**:
+A structured observation captured by a sanctioned emitter, such as user intent, session behavior,
+a scrape request, or a download outcome. It becomes a telemetry row only after shared context is added.
+_Avoid_: "raw row" for an observation that has not yet been contextualized.
+
 **Device vs Session**:
 **device_id** is a persistent UUID in `localStorage` (one per install).
 **session_id** is generated per app launch. Every telemetry row carries both.
@@ -53,6 +58,11 @@ granular tables. Kept for query convenience, not because it holds unique data.
 The in-app, **DB-driven view** of downloads — grouped/sorted/filtered by author, year,
 and category from the SQLite metadata. NOT a physical folder hierarchy (see ADR-0006).
 _Avoid_: "library tree", "library folder" (organization is a query, not a directory).
+
+**Library item**:
+A completed download represented in the Library. Every Library item shares a core identity and
+metadata, then takes one of two variants: **Book** or **Audiobook**, each retaining its own details.
+_Avoid_: treating Books and Audiobooks as unrelated collections, or flattening their distinct details.
 
 **Storage location**:
 Where a download physically lands: flat and **human-readable** under

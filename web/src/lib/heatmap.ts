@@ -3,16 +3,23 @@
 /**
  * Heatmap analytics — tracks click positions, scroll depth, and mouse movement.
  *
- * All data is sent to Supabase tables:
- * - click_heatmap: batched click coordinates + element info
- * - scroll_depth: max scroll % and time-per-quartile
- * - mouse_tracking: sampled mouse positions
+ * Capture + buffer policy live here. Table mapping, telemetry context, and
+ * delivery are owned by the telemetry deep module (submitClickHeatmap /
+ * submitScrollDepth / submitMouseTracking).
+ *
+ * Buffers:
+ * - click_heatmap: flush every 15s (or on stop/unload)
+ * - mouse_tracking: sample every 200ms, flush every 15s
+ * - scroll_depth: idle timeout 60s / stop / unload
  *
  * Errors are silently caught — this module must never break the app.
  */
 
-import { getDeviceId, getSessionId } from "./telemetry";
-import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
+import {
+  submitClickHeatmap,
+  submitScrollDepth,
+  submitMouseTracking,
+} from "./telemetry";
 
 const CLICK_FLUSH_INTERVAL_MS = 15_000;
 const MOUSE_FLUSH_INTERVAL_MS = 15_000;
@@ -73,33 +80,12 @@ let scrollIdleTimer: ReturnType<typeof setTimeout> | null = null;
 let scrollFlushed = false;
 
 // ---------------------------------------------------------------------------
-// Supabase sender
-// ---------------------------------------------------------------------------
-
-async function sendToSupabase(
-  table: string,
-  rows: Record<string, unknown>[]
-): Promise<void> {
-  if (!isSupabaseConfigured()) return;
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify(rows),
-    });
-  } catch {
-    // Silently ignore — analytics must never break the app
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function pagePath(): string {
+  return typeof window !== "undefined" ? window.location.pathname : "";
+}
 
 function getSelector(el: Element): string {
   try {
@@ -147,14 +133,6 @@ function getQuartileIndex(percent: number): number {
   return 0;
 }
 
-function baseRow(): Record<string, unknown> {
-  return {
-    device_id: getDeviceId(),
-    session_id: getSessionId(),
-    page_path: typeof window !== "undefined" ? window.location.pathname : "",
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Click heatmap
 // ---------------------------------------------------------------------------
@@ -181,12 +159,17 @@ function handleClick(event: MouseEvent): void {
 function flushClicks(): void {
   if (clickBuffer.length === 0) return;
 
-  const rows = clickBuffer.map((click) => ({
-    ...baseRow(),
+  const path = pagePath();
+  const facts = clickBuffer.map((click) => ({
     ...click,
+    page_path: path,
   }));
   clickBuffer = [];
-  sendToSupabase("click_heatmap", rows);
+  try {
+    submitClickHeatmap(facts);
+  } catch {
+    // Never break the app
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,17 +215,19 @@ function flushScrollDepth(): void {
   // Capture final quartile time
   updateQuartileTime();
 
-  sendToSupabase("scroll_depth", [
-    {
-      ...baseRow(),
+  try {
+    submitScrollDepth({
+      page_path: pagePath(),
       max_depth_percent: maxScrollPercent,
       time_at_25_ms: Math.round(quartileTimes.q25),
       time_at_50_ms: Math.round(quartileTimes.q50),
       time_at_75_ms: Math.round(quartileTimes.q75),
       time_at_100_ms: Math.round(quartileTimes.q100),
       total_scroll_events: 0,
-    },
-  ]);
+    });
+  } catch {
+    // Never break the app
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -277,14 +262,16 @@ function flushMouseMovement(): void {
       ? samples[samples.length - 1].t - samples[0].t
       : 0;
 
-  sendToSupabase("mouse_tracking", [
-    {
-      ...baseRow(),
+  try {
+    submitMouseTracking({
+      page_path: pagePath(),
       positions: samples,
       sample_count: samples.length,
       duration_ms: durationMs,
-    },
-  ]);
+    });
+  } catch {
+    // Never break the app
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -27,7 +27,11 @@ export interface JsonRpcError {
   data?: unknown;
 }
 
-// IPC channel constants
+// IPC channel constants.
+// Python-backed relays/composites are also listed in python-commands.ts;
+// OS-only and push channels live here only.
+// Retired WebContentsView player IPC (ADR-0013) intentionally absent:
+// PLAYER_LOAD / PLAYER_SET_MODE / PLAYER_REQUEST_MODE.
 
 export const IPC_CHANNELS = {
   SEARCH: 'san-citro:search',
@@ -45,7 +49,6 @@ export const IPC_CHANNELS = {
   GET_APP_VERSION_SYNC: 'san-citro:getAppVersionSync',
   OPEN_EXTERNAL: 'san-citro:openExternal',
   SHOW_ITEM_IN_FOLDER: 'san-citro:showItemInFolder',
-  RESOLVE_DOWNLOAD_PATH: 'san-citro:resolveDownloadPath',
   READ_BOOK_FILE: 'san-citro:readBookFile',
   SHOW_OPEN_DIALOG: 'san-citro:showOpenDialog',
   CHECK_FOR_UPDATES: 'san-citro:checkForUpdates',
@@ -56,23 +59,13 @@ export const IPC_CHANNELS = {
   LIST_AUDIOBOOKS: 'san-citro:listAudiobooks',
   GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
-  // --- Persistent audiobook player (Phase 4) ---
+  // In-page audiobook player (ADR-0013)
   PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
-  PLAYER_LOAD: 'san-citro:player:load',
-  PLAYER_SET_MODE: 'san-citro:player:setMode',
-  PLAYER_REQUEST_MODE: 'san-citro:player:requestMode',
-  PLAYER_ACTIVE: 'san-citro:player:active',
-  GET_AUDIOBOOK_PROGRESS: 'san-citro:getAudiobookProgress',
   SAVE_AUDIOBOOK_PROGRESS: 'san-citro:saveAudiobookProgress',
-  // main-window renderer -> main: the body region (right of the sidebar) the
-  // player view should occupy, so it does not cover the sidebar.
-  PLAYER_CONTENT_RECT: 'san-citro:player:contentRect',
   // renderer -> main: theme-synced colors for the OS window-controls overlay so
   // the control area matches the title-bar background.
   SET_TITLEBAR_OVERLAY: 'san-citro:setTitlebarOverlay',
 } as const;
-
-export type PlayerMode = 'mini' | 'expanded' | 'hidden';
 
 export interface UpdateStatus {
   status:

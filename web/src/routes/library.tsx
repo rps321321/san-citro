@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BookOpenIcon,
   LibraryIcon,
@@ -35,14 +35,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-import {
-  listLibrary,
-  listAudiobooks,
-  onAudiobookStatus,
-} from "@/lib/api-client";
+import { listLibrary, onAudiobookStatus } from "@/lib/api-client";
 import { usePlayer } from "@/contexts/player-context";
 import { DetailSheet } from "@/components/detail-sheet";
-import type { Audiobook, LibraryItem } from "@/types";
+import type { LibraryFacets, LibraryItem, LibraryQueryParams } from "@/types";
 
 // ---------------------------------------------------------------------------
 // View persistence
@@ -57,7 +53,7 @@ function readStoredView(): View {
 }
 
 // ---------------------------------------------------------------------------
-// Sort
+// Sort (view state → query param; sorting is owned by the backend)
 // ---------------------------------------------------------------------------
 
 type SortKey = "author" | "year" | "title" | "recent";
@@ -68,21 +64,6 @@ const SORT_LABELS: Record<SortKey, string> = {
   title: "Title",
   recent: "Recently added",
 };
-
-function compareItems(a: LibraryItem, b: LibraryItem, key: SortKey): number {
-  switch (key) {
-    case "author":
-      return (a.author ?? "").localeCompare(b.author ?? "");
-    case "year":
-      // Newest first; missing years sink to the bottom.
-      return (b.year ?? -Infinity) - (a.year ?? -Infinity);
-    case "title":
-      return (a.title ?? "").localeCompare(b.title ?? "");
-    case "recent":
-      // completed_at desc (most recent first).
-      return (b.completed_at ?? "").localeCompare(a.completed_at ?? "");
-  }
-}
 
 // Book open behavior now lives in DetailSheet: click a cover → detail → Read/Reveal.
 
@@ -128,7 +109,7 @@ function Cover({
 }
 
 // ---------------------------------------------------------------------------
-// Audiobooks
+// Audiobook presentation helpers
 // ---------------------------------------------------------------------------
 
 /** Format a duration in seconds as "Hh Mm" / "Mm" — null/0 renders nothing. */
@@ -151,7 +132,7 @@ interface StatusDisplay {
 }
 
 /** Map a raw audiobook status string to a badge label + variant. */
-function statusDisplay(status: string): StatusDisplay {
+function statusDisplay(status: string | null): StatusDisplay {
   switch (status) {
     case "ready":
     case "completed":
@@ -162,17 +143,17 @@ function statusDisplay(status: string): StatusDisplay {
     case "failed":
       return { label: "Error", variant: "destructive", spinning: false };
     default:
-      // pending / queued / processing / downloading / extracting …
+      // pending / queued / processing / downloading / extracting / null …
       return { label: "Processing…", variant: "warning", spinning: true };
   }
 }
 
-function isReady(status: string): boolean {
+function isReady(status: string | null): boolean {
   return status === "ready" || status === "completed";
 }
 
-function StatusBadge({ book }: { book: Audiobook }) {
-  const { label, variant, spinning } = statusDisplay(book.status);
+function StatusBadge({ item }: { item: LibraryItem }) {
+  const { label, variant, spinning } = statusDisplay(item.status);
   const isError = variant === "destructive";
   const Icon = spinning
     ? Loader2Icon
@@ -195,7 +176,7 @@ function StatusBadge({ book }: { book: Audiobook }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-md bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm ring-1 ring-white/15 backdrop-blur-sm"
-      title={isError && book.error_message ? book.error_message : undefined}
+      title={isError && item.error_message ? item.error_message : undefined}
     >
       <Icon className={`size-3.5 ${iconColor}${spinning ? " animate-spin" : ""}`} />
       {label}
@@ -203,15 +184,15 @@ function StatusBadge({ book }: { book: Audiobook }) {
   );
 }
 
-function AudiobookCard({ book }: { book: Audiobook }) {
+function AudiobookCard({ item }: { item: LibraryItem }) {
   const { play } = usePlayer();
-  const ready = isReady(book.status);
-  const title = book.title || "Untitled";
-  const duration = formatDuration(book.total_duration_seconds);
+  const ready = isReady(item.status);
+  const title = item.title || "Untitled";
+  const duration = formatDuration(item.total_duration_seconds);
 
   const handleOpen = () => {
     // Launch the in-page audiobook player (mini-bar) for this book.
-    if (ready) void play(book.md5).catch(() => {});
+    if (ready) void play(item.md5).catch(() => {});
   };
 
   return (
@@ -224,7 +205,7 @@ function AudiobookCard({ book }: { book: Audiobook }) {
     >
       <div className="relative">
         <div className={ready ? "transition-transform duration-200 group-hover:-translate-y-1" : undefined}>
-          <Cover coverUrl={book.cover_url} title={title} size="grid" />
+          <Cover coverUrl={item.cover_url} title={title} size="grid" />
           {ready && (
             <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 opacity-0 transition group-hover:bg-black/40 group-hover:opacity-100">
               <span className="flex items-center gap-1.5 rounded-md bg-background/90 px-2.5 py-1 text-xs font-medium">
@@ -235,7 +216,7 @@ function AudiobookCard({ book }: { book: Audiobook }) {
           )}
         </div>
         <div className="absolute left-1.5 top-1.5">
-          <StatusBadge book={book} />
+          <StatusBadge item={item} />
         </div>
       </div>
       <div>
@@ -244,9 +225,9 @@ function AudiobookCard({ book }: { book: Audiobook }) {
         </div>
         <div className="truncate text-xs text-muted-foreground">
           {[
-            book.track_count ? `${book.track_count} tracks` : null,
+            item.track_count ? `${item.track_count} tracks` : null,
             duration,
-            book.container_type ? book.container_type.toUpperCase() : null,
+            item.container_type ? item.container_type.toUpperCase() : null,
           ]
             .filter(Boolean)
             .join(" · ") || (ready ? "Tap to play" : "Processing…")}
@@ -256,109 +237,11 @@ function AudiobookCard({ book }: { book: Audiobook }) {
   );
 }
 
-function AudiobooksPanel() {
-  const [books, setBooks] = useState<Audiobook[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setIsLoading(true);
-    try {
-      const data = await listAudiobooks();
-      setBooks(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load audiobooks");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load(true);
-    // Live status: re-fetch (without the loading skeleton) so a Processing…
-    // row flips to Ready — with its freshly-populated track_count / duration —
-    // as the backend finishes.
-    const unsubscribe = onAudiobookStatus(() => {
-      void load();
-    });
-    return unsubscribe;
-  }, [load]);
-
-  if (isLoading) {
-    return (
-      <div
-        role="status"
-        aria-label="Loading audiobooks"
-        aria-busy="true"
-        className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-      >
-        <span className="sr-only">Loading audiobooks…</span>
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="aspect-[2/3] w-full rounded-lg" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-3 w-1/2" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div
-        role="alert"
-        className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive flex items-center justify-between gap-3"
-      >
-        <span>{error}</span>
-        <button
-          type="button"
-          className="shrink-0 underline underline-offset-2 font-medium"
-          onClick={() => void load(true)}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-
-  if (books.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-        <HeadphonesIcon className="size-12 mb-4 text-muted-foreground/40" />
-        <p className="text-sm">No audiobooks yet</p>
-        <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
-          <SearchIcon className="size-3.5" />
-          Search for an audiobook to download
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      {books.map((book) => (
-        <AudiobookCard key={book.md5} book={book} />
-      ))}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
-// Filter helpers — only surface options that exist in the data
+// Filter select (options come from backend facets)
 // ---------------------------------------------------------------------------
 
 const ALL = "__all";
-
-function distinctValues(items: LibraryItem[], key: keyof LibraryItem): string[] {
-  const set = new Set<string>();
-  for (const item of items) {
-    const value = item[key];
-    if (typeof value === "string" && value.trim()) set.add(value);
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b));
-}
 
 function FilterSelect({
   label,
@@ -402,10 +285,18 @@ function FilterSelect({
 
 type Tab = "books" | "audiobooks";
 
+const EMPTY_FACETS: LibraryFacets = {
+  content_types: [],
+  extensions: [],
+  languages: [],
+};
+
 export default function LibraryPage() {
   const [tab, setTab] = useState<Tab>("books");
 
   const [items, setItems] = useState<LibraryItem[]>([]);
+  const [facets, setFacets] = useState<LibraryFacets>(EMPTY_FACETS);
+  const [totalEligible, setTotalEligible] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -426,36 +317,53 @@ export default function LibraryPage() {
     window.localStorage.setItem(VIEW_KEY, next);
   };
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await listLibrary();
-      setItems(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load library");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (showSpinner = true) => {
+      if (showSpinner) setIsLoading(true);
+      const params: LibraryQueryParams = {
+        media_kind: tab === "books" ? "books" : "audiobooks",
+        sort: tab === "books" ? sort : "recent",
+        content_type: tab === "books" && category !== ALL ? category : null,
+        extension: tab === "books" && format !== ALL ? format : null,
+        language: tab === "books" && language !== ALL ? language : null,
+      };
+      try {
+        const data = await listLibrary(params);
+        setItems(data.items);
+        setFacets(data.facets);
+        setTotalEligible(data.total_eligible);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load library");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [tab, sort, category, format, language]
+  );
 
   useEffect(() => {
-    void load();
+    void load(true);
   }, [load]);
 
-  const categories = useMemo(() => distinctValues(items, "content_type"), [items]);
-  const formats = useMemo(() => distinctValues(items, "extension"), [items]);
-  const languages = useMemo(() => distinctValues(items, "language"), [items]);
+  // Live audiobook status: re-fetch without skeleton so Processing… flips to Ready.
+  useEffect(() => {
+    if (tab !== "audiobooks") return;
+    const unsubscribe = onAudiobookStatus(() => {
+      void load(false);
+    });
+    return unsubscribe;
+  }, [tab, load]);
 
-  const visibleItems = useMemo(() => {
-    const filtered = items.filter(
-      (item) =>
-        (category === ALL || item.content_type === category) &&
-        (format === ALL || item.extension === format) &&
-        (language === ALL || item.language === language)
-    );
-    return filtered.sort((a, b) => compareItems(a, b, sort));
-  }, [items, sort, category, format, language]);
+  const switchTab = (next: Tab) => {
+    setTab(next);
+    // Reset facet filters when leaving books so stale filters don't stick.
+    if (next === "audiobooks") {
+      setCategory(ALL);
+      setFormat(ALL);
+      setLanguage(ALL);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -464,7 +372,7 @@ export default function LibraryPage() {
         <Button
           variant={tab === "books" ? "secondary" : "ghost"}
           size="sm"
-          onClick={() => setTab("books")}
+          onClick={() => switchTab("books")}
           aria-pressed={tab === "books"}
         >
           <BookOpenIcon className="size-4" />
@@ -473,7 +381,7 @@ export default function LibraryPage() {
         <Button
           variant={tab === "audiobooks" ? "secondary" : "ghost"}
           size="sm"
-          onClick={() => setTab("audiobooks")}
+          onClick={() => switchTab("audiobooks")}
           aria-pressed={tab === "audiobooks"}
         >
           <HeadphonesIcon className="size-4" />
@@ -481,75 +389,73 @@ export default function LibraryPage() {
         </Button>
       </div>
 
-      {tab === "audiobooks" ? (
-        <AudiobooksPanel />
-      ) : (
-        <>
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="w-44">
-            <Select value={sort} onValueChange={(v) => setSort((v as SortKey) ?? "author")}>
-              <SelectTrigger className="w-full" aria-label="Sort library">
-                <SelectValue>
-                  {(v) => `Sort: ${SORT_LABELS[(v as SortKey) ?? "author"]}`}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {SORT_LABELS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      {/* Toolbar — sort/filter for books; view toggle for books only (audiobooks stay grid) */}
+      {tab === "books" && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="w-44">
+              <Select value={sort} onValueChange={(v) => setSort((v as SortKey) ?? "author")}>
+                <SelectTrigger className="w-full" aria-label="Sort library">
+                  <SelectValue>
+                    {(v) => `Sort: ${SORT_LABELS[(v as SortKey) ?? "author"]}`}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+                    <SelectItem key={key} value={key}>
+                      {SORT_LABELS[key]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <FilterSelect
+              label="Categories"
+              value={category}
+              options={facets.content_types}
+              onChange={setCategory}
+            />
+            <FilterSelect
+              label="Formats"
+              value={format}
+              options={facets.extensions}
+              onChange={setFormat}
+              format={(v) => v.toUpperCase()}
+            />
+            <FilterSelect
+              label="Languages"
+              value={language}
+              options={facets.languages}
+              onChange={setLanguage}
+            />
           </div>
 
-          <FilterSelect
-            label="Categories"
-            value={category}
-            options={categories}
-            onChange={setCategory}
-          />
-          <FilterSelect
-            label="Formats"
-            value={format}
-            options={formats}
-            onChange={setFormat}
-            format={(v) => v.toUpperCase()}
-          />
-          <FilterSelect
-            label="Languages"
-            value={language}
-            options={languages}
-            onChange={setLanguage}
-          />
+          {/* View toggle */}
+          <div className="flex items-center gap-1 rounded-lg border p-0.5">
+            <Button
+              variant={view === "grid" ? "secondary" : "ghost"}
+              size="icon-sm"
+              onClick={() => setAndStoreView("grid")}
+              aria-label="Grid view"
+              aria-pressed={view === "grid"}
+              title="Grid view"
+            >
+              <LayoutGridIcon className="size-4" />
+            </Button>
+            <Button
+              variant={view === "list" ? "secondary" : "ghost"}
+              size="icon-sm"
+              onClick={() => setAndStoreView("list")}
+              aria-label="List view"
+              aria-pressed={view === "list"}
+              title="List view"
+            >
+              <ListIcon className="size-4" />
+            </Button>
+          </div>
         </div>
-
-        {/* View toggle */}
-        <div className="flex items-center gap-1 rounded-lg border p-0.5">
-          <Button
-            variant={view === "grid" ? "secondary" : "ghost"}
-            size="icon-sm"
-            onClick={() => setAndStoreView("grid")}
-            aria-label="Grid view"
-            aria-pressed={view === "grid"}
-            title="Grid view"
-          >
-            <LayoutGridIcon className="size-4" />
-          </Button>
-          <Button
-            variant={view === "list" ? "secondary" : "ghost"}
-            size="icon-sm"
-            onClick={() => setAndStoreView("list")}
-            aria-label="List view"
-            aria-pressed={view === "list"}
-            title="List view"
-          >
-            <ListIcon className="size-4" />
-          </Button>
-        </div>
-      </div>
+      )}
 
       {error && (
         <div
@@ -560,7 +466,7 @@ export default function LibraryPage() {
           <button
             type="button"
             className="shrink-0 underline underline-offset-2 font-medium"
-            onClick={() => void load()}
+            onClick={() => void load(true)}
           >
             Retry
           </button>
@@ -570,12 +476,14 @@ export default function LibraryPage() {
       {isLoading ? (
         <div
           role="status"
-          aria-label="Loading library"
+          aria-label={tab === "books" ? "Loading library" : "Loading audiobooks"}
           aria-busy="true"
           className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
         >
-          <span className="sr-only">Loading library…</span>
-          {Array.from({ length: 10 }).map((_, i) => (
+          <span className="sr-only">
+            {tab === "books" ? "Loading library…" : "Loading audiobooks…"}
+          </span>
+          {Array.from({ length: tab === "books" ? 10 : 5 }).map((_, i) => (
             <div key={i} className="space-y-2">
               <Skeleton className="aspect-[2/3] w-full rounded-lg" />
               <Skeleton className="h-4 w-3/4" />
@@ -583,22 +491,41 @@ export default function LibraryPage() {
             </div>
           ))}
         </div>
-      ) : error ? null : visibleItems.length === 0 ? (
+      ) : error ? null : items.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-          <LibraryIcon className="size-12 mb-4 text-muted-foreground/40" />
-          <p className="text-sm">
-            {items.length === 0 ? "No downloads yet" : "No items match these filters"}
-          </p>
-          {items.length === 0 && (
-            <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
-              <SearchIcon className="size-3.5" />
-              Search for something to download
-            </Button>
+          {tab === "audiobooks" ? (
+            <>
+              <HeadphonesIcon className="size-12 mb-4 text-muted-foreground/40" />
+              <p className="text-sm">No audiobooks yet</p>
+              <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
+                <SearchIcon className="size-3.5" />
+                Search for an audiobook to download
+              </Button>
+            </>
+          ) : (
+            <>
+              <LibraryIcon className="size-12 mb-4 text-muted-foreground/40" />
+              <p className="text-sm">
+                {totalEligible === 0 ? "No downloads yet" : "No items match these filters"}
+              </p>
+              {totalEligible === 0 && (
+                <Button variant="outline" size="sm" className="mt-4" render={<a href="#/search" />}>
+                  <SearchIcon className="size-3.5" />
+                  Search for something to download
+                </Button>
+              )}
+            </>
           )}
+        </div>
+      ) : tab === "audiobooks" ? (
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          {items.map((item) => (
+            <AudiobookCard key={item.md5} item={item} />
+          ))}
         </div>
       ) : view === "grid" ? (
         <div className="grid gap-4 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {visibleItems.map((item, i) => (
+          {items.map((item, i) => (
             <button
               key={item.md5}
               type="button"
@@ -608,7 +535,7 @@ export default function LibraryPage() {
               title={item.title || undefined}
             >
               <div className="relative">
-                <Cover coverUrl={item.cover_url} title={item.title} size="grid" />
+                <Cover coverUrl={item.cover_url} title={item.title || "Untitled"} size="grid" />
                 {item.extension && (
                   <Badge
                     variant="secondary"
@@ -643,7 +570,7 @@ export default function LibraryPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleItems.map((item) => (
+              {items.map((item) => (
                 <TableRow
                   key={item.md5}
                   tabIndex={0}
@@ -659,7 +586,7 @@ export default function LibraryPage() {
                   }}
                 >
                   <TableCell className="w-16 p-2">
-                    <Cover coverUrl={item.cover_url} title={item.title} size="thumb" />
+                    <Cover coverUrl={item.cover_url} title={item.title || "Untitled"} size="thumb" />
                   </TableCell>
                   <TableCell className="max-w-xs">
                     <span className="truncate block font-medium" title={item.title || undefined}>
@@ -680,8 +607,6 @@ export default function LibraryPage() {
             </TableBody>
           </Table>
         </div>
-      )}
-        </>
       )}
       <DetailSheet
         item={detailItem}

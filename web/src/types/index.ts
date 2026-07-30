@@ -54,9 +54,10 @@ export interface HistoryEntry {
   error: string | null;
 }
 
+/** Shared core + Book/Audiobook variant fields from the DB-driven Library query. */
 export interface LibraryItem {
   md5: string;
-  title: string;
+  title: string | null;
   filename: string | null;
   author: string | null;
   year: number | null;
@@ -67,6 +68,39 @@ export interface LibraryItem {
   cover_url: string | null;
   filesize_bytes: number | null;
   completed_at: string | null;
+  /** Authoritative classification: "book" | "audiobook" (NULL DB rows → book). */
+  media_type: "book" | "audiobook";
+  /** Same as media_type; explicit variant tag for consumers. */
+  variant: "book" | "audiobook";
+  // Audiobook variant fields (null for books)
+  status: string | null;
+  container_type: string | null;
+  folder_path: string | null;
+  total_duration_seconds: number | null;
+  track_count: number | null;
+  error_message: string | null;
+}
+
+export interface LibraryFacets {
+  content_types: string[];
+  extensions: string[];
+  languages: string[];
+}
+
+export interface LibraryQueryParams {
+  media_kind?: "books" | "audiobooks" | "all";
+  content_type?: string | null;
+  extension?: string | null;
+  language?: string | null;
+  sort?: "author" | "year" | "title" | "recent";
+}
+
+export interface LibraryQueryResult {
+  items: LibraryItem[];
+  facets: LibraryFacets;
+  /** Count after media_kind, before facet filters (empty vs no-match). */
+  total_eligible: number;
+  filtered_count: number;
 }
 
 export interface Audiobook {
@@ -163,6 +197,8 @@ export interface SanCitroApi {
   cancelDownload(md5: string): Promise<{ status?: string; error?: string }>;
   getDownloads(): Promise<DownloadStatus[]>;
   getHistory(): Promise<HistoryEntry[]>;
+  /** Download history aggregate stats (Python bridge). */
+  getStats(): Promise<Record<string, unknown>>;
   getSettings(): Promise<ConfigModel>;
   updateSettings(params: Partial<ConfigModel>): Promise<ConfigModel>;
   reloadConfig(): Promise<ConfigModel>;
@@ -185,9 +221,9 @@ export interface SanCitroApi {
   quitAndInstall(): Promise<void>;
   /** Subscribe to pushed update-status events. Returns an unsubscribe function. */
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
-  /** List completed downloads with threaded metadata (the library). */
-  listLibrary(): Promise<LibraryItem[]>;
-  /** List all audiobooks tracked in the audiobook DB. */
+  /** DB-driven Library query (filters, sort, facets). */
+  listLibrary(params?: LibraryQueryParams): Promise<LibraryQueryResult>;
+  /** List all audiobooks tracked in the audiobook DB (detail/player path). */
   listAudiobooks(): Promise<Audiobook[]>;
   /** Get detail (audiobook row + chapters) for a single audiobook. */
   getAudiobookDetail(md5: string): Promise<AudiobookDetail>;

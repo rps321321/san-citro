@@ -163,13 +163,18 @@ def main() -> None:
 
     bridge_handlers.register_handlers()
 
-    # Clean up downloads orphaned by a previous unclean shutdown
+    # Schema evolution first — fail loudly if the history DB cannot be evolved.
+    from src.config_manager import get_config, get_default_history_db_path
+    from src.migrations import run_migrations
+
+    config = get_config()
+    history_db = config.get("history_db") or get_default_history_db_path()
+    run_migrations(history_db)
+
+    # Clean up downloads orphaned by a previous unclean shutdown (best-effort)
     try:
-        from src.config_manager import get_config
         from src.download_history import cleanup_orphaned_downloads
 
-        config = get_config()
-        history_db = config.get("history_db")
         cleanup_orphaned_downloads(db_path=history_db)
     except Exception as exc:
         logger.warning("Could not clean up orphaned downloads: %s", exc)

@@ -1,29 +1,37 @@
 "use client";
 
 /**
- * Telemetry client for San Citro — sends analytics to Supabase.
+ * Telemetry deep module — single owner of renderer telemetry delivery.
  *
- * Data collected:
- * - Usage events (searches, downloads, page views, UI interactions)
- * - Performance metrics (latencies, speeds, timings)
- * - Errors (crashes, IPC failures, network errors)
- * - System info (hardware, OS, screen, versions)
- * - Session tracking (start/end, duration, daily activity)
+ * Capture modules submit **typed facts**. This module owns:
+ * - table mapping + row construction
+ * - shared telemetry context (device_id, session_id, app_version)
+ * - auth headers + Supabase delivery
+ * - ordinary batch queue / flush coordination
+ * - first-class immediate delivery for heatmap + replay chunks
  *
- * All data is keyed by a persistent device_id (UUID in localStorage)
- * and a per-session session_id. The Supabase anon key only allows
- * inserts — the data is write-only from the app's perspective.
+ * Policies (ADR-0001–0003):
+ * - Ordinary facts: batch ~30s or max 50
+ * - Heatmap / replay: delivered when capture modules flush their own buffers
+ * - Missing Supabase config → silent no-op
+ * - Network / non-2xx → log, never throw into product
+ * - Memory-only; no durable queue
+ * - Renderer hands Python bridge context via setTelemetryContext at session start
  */
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+import {
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY,
+  isSupabaseConfigured,
+} from "./supabase-config";
 
-import { SUPABASE_URL, SUPABASE_ANON_KEY, isSupabaseConfigured } from "./supabase-config";
+// ---------------------------------------------------------------------------
+// Config / policy constants
+// ---------------------------------------------------------------------------
 
 const DEVICE_ID_KEY = "san-citro:device-id";
-const BATCH_INTERVAL_MS = 30_000; // Flush events every 30s
-const MAX_BATCH_SIZE = 50;
+export const ORDINARY_BATCH_INTERVAL_MS = 30_000;
+export const ORDINARY_MAX_BATCH_SIZE = 50;
 
 // ---------------------------------------------------------------------------
 // Device & Session IDs
@@ -39,31 +47,100 @@ function generateId(): string {
 
 function getDeviceId(): string {
   if (typeof window === "undefined") return "server";
-  let id = localStorage.getItem(DEVICE_ID_KEY);
-  if (!id) {
-    id = generateId();
-    localStorage.setItem(DEVICE_ID_KEY, id);
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = generateId();
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return "server";
   }
-  return id;
 }
 
-const sessionId = generateId();
+let sessionId = generateId();
 
 // ---------------------------------------------------------------------------
-// Batched sender
+// Injectible transport + test seams
 // ---------------------------------------------------------------------------
 
-interface QueuedInsert {
-  table: string;
-  row: Record<string, unknown>;
+/** Posts one table's rows to the remote sink. Must never throw into product code. */
+export type TelemetryTransport = (
+  table: string,
+  rows: Record<string, unknown>[]
+) => Promise<void>;
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+interface TelemetryTimers {
+  setTimeout: (fn: () => void, ms: number) => TimerHandle;
+  clearTimeout: (id: TimerHandle) => void;
 }
 
-let queue: QueuedInsert[] = [];
-let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let injectedTransport: TelemetryTransport | null = null;
+let configuredOverride: boolean | null = null;
+let timers: TelemetryTimers = {
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (id) => clearTimeout(id),
+};
+
+function isConfigured(): boolean {
+  if (configuredOverride !== null) return configuredOverride;
+  return isSupabaseConfigured();
+}
+
+function defaultTransport(
+  table: string,
+  rows: Record<string, unknown>[]
+): Promise<void> {
+  return fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Prefer: "return=minimal",
+    },
+    body: JSON.stringify(rows),
+  }).then(async (res) => {
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.warn(
+        `[telemetry] Failed to send to ${table}: ${res.status} ${body}`
+      );
+    }
+  });
+}
+
+function getTransport(): TelemetryTransport {
+  return injectedTransport ?? defaultTransport;
+}
+
+/**
+ * Deliver rows immediately (no ordinary batch queue).
+ * Enriches nothing — callers (or fact helpers) own row shape.
+ * Never throws; missing config is a no-op.
+ */
+async function deliverImmediate(
+  table: string,
+  rows: Record<string, unknown>[]
+): Promise<void> {
+  if (!isConfigured() || rows.length === 0) return;
+  try {
+    await getTransport()(table, rows);
+  } catch (err) {
+    // Network failure — silently drop. Telemetry should never break the app.
+    console.debug("[telemetry] Network error:", err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared context helpers
+// ---------------------------------------------------------------------------
 
 function getAppVersion(): string {
   if (typeof window === "undefined") return "unknown";
-  // Read version from Electron's preload-injected API, fall back gracefully
   const api = window.sanCitro;
   if (api && "appVersion" in api) {
     return (api as unknown as { appVersion: string }).appVersion || "unknown";
@@ -80,33 +157,42 @@ function getOsPlatform(): string {
   return "unknown";
 }
 
-async function sendToSupabase(table: string, rows: Record<string, unknown>[]): Promise<void> {
-  if (!isSupabaseConfigured()) return;
-  try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify(rows),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.warn(`[telemetry] Failed to send to ${table}: ${res.status} ${body}`);
-    }
-  } catch (err) {
-    // Network failure — silently drop. Telemetry should never break the app.
-    console.debug("[telemetry] Network error:", err);
-  }
+/** Full context stamped on ordinary batched facts. */
+function ordinaryContext(): {
+  session_id: string;
+  device_id: string;
+  app_version: string;
+} {
+  return {
+    session_id: sessionId,
+    device_id: getDeviceId(),
+    app_version: getAppVersion(),
+  };
 }
+
+/** Identity context for heatmap / replay (matches prior row shapes). */
+function identityContext(): { session_id: string; device_id: string } {
+  return {
+    session_id: sessionId,
+    device_id: getDeviceId(),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Ordinary batched sender
+// ---------------------------------------------------------------------------
+
+interface QueuedInsert {
+  table: string;
+  row: Record<string, unknown>;
+}
+
+let queue: QueuedInsert[] = [];
+let flushTimer: TimerHandle | null = null;
 
 function flush(): void {
   if (queue.length === 0) return;
 
-  // Group by table
   const grouped = new Map<string, Record<string, unknown>[]>();
   for (const item of queue) {
     const existing = grouped.get(item.table) || [];
@@ -115,28 +201,30 @@ function flush(): void {
   }
   queue = [];
 
-  // Send each table's batch
+  if (flushTimer) {
+    timers.clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+
   for (const [table, rows] of grouped) {
-    sendToSupabase(table, rows);
+    void deliverImmediate(table, rows);
   }
 }
 
 function enqueue(table: string, row: Record<string, unknown>): void {
   const enriched = {
-    session_id: sessionId,
-    device_id: getDeviceId(),
-    app_version: getAppVersion(),
+    ...ordinaryContext(),
     ...row,
   };
   queue.push({ table, row: enriched });
 
-  if (queue.length >= MAX_BATCH_SIZE) {
+  if (queue.length >= ORDINARY_MAX_BATCH_SIZE) {
     flush();
   } else if (!flushTimer) {
-    flushTimer = setTimeout(() => {
+    flushTimer = timers.setTimeout(() => {
       flushTimer = null;
       flush();
-    }, BATCH_INTERVAL_MS);
+    }, ORDINARY_BATCH_INTERVAL_MS);
   }
 }
 
@@ -144,7 +232,7 @@ function enqueue(table: string, row: Record<string, unknown>): void {
 if (typeof window !== "undefined") {
   window.addEventListener("beforeunload", () => {
     if (flushTimer) {
-      clearTimeout(flushTimer);
+      timers.clearTimeout(flushTimer);
       flushTimer = null;
     }
     flush();
@@ -152,7 +240,7 @@ if (typeof window !== "undefined") {
 }
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public fact API — ordinary product facts
 // ---------------------------------------------------------------------------
 
 /** Track a generic event */
@@ -284,7 +372,7 @@ export function trackSystemSnapshot(info: {
 /** Start a session (call on app mount) */
 export function startSession(): void {
   // Send session start immediately (not batched)
-  sendToSupabase("sessions", [
+  void deliverImmediate("sessions", [
     {
       id: sessionId,
       device_id: getDeviceId(),
@@ -327,7 +415,7 @@ export function endSession(durationSeconds: number): void {
   flush(); // Ensure everything is sent before the app closes
 }
 
-/** Force flush all queued events */
+/** Force flush all queued ordinary events */
 export { flush as flushTelemetry };
 
 /** Get session ID for correlation */
@@ -426,7 +514,7 @@ export function incrementEngagement(key: keyof typeof engagement): void {
 
 /** Flush engagement summary (called at session end) */
 export function flushEngagement(durationSeconds: number): void {
-  sendToSupabase("engagement_summary", [
+  void deliverImmediate("engagement_summary", [
     {
       session_id: sessionId,
       device_id: getDeviceId(),
@@ -443,4 +531,170 @@ export function flushEngagement(durationSeconds: number): void {
       app_version: getAppVersion(),
     },
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// First-class capture facts — heatmap + session replay
+// (capture modules own buffer/timing; this module owns table + context + delivery)
+// ---------------------------------------------------------------------------
+
+export interface ClickHeatmapFact {
+  x: number;
+  y: number;
+  viewport_width: number;
+  viewport_height: number;
+  element_tag: string;
+  element_selector: string;
+  element_text: string;
+  page_path: string;
+}
+
+export interface ScrollDepthFact {
+  page_path: string;
+  max_depth_percent: number;
+  time_at_25_ms: number;
+  time_at_50_ms: number;
+  time_at_75_ms: number;
+  time_at_100_ms: number;
+  total_scroll_events: number;
+}
+
+export interface MouseTrackingFact {
+  page_path: string;
+  positions: Array<{ x: number; y: number; t: number }>;
+  sample_count: number;
+  duration_ms: number;
+}
+
+export interface ReplayChunkFact {
+  chunk_index: number;
+  events: unknown[];
+  event_count: number;
+  compressed_size_bytes: number;
+}
+
+/** Submit click heatmap facts (immediate delivery; identity context). */
+export function submitClickHeatmap(facts: ClickHeatmapFact[]): void {
+  if (facts.length === 0) return;
+  const ctx = identityContext();
+  void deliverImmediate(
+    "click_heatmap",
+    facts.map((f) => ({
+      ...ctx,
+      x: f.x,
+      y: f.y,
+      viewport_width: f.viewport_width,
+      viewport_height: f.viewport_height,
+      element_tag: f.element_tag,
+      element_selector: f.element_selector,
+      element_text: f.element_text,
+      page_path: f.page_path,
+    }))
+  );
+}
+
+/** Submit scroll depth fact (immediate delivery; identity context). */
+export function submitScrollDepth(fact: ScrollDepthFact): void {
+  void deliverImmediate("scroll_depth", [
+    {
+      ...identityContext(),
+      page_path: fact.page_path,
+      max_depth_percent: fact.max_depth_percent,
+      time_at_25_ms: fact.time_at_25_ms,
+      time_at_50_ms: fact.time_at_50_ms,
+      time_at_75_ms: fact.time_at_75_ms,
+      time_at_100_ms: fact.time_at_100_ms,
+      total_scroll_events: fact.total_scroll_events,
+    },
+  ]);
+}
+
+/** Submit mouse tracking fact (immediate delivery; identity context). */
+export function submitMouseTracking(fact: MouseTrackingFact): void {
+  void deliverImmediate("mouse_tracking", [
+    {
+      ...identityContext(),
+      page_path: fact.page_path,
+      positions: fact.positions,
+      sample_count: fact.sample_count,
+      duration_ms: fact.duration_ms,
+    },
+  ]);
+}
+
+/** Submit a replay chunk (immediate delivery; identity context). */
+export function submitReplayChunk(fact: ReplayChunkFact): void {
+  void deliverImmediate("replay_chunks", [
+    {
+      ...identityContext(),
+      chunk_index: fact.chunk_index,
+      events: fact.events,
+      event_count: fact.event_count,
+      compressed_size_bytes: fact.compressed_size_bytes,
+    },
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// Test seams (not for product code)
+// ---------------------------------------------------------------------------
+
+/** Inject transport (null restores default fetch-based transport). */
+export function __setTelemetryTransportForTests(
+  transport: TelemetryTransport | null
+): void {
+  injectedTransport = transport;
+}
+
+/** Override configured check (null restores supabase-config). */
+export function __setTelemetryConfiguredForTests(value: boolean | null): void {
+  configuredOverride = value;
+}
+
+/** Inject timer functions for batch-interval tests (null restores real timers). */
+export function __setTelemetryTimersForTests(
+  next: TelemetryTimers | null
+): void {
+  timers = next ?? {
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+  };
+}
+
+/** Drain ordinary queue length (for assertions). */
+export function __getOrdinaryQueueLengthForTests(): number {
+  return queue.length;
+}
+
+/** Reset in-memory telemetry state between tests. */
+export function __resetTelemetryStateForTests(): void {
+  if (flushTimer) {
+    timers.clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  queue = [];
+  injectedTransport = null;
+  configuredOverride = null;
+  timers = {
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id),
+  };
+  discoveredFeatures.clear();
+  engagement.searchCount = 0;
+  engagement.downloadStarted = 0;
+  engagement.downloadCompleted = 0;
+  engagement.pagesVisited = 0;
+  engagement.interactionsCount = 0;
+  engagement.themeToggles = 0;
+  engagement.exportsCount = 0;
+  engagement.settingsChanges = 0;
+  engagement.diagnosticsRun = false;
+  // Keep sessionId stable within a module load; tests that need a fresh
+  // session can re-import or call __rotateSessionIdForTests.
+}
+
+/** Rotate session id (tests only). */
+export function __rotateSessionIdForTests(): string {
+  sessionId = generateId();
+  return sessionId;
 }

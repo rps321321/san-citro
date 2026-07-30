@@ -17,7 +17,7 @@ class TestArgParser:
             patch("sys.argv", ["cli", "diagnose"]),
             patch("src.cli.run_diagnostics") as mock_diag,
             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
-            patch("src.cli.init_downloads_table"),
+            patch("src.cli.run_migrations"),
             patch("src.cli.setup_logging", return_value=MagicMock()),
         ):
             main()
@@ -28,7 +28,7 @@ class TestArgParser:
             patch("sys.argv", ["cli", "history", "-n", "5"]),
             patch("src.cli.print_download_history") as mock_hist,
             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
-            patch("src.cli.init_downloads_table"),
+            patch("src.cli.run_migrations"),
             patch("src.cli.setup_logging", return_value=MagicMock()),
         ):
             main()
@@ -58,7 +58,7 @@ class TestArgParser:
             patch("sys.argv", ["cli", "--verbose", "diagnose"]),
             patch("src.cli.run_diagnostics"),
             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
-            patch("src.cli.init_downloads_table"),
+            patch("src.cli.run_migrations"),
             patch("src.cli.setup_logging", return_value=MagicMock()) as mock_log,
         ):
             main()
@@ -122,7 +122,7 @@ class TestDownloadCommand:
             patch("src.cli.AnnasArchiveTool", return_value=MagicMock()),
             patch("src.cli.create_strategy", return_value=MagicMock()),
             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
-            patch("src.cli.init_downloads_table"),
+            patch("src.cli.run_migrations"),
             patch("src.cli.console"),
             patch("src.cli.setup_logging", return_value=MagicMock()),
         ):
@@ -138,7 +138,7 @@ class TestDownloadCommand:
         cfg = dict(_BASE_CONFIG, concurrency=7)
         with (
             patch("src.cli.get_config", return_value=cfg),
-            patch("src.cli.init_downloads_table"),
+            patch("src.cli.run_migrations"),
             patch("src.cli.create_strategy", return_value=MagicMock()),
             patch("src.cli.setup_logging", return_value=MagicMock()),
             patch("sys.argv", ["prog", "--concurrency", "5", "download", "aa" * 16]),
@@ -160,7 +160,7 @@ class TestSearchFilters:
         with (
             patch("sys.argv", ["cli", "search", "python", "--after", "2000"]),
             patch("src.cli.get_config", return_value=dict(_BASE_CONFIG)),
-            patch("src.cli.init_downloads_table"),
+            patch("src.cli.run_migrations"),
             patch("src.cli.create_strategy", return_value=MagicMock()),
             patch("src.cli.AnnasArchiveTool", return_value=tool),
             patch("src.cli.scrape_annas_archive", return_value=rows),

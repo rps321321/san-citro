@@ -45,7 +45,12 @@ def _connect(db_path: str | None = None) -> sqlite3.Connection:
 
 
 def _ensure_table(db_path: str | None = None) -> None:
-    """Create the downloads table once per db_path, guarded by a lock."""
+    """Ensure schema exists once per db_path via canonical migrations (safety net).
+
+    Production entry points (CLI, bridge) must call :func:`migrations.run_migrations`
+    at startup. This remains so isolated unit tests and late call sites still work.
+    Schema ownership lives in :mod:`migrations`, not here.
+    """
     resolved = _resolve_db_path(db_path)
     if resolved in _initialized_dbs:
         return
@@ -53,21 +58,10 @@ def _ensure_table(db_path: str | None = None) -> None:
         # Double-check after acquiring the lock
         if resolved in _initialized_dbs:
             return
-        with _connect(db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS downloads (
-                    md5             TEXT PRIMARY KEY,
-                    title           TEXT,
-                    filename        TEXT,
-                    status          TEXT,
-                    started_at      TIMESTAMP,
-                    completed_at    TIMESTAMP,
-                    filesize_bytes  INTEGER,
-                    error           TEXT
-                )
-            """)
-            _migrate_meta_columns(conn)
-            conn.commit()
+        # Lazy import avoids a circular dependency with migrations.
+        from .migrations import run_migrations
+
+        run_migrations(resolved)
         _initialized_dbs.add(resolved)
 
 
