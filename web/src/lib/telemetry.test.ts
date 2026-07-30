@@ -27,11 +27,17 @@ import {
   submitMouseTracking,
   submitReplayChunk,
   submitScrollDepth,
+  trackBridgeCall,
   trackError,
   trackEvent,
+  trackFeatureDiscovery,
+  trackFunnelStep,
   trackInteraction,
   trackPageView,
+  trackReadingProgress,
   trackSearch,
+  trackSettingsChange,
+  trackSystemSnapshot,
   type TelemetryTransport,
 } from "./telemetry";
 
@@ -160,6 +166,132 @@ describe("ordinary fact categories", () => {
       assert.equal(byTable[table].device_id, getDeviceId());
       assert.ok("app_version" in byTable[table]);
     }
+  });
+
+  test("reading / system / funnel / bridge / feature / settings use typed inputs + shared context", async () => {
+    const { delivered, transport } = createCaptureTransport();
+    __setTelemetryTransportForTests(transport);
+    __setTelemetryConfiguredForTests(true);
+
+    const session = getSessionId();
+    const device = getDeviceId();
+
+    trackReadingProgress({
+      md5: "deadbeef",
+      title: "Sample Book",
+      event: "progress",
+      progressPercent: 42,
+      chapter: "3",
+      elapsedSeconds: 90,
+    });
+    trackSystemSnapshot({
+      ramTotalMb: 8192,
+      cpuCores: 8,
+      screenWidth: 1920,
+      screenHeight: 1080,
+    });
+    trackFunnelStep("search_to_download", "search_performed", 1, {
+      query: "q",
+    });
+    trackBridgeCall({
+      method: "query_library",
+      durationMs: 12,
+      success: true,
+      paramsSizeBytes: 10,
+      responseSizeBytes: 200,
+    });
+    trackFeatureDiscovery("reader");
+    trackFeatureDiscovery("reader"); // deduped — only one row
+    trackSettingsChange("concurrency", "2", "4");
+
+    // All of the above ordinary facts batch; none delivered yet
+    assert.equal(__getOrdinaryQueueLengthForTests(), 6);
+
+    flushTelemetry();
+    await settle();
+
+    assert.equal(__getOrdinaryQueueLengthForTests(), 0);
+
+    const byTable = Object.fromEntries(
+      delivered.map((d) => [d.table, d.rows[0]])
+    );
+
+    assert.equal(byTable.reading_progress.md5, "deadbeef");
+    assert.equal(byTable.reading_progress.event, "progress");
+    assert.equal(byTable.reading_progress.progress_percent, 42);
+    assert.equal(byTable.reading_progress.chapter, "3");
+    assert.equal(byTable.reading_progress.elapsed_seconds, 90);
+
+    assert.equal(byTable.system_snapshots.ram_total_mb, 8192);
+    assert.equal(byTable.system_snapshots.cpu_cores, 8);
+    assert.equal(byTable.system_snapshots.screen_width, 1920);
+
+    assert.equal(byTable.funnel_events.funnel_name, "search_to_download");
+    assert.equal(byTable.funnel_events.step_name, "search_performed");
+    assert.equal(byTable.funnel_events.step_index, 1);
+    assert.deepEqual(byTable.funnel_events.metadata, { query: "q" });
+
+    assert.equal(byTable.bridge_performance.method, "query_library");
+    assert.equal(byTable.bridge_performance.duration_ms, 12);
+    assert.equal(byTable.bridge_performance.success, true);
+    assert.equal(byTable.bridge_performance.params_size_bytes, 10);
+
+    assert.equal(byTable.feature_discovery.feature_name, "reader");
+    assert.equal(
+      delivered.find((d) => d.table === "feature_discovery")!.rows.length,
+      1
+    );
+
+    assert.equal(byTable.settings_changes.setting_name, "concurrency");
+    assert.equal(byTable.settings_changes.old_value, "2");
+    assert.equal(byTable.settings_changes.new_value, "4");
+
+    // Shared device / session / app_version stamped exactly once per row
+    for (const table of [
+      "reading_progress",
+      "system_snapshots",
+      "funnel_events",
+      "bridge_performance",
+      "feature_discovery",
+      "settings_changes",
+    ]) {
+      const row = byTable[table];
+      assert.equal(row.session_id, session);
+      assert.equal(row.device_id, device);
+      assert.ok("app_version" in row);
+      // Context keys appear once at top level (not nested under a context blob)
+      assert.equal(
+        Object.keys(row).filter((k) => k === "session_id").length,
+        1
+      );
+      assert.equal(
+        Object.keys(row).filter((k) => k === "device_id").length,
+        1
+      );
+      assert.equal(
+        Object.keys(row).filter((k) => k === "app_version").length,
+        1
+      );
+    }
+  });
+
+  test("ordinary facts do not re-stamp context at delivery", async () => {
+    const { delivered, transport } = createCaptureTransport();
+    __setTelemetryTransportForTests(transport);
+    __setTelemetryConfiguredForTests(true);
+
+    trackEvent("once");
+    flushTelemetry();
+    await settle();
+
+    const row = delivered[0].rows[0];
+    // Row shape is flat identity fields + event fields only
+    assert.equal(row.event_name, "once");
+    assert.ok(typeof row.session_id === "string");
+    assert.ok(typeof row.device_id === "string");
+    assert.ok(typeof row.app_version === "string");
+    assert.equal("context" in row, false);
+    assert.equal("telemetry_context" in row, false);
   });
 });
 
