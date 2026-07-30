@@ -128,9 +128,9 @@ export interface AudiobookDetail {
   chapters: Chapter[];
 }
 
-// --------------- Persistent audiobook player ---------------
+// --------------- Persistent in-page audiobook player (ADR-0013) ---------------
 
-/** Display mode of the persistent player WebContentsView. */
+/** Display mode of the in-page player (PlayerContext / InPagePlayer). */
 export type PlayerMode = "mini" | "expanded" | "hidden";
 
 /** Saved playback position for an audiobook (null when never played). */
@@ -141,7 +141,7 @@ export interface AudiobookProgress {
   updated_at: string;
 }
 
-/** Payload pushed to the player view when a book is loaded for playback. */
+/** Result of playAudiobook — loaded into PlayerContext for the in-page player. */
 export interface PlayerLoadPayload {
   md5: string;
   detail: AudiobookDetail;

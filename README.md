@@ -87,14 +87,16 @@ All tests are fully offline (network mocked). No VPN or network access required.
 annas_archive_project/
 ├── src/                        # Python core (CLI + shared download engine)
 │   ├── annas_archive_tool.py   # HTTP client + download automation (MD5 verify, resume)
-│   ├── cli.py                  # CLI entry point
+│   ├── cli.py                  # CLI entry point (runs migrations before DB use)
 │   ├── scraper.py              # Live Anna's Archive search scraper
 │   ├── download_strategy.py    # Chrome / DirectHTTP download strategies
 │   ├── download_job.py         # Shared download lifecycle (CLI + Electron)
-│   ├── download_history.py     # SQLite download history
+│   ├── download_history.py     # SQLite download history queries (no lazy DDL)
+│   ├── library.py              # Sole Library collection query (filters/sort/facets)
+│   ├── audiobook_db.py         # Audiobook tables accessors (schema via migrations)
 │   ├── config_manager.py       # JSON config management
 │   ├── diagnostics.py          # System health checks
-│   ├── migrations.py           # SQLite schema migrations
+│   ├── migrations.py           # Sole owner of SQLite schema evolution
 │   ├── export.py               # Search-result exporters
 │   ├── logger.py               # Logging setup (Rich + rotating file)
 │   ├── shutdown.py             # Graceful SIGINT/SIGTERM handling
@@ -102,8 +104,9 @@ annas_archive_project/
 │   └── mock_data_generator.py  # Test fixture generator
 ├── tests/                      # pytest suite (offline, mocked network)
 ├── electron-app/               # Electron desktop app (San Citro)
-│   ├── src/                    # main / preload / ipc-handlers (TypeScript)
-│   └── python/                 # JSON-RPC bridge over src/
-├── web/                        # Next.js renderer (loaded by Electron)
+│   ├── src/                    # main, preload, ipc-handlers, command descriptor
+│   └── python/                 # JSON-RPC bridge over src/ (migrations at startup)
+├── web/                        # Next.js renderer (in-page player; telemetry deep module)
+│   └── src/lib/telemetry.ts    # Sole renderer Supabase emit boundary
 └── pyproject.toml              # Package + dependency configuration
 ```
