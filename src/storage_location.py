@@ -86,9 +86,8 @@ def _realpath_contained(candidate: str, out_dir_real: str) -> str | None:
         real = os.path.realpath(candidate)
     except OSError:
         return None
-    if real == out_dir_real or real.startswith(out_dir_real + os.sep):
-        if os.path.exists(real):
-            return real
+    if (real == out_dir_real or real.startswith(out_dir_real + os.sep)) and os.path.exists(real):
+        return real
     return None
 
 

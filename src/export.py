@@ -76,7 +76,7 @@ def export_table(
     table.add_column("Status", justify="center")
 
     for idx, row in enumerate(results, 1):
-        title, author, year, ext, md5, lang, size, pub, isbn = row
+        title, author, year, ext, md5, _lang, size, _pub, _isbn = row
         status = "[bold green]OWNED[/bold green]" if _is_owned(md5, owned_files) else "[red]Missing[/red]"
         table.add_row(
             str(idx),

@@ -17,10 +17,10 @@ from .annas_archive_tool import AnnasArchiveTool
 from .config_manager import clamp_concurrency, get_config, get_default_history_db_path, set_config_path
 from .diagnostics import run_diagnostics
 from .download_history import get_download_history
-from .migrations import SchemaMigrationError, run_migrations
 from .download_lifecycle import normalize_download_status, run_download
 from .download_strategy import DownloadStrategy, create_strategy
 from .logger import get_logger, setup_logging
+from .migrations import SchemaMigrationError, run_migrations
 from .scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
 from .shutdown import install_signal_handlers, is_cancelled
 from .utils import format_filesize
@@ -216,7 +216,7 @@ def _run_concurrent_downloads(
     results: list[DownloadResult] = []
 
     console.print(
-        f"\n[bold magenta]Starting Download Queue:[/bold magenta] " f"{len(targets)} book(s), concurrency={concurrency}"
+        f"\n[bold magenta]Starting Download Queue:[/bold magenta] {len(targets)} book(s), concurrency={concurrency}"
     )
 
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
@@ -498,9 +498,7 @@ def _dispatch(args: argparse.Namespace) -> None:
     tool: AnnasArchiveTool | None = None
     if args.command == "fetch":
         try:
-            tool = AnnasArchiveTool(
-                proxies=active_proxies, direct_mode=args.direct, strategy=strategy
-            )
+            tool = AnnasArchiveTool(proxies=active_proxies, direct_mode=args.direct, strategy=strategy)
         except ConnectionError as e:
             console.print(f"\n[bold red]HALT:[/bold red] {e}")
             sys.exit(1)
@@ -674,7 +672,7 @@ def _run_network_commands(
     elif args.command == "download":
         md5 = args.md5
         if not MD5_LINE_PATTERN.match(md5):
-            console.print("[bold red]Error:[/bold red] Invalid MD5 hash. " "Expected 32 hexadecimal characters.")
+            console.print("[bold red]Error:[/bold red] Invalid MD5 hash. Expected 32 hexadecimal characters.")
             sys.exit(1)
         # Single download also uses the concurrent infrastructure for consistency
         single_target = (None, None, None, None, md5)

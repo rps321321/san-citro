@@ -194,14 +194,11 @@ def _seed_mixed(db: str) -> None:
 class TestQueryPathDoesNotLazyMigrate:
     def test_query_library_fails_without_schema_and_does_not_migrate(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "bare_library.db")
-        with patch("src.migrations.run_migrations") as mock_mig:
-            with pytest.raises(sqlite3.OperationalError):
-                query_library(db_path)
+        with patch("src.migrations.run_migrations") as mock_mig, pytest.raises(sqlite3.OperationalError):
+            query_library(db_path)
         mock_mig.assert_not_called()
         with sqlite3.connect(db_path) as conn:
-            tables = {
-                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            }
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "downloads" not in tables
 
 
@@ -309,9 +306,7 @@ class TestFilters:
 
     def test_should_filter_by_content_type(self, lib_db: str) -> None:
         _seed_mixed(lib_db)
-        result = query_library(
-            lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="fiction"
-        )
+        result = query_library(lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="fiction")
         assert [i["md5"] for i in result["items"]] == [_BOOK_A]
 
     def test_should_filter_by_extension(self, lib_db: str) -> None:
@@ -337,9 +332,7 @@ class TestFilters:
 
     def test_should_treat_blank_filter_as_no_filter(self, lib_db: str) -> None:
         _seed_mixed(lib_db)
-        result = query_library(
-            lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="", extension="  "
-        )
+        result = query_library(lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="", extension="  ")
         assert result["filtered_count"] == result["total_eligible"] == 3
 
 
@@ -351,9 +344,7 @@ class TestFilters:
 class TestFacetsAndCounts:
     def test_should_derive_facets_from_eligible_not_filtered(self, lib_db: str) -> None:
         _seed_mixed(lib_db)
-        result = query_library(
-            lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="fiction"
-        )
+        result = query_library(lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="fiction")
         # Filter leaves one item, but facets still list all book values.
         assert result["filtered_count"] == 1
         assert result["total_eligible"] == 3
@@ -375,9 +366,7 @@ class TestFacetsAndCounts:
         assert empty["filtered_count"] == 0
 
         _seed_mixed(lib_db)
-        no_match = query_library(
-            lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="comic"
-        )
+        no_match = query_library(lib_db, media_kind=MEDIA_KIND_BOOKS, content_type="comic")
         assert no_match["total_eligible"] == 3
         assert no_match["filtered_count"] == 0
         assert no_match["items"] == []
@@ -414,9 +403,7 @@ class TestSort:
         result = query_library(lib_db, sort=SORT_RECENT)
         assert [i["title"] for i in result["items"]] == ["Third", "Second", "First"]
 
-    def test_should_use_stable_md5_tiebreaker_for_identical_sort_keys(
-        self, lib_db: str
-    ) -> None:
+    def test_should_use_stable_md5_tiebreaker_for_identical_sort_keys(self, lib_db: str) -> None:
         # Same author → order by md5 ascending
         _complete_book(lib_db, _BOOK_C, "C", author="Same")
         _complete_book(lib_db, _BOOK_A, "A", author="Same")

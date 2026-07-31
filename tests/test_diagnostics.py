@@ -14,12 +14,12 @@ from src.diagnostics import (
 class TestCheckInternet:
     def test_online(self):
         with patch("src.diagnostics.socket.create_connection"):
-            success, msg = check_internet()
+            success, _msg = check_internet()
         assert success is True
 
     def test_offline(self):
         with patch("src.diagnostics.socket.create_connection", side_effect=OSError):
-            success, msg = check_internet()
+            success, _msg = check_internet()
         assert success is False
 
 
@@ -36,7 +36,7 @@ class TestCheckIpAddress:
         import requests
 
         with patch("src.diagnostics.requests.get", side_effect=requests.ConnectionError):
-            success, msg = check_ip_address()
+            success, _msg = check_ip_address()
         assert success is False
 
 
@@ -45,21 +45,21 @@ class TestCheckSiteReachability:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         with patch("src.diagnostics.requests.get", return_value=mock_resp):
-            success, msg = check_site_reachability("https://example.com")
+            success, _msg = check_site_reachability("https://example.com")
         assert success is True
 
     def test_unreachable(self):
         import requests
 
         with patch("src.diagnostics.requests.get", side_effect=requests.ConnectionError):
-            success, msg = check_site_reachability("https://example.com")
+            success, _msg = check_site_reachability("https://example.com")
         assert success is False
 
 
 class TestCheckChromeAutomation:
     def test_importable(self):
         with patch.dict("sys.modules", {"undetected_chromedriver": MagicMock()}):
-            success, msg = check_chrome_automation()
+            success, _msg = check_chrome_automation()
         assert success is True
 
     def test_not_installed(self):
@@ -75,7 +75,7 @@ class TestCheckChromeAutomation:
                 return real_import(name, *args, **kwargs)
 
             with patch("builtins.__import__", side_effect=mock_import):
-                success, msg = check_chrome_automation()
+                success, _msg = check_chrome_automation()
             assert success is False
 
 

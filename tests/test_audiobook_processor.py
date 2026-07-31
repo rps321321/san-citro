@@ -173,9 +173,7 @@ class TestClassify:
 # Category-after-Artifact decision (stamp once + optional enqueue)
 # ---------------------------------------------------------------------------
 class TestApplyCategoryAfterArtifact:
-    def test_single_file_audio_stamps_audiobook_and_enqueues(
-        self, db_redirect: str, tmp_path: Path
-    ) -> None:
+    def test_single_file_audio_stamps_audiobook_and_enqueues(self, db_redirect: str, tmp_path: Path) -> None:
         from src.download_history import record_download_complete, record_download_start
 
         md5 = "b" * 32
@@ -199,9 +197,7 @@ class TestApplyCategoryAfterArtifact:
         import sqlite3
 
         with sqlite3.connect(db_redirect) as conn:
-            row = conn.execute(
-                "SELECT media_type, status FROM downloads WHERE md5 = ?", (md5,)
-            ).fetchone()
+            row = conn.execute("SELECT media_type, status FROM downloads WHERE md5 = ?", (md5,)).fetchone()
         assert row[0] == "audiobook"
         assert row[1] == "completed"
 
@@ -228,9 +224,7 @@ class TestApplyCategoryAfterArtifact:
         assert result == "audiobook"
         assert enqueued == [md5]
 
-    def test_archive_without_audio_stamps_book_no_enqueue(
-        self, db_redirect: str, tmp_path: Path
-    ) -> None:
+    def test_archive_without_audio_stamps_book_no_enqueue(self, db_redirect: str, tmp_path: Path) -> None:
         if not _have_7z():
             pytest.skip("7z not available")
         from src.download_history import record_download_complete, record_download_start
@@ -255,14 +249,10 @@ class TestApplyCategoryAfterArtifact:
         import sqlite3
 
         with sqlite3.connect(db_redirect) as conn:
-            row = conn.execute(
-                "SELECT media_type FROM downloads WHERE md5 = ?", (md5,)
-            ).fetchone()
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = ?", (md5,)).fetchone()
         assert row[0] == "book"
 
-    def test_enqueue_failure_does_not_raise_or_revert_stamp(
-        self, db_redirect: str, tmp_path: Path
-    ) -> None:
+    def test_enqueue_failure_does_not_raise_or_revert_stamp(self, db_redirect: str, tmp_path: Path) -> None:
         from src.download_history import record_download_complete, record_download_start
 
         md5 = "e" * 32
@@ -285,9 +275,7 @@ class TestApplyCategoryAfterArtifact:
         import sqlite3
 
         with sqlite3.connect(db_redirect) as conn:
-            row = conn.execute(
-                "SELECT media_type, status FROM downloads WHERE md5 = ?", (md5,)
-            ).fetchone()
+            row = conn.execute("SELECT media_type, status FROM downloads WHERE md5 = ?", (md5,)).fetchone()
         assert row[0] == "audiobook"
         assert row[1] == "completed"
 

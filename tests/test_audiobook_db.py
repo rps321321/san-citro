@@ -91,14 +91,11 @@ class TestSchemaViaMigrations:
 class TestQueryPathDoesNotLazyMigrate:
     def test_list_audiobooks_fails_without_schema_and_does_not_migrate(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "bare_audio.db")
-        with patch("src.migrations.run_migrations") as mock_mig:
-            with pytest.raises(sqlite3.OperationalError):
-                list_audiobooks(db_path)
+        with patch("src.migrations.run_migrations") as mock_mig, pytest.raises(sqlite3.OperationalError):
+            list_audiobooks(db_path)
         mock_mig.assert_not_called()
         with sqlite3.connect(db_path) as conn:
-            tables = {
-                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            }
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "audiobooks" not in tables
 
 

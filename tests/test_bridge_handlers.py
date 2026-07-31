@@ -187,9 +187,7 @@ def test_handle_list_library_propagates_value_error():
     import pytest
 
     with (
-        patch.object(
-            bridge_handlers, "query_library", side_effect=ValueError("Invalid sort")
-        ),
+        patch.object(bridge_handlers, "query_library", side_effect=ValueError("Invalid sort")),
         patch.object(bridge_handlers, "_get_history_db", return_value=None),
         pytest.raises(ValueError, match="Invalid sort"),
     ):
@@ -228,9 +226,7 @@ def test_handle_list_library_returns_unified_variants_from_sqlite(tmp_path):
             "media_type": "book",
         },
     )
-    record_download_complete(
-        db_path, md5=book_md5, filename="pride.epub", filesize_bytes=512000
-    )
+    record_download_complete(db_path, md5=book_md5, filename="pride.epub", filesize_bytes=512000)
 
     record_download_start(
         db_path,
@@ -242,9 +238,7 @@ def test_handle_list_library_returns_unified_variants_from_sqlite(tmp_path):
             "media_type": "audiobook",
         },
     )
-    record_download_complete(
-        db_path, md5=audio_md5, filename="hobbit.zip", filesize_bytes=9000
-    )
+    record_download_complete(db_path, md5=audio_md5, filename="hobbit.zip", filesize_bytes=9000)
     record_audiobook(
         db_path,
         md5=audio_md5,
@@ -297,9 +291,9 @@ def test_handle_list_library_uses_query_library_not_download_history():
     import src.download_history as download_history
     import src.library as library_mod
 
-    assert not hasattr(download_history, "list_library"), (
-        "download_history.list_library was removed; Library uses src.library.query_library"
-    )
+    assert not hasattr(
+        download_history, "list_library"
+    ), "download_history.list_library was removed; Library uses src.library.query_library"
     assert hasattr(library_mod, "query_library")
     # Handler is bound to the deep-module query, not a history list.
     assert bridge_handlers.query_library is library_mod.query_library

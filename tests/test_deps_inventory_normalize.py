@@ -26,11 +26,7 @@ def _write_json(path: Path, data: Any) -> None:
 
 
 def _by_name(rows: list[dict[str, Any]], name: str, surface: str | None = None) -> dict[str, Any]:
-    matches = [
-        r
-        for r in rows
-        if r.get("name") == name and (surface is None or r.get("surface") == surface)
-    ]
+    matches = [r for r in rows if r.get("name") == name and (surface is None or r.get("surface") == surface)]
     assert matches, f"no row named {name!r} (surface={surface!r}); have {[r.get('name') for r in rows]}"
     assert len(matches) == 1, f"multiple rows for {name!r}: {matches}"
     return matches[0]
@@ -52,9 +48,7 @@ def _by_name(rows: list[dict[str, Any]], name: str, surface: str | None = None) 
         ("1.0.0", "10.0.0", 8, "major"),  # cap at 8
     ],
 )
-def test_outdatedness_channels(
-    current: str, latest: str, score: int, channel: str
-) -> None:
+def test_outdatedness_channels(current: str, latest: str, score: int, channel: str) -> None:
     got_score, got_channel = di._outdatedness(current, latest)
     assert got_score == score
     assert got_channel == channel

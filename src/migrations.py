@@ -202,8 +202,7 @@ def run_migrations(db_path: str) -> int:
                 conn.rollback()
                 logger.error(f"Migration v{mig.version} failed — rolled back.")
                 raise SchemaMigrationError(
-                    f"Database schema migration failed for {db_path} "
-                    f"at version {mig.version}: {exc}",
+                    f"Database schema migration failed for {db_path} at version {mig.version}: {exc}",
                     db_path=db_path,
                     version=mig.version,
                 ) from exc
