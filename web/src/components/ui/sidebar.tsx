@@ -169,7 +169,7 @@ function Sidebar({
       <div
         data-slot="sidebar"
         className={cn(
-          "flex h-full w-(--sidebar-width) flex-col bg-sidebar text-sidebar-foreground",
+          "sidebar-glass flex h-full w-(--sidebar-width) flex-col text-sidebar-foreground",
           className
         )}
         {...props}
@@ -187,7 +187,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+          className="sidebar-glass w-(--sidebar-width) p-0 text-sidebar-foreground [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -242,7 +242,9 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar group-data-[side=left]:rounded-r-lg group-data-[side=right]:rounded-l-lg group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          // No custom outer radius: flush to the window so OS/DWM corner
+          // rounding matches the app frame. Floating/inset keep a modest ring.
+          className="sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:border-l group-data-[variant=floating]:rounded-md group-data-[variant=floating]:border group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border/60"
         >
           {children}
         </div>

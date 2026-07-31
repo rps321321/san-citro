@@ -54,6 +54,8 @@ export function AppSidebar() {
   const { toggleTheme } = useThemeToggle({ variant: "circle", start: "bottom-left" });
   const isDark = mounted && resolvedTheme === "dark";
 
+  // Flush to the window edge (not floating): DWM window radius clips the
+  // glass rail so it matches the app chrome.
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="app-region-drag h-9 justify-center py-0">
@@ -69,9 +71,9 @@ export function AppSidebar() {
               alt="San Citro logo"
               width={32}
               height={32}
-              className="size-8 shrink-0 rounded-lg"
+              className="size-8 shrink-0 rounded-xl"
             />
-            <TextRepel text="San Citro" className="text-sm font-semibold" radius={70} strength={16} />
+            <TextRepel text="San Citro" className="text-sm font-semibold tracking-tight" radius={70} strength={16} />
           </Link>
           <SidebarTrigger className="app-region-no-drag" />
         </div>
@@ -79,7 +81,9 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel className="text-sidebar-foreground/50">
+            Navigation
+          </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV_ITEMS.map((item) => {
@@ -91,7 +95,7 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={isActive}
                       tooltip={item.label}
-                      className="data-active:bg-primary/10 data-active:text-primary"
+                      className="rounded-xl data-active:bg-primary/12 data-active:font-medium data-active:text-primary data-active:shadow-[inset_0_0_0_1px] data-active:shadow-primary/15"
                       render={<NavLink to={item.href} aria-current={isActive ? "page" : undefined} />}
                     >
                       <item.icon />

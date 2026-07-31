@@ -80,13 +80,15 @@
   --ring: oklch(0.63 0.19 48);
   --destructive-foreground: oklch(0.985 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0 / 0.7);
+  /* Sidebar = Apple-style glass control rail over Mica (ADR-0011). More
+     translucent than a solid panel so blur + window material read through. */
+  --sidebar: oklch(0.99 0 0 / 0.52);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.63 0.19 48);
   --sidebar-primary-foreground: oklch(0.99 0.01 80);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.97 0 0 / 0.72);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: oklch(0 0 0 / 0.08);
   --sidebar-ring: oklch(0.63 0.19 48);
   /* Liquid Glass tokens (ADR-0011) — consumed by the .glass utility on the
      control layer. Blur ≤16px per the perf research; keep glass OUT of any
@@ -95,6 +97,10 @@
   --glass-border: oklch(0 0 0 / 0.08);
   --glass-blur: 16px;
   --glass-shadow: 0 8px 30px oklch(0 0 0 / 0.12);
+  /* Sidebar-specific glass (same blur budget as .glass). Soft depth only —
+     no large custom radius; window DWM owns outer corner rounding. */
+  --sidebar-glass-blur: var(--glass-blur);
+  --sidebar-glass-shadow: inset -1px 0 0 oklch(0 0 0 / 0.04);
 }
 
 .dark {
@@ -124,17 +130,18 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.70 0.17 52);
   --destructive-foreground: oklch(0.985 0 0);
-  --sidebar: oklch(0.205 0 0 / 0.7);
+  --sidebar: oklch(0.18 0 0 / 0.52);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.70 0.17 52);
   --sidebar-primary-foreground: oklch(0.16 0.02 48);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent: oklch(0.28 0 0 / 0.65);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: oklch(1 0 0 / 0.1);
   --sidebar-ring: oklch(0.70 0.17 52);
   --glass-bg: oklch(0.21 0 0 / 0.55);
   --glass-border: oklch(1 0 0 / 0.1);
   --glass-shadow: 0 8px 30px oklch(0 0 0 / 0.4);
+  --sidebar-glass-shadow: inset -1px 0 0 oklch(1 0 0 / 0.06);
 }
 
 @layer base {
@@ -175,6 +182,15 @@
   backdrop-filter: blur(var(--glass-blur));
   border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow);
+}
+
+/* Apple-style glass rail: translucent fill + blur + saturate so Mica reads
+   through. Applied to the sidebar inner surface (control layer only). */
+.sidebar-glass {
+  background-color: var(--sidebar);
+  -webkit-backdrop-filter: blur(var(--sidebar-glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--sidebar-glass-blur)) saturate(1.4);
+  box-shadow: var(--sidebar-glass-shadow);
 }
 
 /* Easing used by the View Transition theme toggle */
