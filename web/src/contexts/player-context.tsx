@@ -16,7 +16,7 @@ import {
   saveAudiobookProgress,
 } from "@/lib/api-client";
 import {
-  createHtmlAudioPort,
+  createBindableHtmlAudioPort,
   createPlaybackPolicy,
   type PlaybackPolicy,
   type PlaybackSnapshot,
@@ -57,18 +57,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [payload, setPayload] = useState<PlayerLoadPayload | null>(null);
   const [mode, setMode] = useState<PlayerMode>("hidden");
   const playRequestIdRef = useRef(0);
-  const audioElRef = useRef<HTMLAudioElement | null>(null);
 
-  const policyRef = useRef<PlaybackPolicy | null>(null);
-  if (!policyRef.current) {
-    policyRef.current = createPlaybackPolicy({
-      audio: createHtmlAudioPort(() => audioElRef.current),
+  // Stable binding + policy once per provider (no render-time ref mutation).
+  const [binding] = useState(createBindableHtmlAudioPort);
+  const [policy] = useState(() =>
+    createPlaybackPolicy({
+      audio: binding.port,
       progress: {
         save: (p) => saveAudiobookProgress(p),
       },
-    });
-  }
-  const policy = policyRef.current;
+    })
+  );
 
   const session = useSyncExternalStore(
     policy.subscribe,
@@ -76,9 +75,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     policy.getSnapshot
   );
 
-  const bindAudio = useCallback((el: HTMLAudioElement | null) => {
-    audioElRef.current = el;
-  }, []);
+  const bindAudio = useCallback(
+    (el: HTMLAudioElement | null) => {
+      binding.bind(el);
+    },
+    [binding]
+  );
 
   const play = useCallback(
     async (md5: string) => {

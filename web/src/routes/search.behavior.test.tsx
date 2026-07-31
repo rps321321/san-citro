@@ -187,7 +187,7 @@ describe("Search route public behavior (#58)", () => {
     });
 
     let call = 0;
-    const searchMock = vi.fn(async (_params: SearchCallParams) => {
+    const searchMock = vi.fn(async () => {
       call += 1;
       if (call === 1) return pageResults(1, false, false);
       if (call === 2) return filterAPromise;

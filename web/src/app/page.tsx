@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useSyncExternalStore, type ReactNode } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router";
 
 import AppShell from "@/components/app-shell";
@@ -18,6 +18,15 @@ function notifyRendererReady(): void {
   } catch {
     // Browser / tests without preload.
   }
+}
+
+/** Client-ready gate: server snapshot false, client snapshot true (no mount effect). */
+const emptySubscribe = () => () => {};
+function getClientReadySnapshot(): boolean {
+  return true;
+}
+function getServerReadySnapshot(): boolean {
+  return false;
 }
 
 /**
@@ -50,14 +59,15 @@ export function ClientRoutedApp({ ready }: { ready: boolean }): ReactNode {
 
 // The renderer is a hash-routed SPA (ADR-0013): one index.html shell mounts the
 // HashRouter and the former Next pages become route components under AppShell's
-// <Outlet>. HashRouter is client-only, so gate on mount — Next prerenders this
-// with StartupShell (not null), then the client hydrates and boots the router.
+// <Outlet>. HashRouter is client-only, so gate on client snapshot — Next
+// prerenders this with StartupShell (not null), then the client hydrates and
+// boots the router without a setMounted effect.
 export default function Page() {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const ready = useSyncExternalStore(
+    emptySubscribe,
+    getClientReadySnapshot,
+    getServerReadySnapshot
+  );
 
   // After the first client paint of the shell-shaped fallback, signal main so
   // splash → main handoff follows meaningful chrome rather than document load.
@@ -76,5 +86,5 @@ export default function Page() {
     };
   }, []);
 
-  return <ClientRoutedApp ready={mounted} />;
+  return <ClientRoutedApp ready={ready} />;
 }

@@ -262,9 +262,24 @@ function DownloadCard({
   );
 }
 
+/** Pure precompute: 1-based queue position for queued rows only. */
+interface DownloadRowModel {
+  dl: DownloadStatus;
+  queuePosition?: number;
+}
+
+function buildDownloadRows(items: DownloadStatus[]): DownloadRowModel[] {
+  let queueIdx = 0;
+  return items.map((dl) => ({
+    dl,
+    queuePosition: dl.status === "queued" ? ++queueIdx : undefined,
+  }));
+}
+
 export default function DownloadsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { downloads, connection, removeDownloads } = useActiveDownloads();
   const items = Array.from(downloads.values());
+  const rows = buildDownloadRows(items);
 
   const active = items.filter((d) => d.status === "downloading");
   const queued = items.filter((d) => d.status === "queued");
@@ -448,22 +463,16 @@ export default function DownloadsPage({ embedded = false }: { embedded?: boolean
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {(() => {
-            let queueIdx = 0;
-            return items.map((dl) => {
-              const pos = dl.status === "queued" ? ++queueIdx : undefined;
-              return (
-                <DownloadCard
-                  key={dl.md5}
-                  dl={dl}
-                  now={now}
-                  cardRef={(el) => registerCard(dl.md5, el)}
-                  queuePosition={pos}
-                  onCancel={() => handleCancel(dl.md5)}
-                />
-              );
-            });
-          })()}
+          {rows.map(({ dl, queuePosition }) => (
+            <DownloadCard
+              key={dl.md5}
+              dl={dl}
+              now={now}
+              cardRef={(el) => registerCard(dl.md5, el)}
+              queuePosition={queuePosition}
+              onCancel={() => handleCancel(dl.md5)}
+            />
+          ))}
         </div>
       )}
     </div>

@@ -19,6 +19,7 @@ import { Link } from "react-router";
 import { Button } from "@/components/ui/button";
 import { usePlayer } from "@/contexts/player-context";
 import { readBookFile } from "@/lib/api-client";
+import { readReaderSession } from "@/lib/reader-nav";
 import { trackError, trackFeatureDiscovery, trackReadingProgress } from "@/lib/telemetry";
 
 // Multi-format reader (ADR-0014): EPUB / MOBI / AZW3 / FB2 / CBZ via foliate-js
@@ -54,10 +55,14 @@ export default function ReaderPage() {
   const { resolvedTheme } = useTheme();
   const { active: playerActive } = usePlayer();
 
-  const [md5, setMd5] = useState<string | null | undefined>(undefined);
-  const [title, setTitle] = useState("");
-  const [filename, setFilename] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  // One session/nav boundary — no effect-driven sessionStorage setter chains.
+  // Reader only mounts after client gate; openReader reloads same-route.
+  const [session] = useState(readReaderSession);
+  const md5 = session.md5;
+  const title = session.title;
+  const filename = session.filename;
+  // No md5 → not loading (empty state); has md5 → load until book opens.
+  const [isLoading, setIsLoading] = useState(() => Boolean(session.md5));
   const [error, setError] = useState<string | null>(null);
   const [toc, setToc] = useState<TocItem[]>([]);
   const [tocOpen, setTocOpen] = useState(false);
@@ -66,12 +71,6 @@ export default function ReaderPage() {
   const [readingTheme, setReadingTheme] = useState<ReadingTheme>("dark");
   const readingThemeRef = useRef<ReadingTheme>("dark");
   const themeInitRef = useRef(false);
-
-  useEffect(() => {
-    setMd5(sessionStorage.getItem("reader:md5"));
-    setTitle(sessionStorage.getItem("reader:title") ?? "");
-    setFilename(sessionStorage.getItem("reader:filename") ?? "");
-  }, []);
 
   // Sync the reading theme to the app theme once, then the user controls it.
   useEffect(() => {
@@ -84,11 +83,7 @@ export default function ReaderPage() {
   const next = useCallback(() => viewRef.current?.next(), []);
 
   useEffect(() => {
-    if (md5 === undefined) return; // still reading sessionStorage
-    if (!md5) {
-      setIsLoading(false);
-      return;
-    }
+    if (!md5) return;
 
     let cancelled = false;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -217,7 +212,7 @@ export default function ReaderPage() {
   };
 
   // Nothing selected — guide the user to open a book.
-  if (md5 !== undefined && !md5) {
+  if (!md5) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center text-muted-foreground">
         <BookOpenIcon className="size-12 mb-4 opacity-30" />

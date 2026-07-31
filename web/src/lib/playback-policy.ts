@@ -395,6 +395,23 @@ export function createHtmlAudioPort(
   };
 }
 
+/**
+ * Bindable HTML audio port: hides element mutability inside the adapter so
+ * React providers can construct policy once without render-time refs.
+ */
+export function createBindableHtmlAudioPort(): {
+  port: AudioPort;
+  bind: (el: HTMLAudioElement | null) => void;
+} {
+  let element: HTMLAudioElement | null = null;
+  return {
+    port: createHtmlAudioPort(() => element),
+    bind(el) {
+      element = el;
+    },
+  };
+}
+
 /** Build the san-citro-media URL for a chapter (chrome / protocol concern). */
 export function mediaUrlForChapter(md5: string, chapterId: number): string {
   return `san-citro-media://${md5}/${chapterId}`;

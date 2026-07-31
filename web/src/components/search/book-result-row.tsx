@@ -1,17 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import {
   DownloadIcon,
   CheckCircle2Icon,
   LoaderIcon,
-  BookOpenIcon,
   ClockIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
+import { RemoteCoverImage } from "@/components/remote-cover-image";
 import type { BookRecord } from "@/types";
 import { formatFileSize, truncateMd5 } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -27,36 +26,19 @@ function BookCover({
   isbn13?: string;
   title: string;
 }) {
-  const [failed, setFailed] = useState(false);
-
   // Prefer the cover URL from the scraper; fall back to Open Library by ISBN
   const src =
     coverUrl || (isbn13 ? `https://covers.openlibrary.org/b/isbn/${isbn13}-S.jpg` : null);
 
-  if (!src || failed) {
-    return (
-      <div
-        className="flex h-16 w-12 shrink-0 items-center justify-center rounded bg-muted"
-        data-cover-placeholder
-        aria-hidden="true"
-      >
-        <BookOpenIcon className="size-5 text-muted-foreground/40" />
-      </div>
-    );
-  }
-
   return (
-    <div className="h-16 w-12 shrink-0 overflow-hidden rounded bg-muted">
-      <img
-        src={src}
-        alt={`Cover of ${title}`}
-        loading="lazy"
-        width={48}
-        height={64}
-        className="h-full w-full object-cover"
-        onError={() => setFailed(true)}
-      />
-    </div>
+    <RemoteCoverImage
+      src={src}
+      alt={`Cover of ${title}`}
+      className="h-16 w-12 shrink-0 rounded"
+      width={48}
+      height={64}
+      fallbackIconClassName="size-5"
+    />
   );
 }
 

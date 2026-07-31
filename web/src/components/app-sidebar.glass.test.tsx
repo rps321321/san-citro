@@ -16,10 +16,6 @@ vi.mock("next-themes", () => ({
   useTheme: () => ({ resolvedTheme: "dark", setTheme: vi.fn() }),
 }));
 
-vi.mock("@/components/ui/skiper-ui/skiper26", () => ({
-  useThemeToggle: () => ({ toggleTheme: vi.fn() }),
-}));
-
 vi.mock("@/lib/telemetry", () => ({
   trackInteraction: vi.fn(),
 }));
