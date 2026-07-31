@@ -8,7 +8,7 @@ import {
   transitionOrReduce,
   durationFast,
   durationBase,
-} from "./motion.ts";
+} from "./motion";
 
 describe("motion presets (ADR-0016)", () => {
   it("exports desktop easeOut and keeps easeApple as alias", () => {

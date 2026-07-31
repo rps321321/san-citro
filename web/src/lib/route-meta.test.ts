@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { getRouteMeta, ROUTE_META } from "./route-meta.ts";
+import { getRouteMeta, ROUTE_META } from "./route-meta";
 
 describe("route-meta (#54)", () => {
   it("covers the five primary shell routes with compact labels", () => {
