@@ -36,7 +36,6 @@ const IPC_CHANNELS = {
   UPDATE_STATUS: 'san-citro:updateStatus',
   SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
   LIST_LIBRARY: 'san-citro:listLibrary',
-  LIST_AUDIOBOOKS: 'san-citro:listAudiobooks',
   GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
   PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
@@ -65,9 +64,6 @@ const api = {
 
   listLibrary: (params?: Record<string, unknown>): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.LIST_LIBRARY, params ?? {}),
-
-  listAudiobooks: (): Promise<unknown> =>
-    ipcRenderer.invoke(IPC_CHANNELS.LIST_AUDIOBOOKS),
 
   getAudiobookDetail: (md5: string): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_AUDIOBOOK_DETAIL, { md5 }),

@@ -131,13 +131,8 @@ export const PYTHON_COMMANDS: readonly PythonCommandDescriptor[] = [
     apiName: 'listLibrary',
     usesMethods: ['list_library'],
   },
-  {
-    method: 'list_audiobooks',
-    channel: IPC_CHANNELS.LIST_AUDIOBOOKS,
-    mode: 'relay',
-    apiName: 'listAudiobooks',
-    usesMethods: ['list_audiobooks'],
-  },
+  // list_audiobooks product IPC retired (#47). Library is the sole collection
+  // query; internal DB list_audiobooks remains for queue resweep only.
   {
     method: 'get_audiobook_detail',
     channel: IPC_CHANNELS.GET_AUDIOBOOK_DETAIL,

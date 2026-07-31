@@ -58,7 +58,6 @@ export const IPC_CHANNELS = {
   UPDATE_STATUS: 'san-citro:updateStatus',
   SET_TELEMETRY_CONTEXT: 'san-citro:setTelemetryContext',
   LIST_LIBRARY: 'san-citro:listLibrary',
-  LIST_AUDIOBOOKS: 'san-citro:listAudiobooks',
   GET_AUDIOBOOK_DETAIL: 'san-citro:getAudiobookDetail',
   AUDIOBOOK_STATUS: 'san-citro:audiobookStatus',
   // In-page audiobook player (ADR-0013)

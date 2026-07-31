@@ -22,7 +22,6 @@ from src.audiobook_db import (
     get_audiobook_chapters,
     get_audiobook_progress,
     get_chapter,
-    list_audiobooks,
     save_audiobook_progress,
 )
 from src.config_manager import (
@@ -422,17 +421,6 @@ def handle_list_library(params: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("Failed to retrieve library.") from exc
 
 
-def handle_list_audiobooks(params: dict[str, Any]) -> list[dict[str, Any]]:
-    """list_audiobooks — all audiobooks joined with download title/cover_url."""
-    try:
-        rows = list_audiobooks(db_path=_get_history_db())
-    except Exception as exc:
-        logger.error("Failed to retrieve audiobooks: %s", exc, exc_info=True)
-        raise RuntimeError("Failed to retrieve audiobooks.") from exc
-
-    return rows
-
-
 def handle_get_audiobook_detail(params: dict[str, Any]) -> dict[str, Any]:
     """get_audiobook_detail — audiobook row + chapters for a given md5."""
     md5 = _validate_md5(params.get("md5", ""))
@@ -489,7 +477,6 @@ def register_handlers() -> None:
     register_method("resolve_download_path", handle_resolve_download_path)
     register_method("set_telemetry_context", handle_set_telemetry_context)
     register_method("list_library", handle_list_library)
-    register_method("list_audiobooks", handle_list_audiobooks)
     register_method("get_audiobook_detail", handle_get_audiobook_detail)
     register_method("get_chapter_path", handle_get_chapter_path)
     register_method("get_audiobook_progress", handle_get_audiobook_progress)

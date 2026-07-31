@@ -8,7 +8,6 @@ import type {
   SanCitroApi,
   LibraryQueryParams,
   LibraryQueryResult,
-  Audiobook,
   AudiobookDetail,
   PlayerLoadPayload,
 } from "@/types";
@@ -103,10 +102,7 @@ export async function listLibrary(
 }
 
 // --------------- Audiobooks ---------------
-
-export async function listAudiobooks(): Promise<Audiobook[]> {
-  return timed("list_audiobooks", () => ipc().listAudiobooks());
-}
+// Collection browsing is Library-only (listLibrary). listAudiobooks product IPC retired (#47).
 
 export async function getAudiobookDetail(md5: string): Promise<AudiobookDetail> {
   assertValidMd5(md5);

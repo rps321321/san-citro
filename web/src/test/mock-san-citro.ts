@@ -78,7 +78,6 @@ export function createSanCitroMock(
       total_eligible: 0,
       filtered_count: 0,
     }),
-    listAudiobooks: async () => [],
     getAudiobookDetail: async () => ({
       audiobook: null,
       chapters: [],

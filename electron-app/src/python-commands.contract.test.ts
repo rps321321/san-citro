@@ -318,6 +318,78 @@ test('each Python register_method name appears exactly once in bridge_handlers',
 });
 
 // ---------------------------------------------------------------------------
+// Retired product list-audiobooks collection IPC (#47 / ADR-0006)
+// Library is the sole collection query; internal DB list_audiobooks stays for queue.
+// ---------------------------------------------------------------------------
+
+const RETIRED_LIST_AUDIOBOOKS_CHANNEL = 'san-citro:listAudiobooks';
+const RETIRED_LIST_AUDIOBOOKS_API = 'listAudiobooks';
+const RETIRED_LIST_AUDIOBOOKS_METHOD = 'list_audiobooks';
+
+test('retired list-audiobooks product surface absent from descriptor and live IPC', () => {
+  // Descriptor must not reintroduce the product relay.
+  for (const cmd of PYTHON_COMMANDS) {
+    assert.notEqual(cmd.method, RETIRED_LIST_AUDIOBOOKS_METHOD);
+    assert.notEqual(cmd.channel, RETIRED_LIST_AUDIOBOOKS_CHANNEL);
+    assert.notEqual(cmd.apiName, RETIRED_LIST_AUDIOBOOKS_API);
+  }
+  assert.ok(
+    !Object.values(IPC_CHANNELS).includes(RETIRED_LIST_AUDIOBOOKS_CHANNEL as never),
+    'IPC_CHANNELS still has listAudiobooks'
+  );
+  assert.ok(
+    !('LIST_AUDIOBOOKS' in IPC_CHANNELS),
+    'IPC_CHANNELS still has LIST_AUDIOBOOKS key'
+  );
+});
+
+test('retired list-audiobooks absent from preload, renderer API, and Python registry', () => {
+  const preload = readSrc('preload.ts');
+  const preloadCode = preload
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  assert.ok(
+    !preloadCode.includes(`'${RETIRED_LIST_AUDIOBOOKS_CHANNEL}'`) &&
+      !preloadCode.includes(`"${RETIRED_LIST_AUDIOBOOKS_CHANNEL}"`),
+    'preload still has listAudiobooks channel'
+  );
+  const preloadNames = extractPreloadApiNames(preload);
+  assert.ok(!preloadNames.has(RETIRED_LIST_AUDIOBOOKS_API), 'preload still exposes listAudiobooks');
+
+  const apiNames = extractSanCitroApiNames(readWebTypes());
+  assert.ok(!apiNames.has(RETIRED_LIST_AUDIOBOOKS_API), 'SanCitroApi still has listAudiobooks');
+
+  // Product api-client must not export listAudiobooks.
+  const apiClientCandidates = [
+    path.join(ELECTRON_ROOT, '..', 'web', 'src', 'lib', 'api-client.ts'),
+    path.join(ELECTRON_ROOT, 'web', 'src', 'lib', 'api-client.ts'),
+  ];
+  let apiClient = '';
+  for (const p of apiClientCandidates) {
+    if (fs.existsSync(p)) {
+      apiClient = fs.readFileSync(p, 'utf8');
+      break;
+    }
+  }
+  assert.ok(apiClient, 'web/src/lib/api-client.ts not found');
+  const apiClientCode = apiClient
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  assert.ok(
+    !/\bexport\s+async\s+function\s+listAudiobooks\b/.test(apiClientCode) &&
+      !/\bfunction\s+listAudiobooks\b/.test(apiClientCode),
+    'api-client still exports listAudiobooks'
+  );
+
+  // Python product registry must not register list_audiobooks RPC.
+  const registered = extractPythonRegisteredMethods(readPythonHandlers());
+  assert.ok(
+    !registered.has(RETIRED_LIST_AUDIOBOOKS_METHOD),
+    'Python bridge still registers product list_audiobooks'
+  );
+});
+
+// ---------------------------------------------------------------------------
 // Retired WebContentsView channels (ADR-0013)
 // ---------------------------------------------------------------------------
 
