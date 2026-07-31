@@ -13,7 +13,7 @@ import {
 import { SearchPagination } from "@/components/search/search-pagination";
 import type { BookDownloadUiState } from "@/components/search/book-result-row";
 import { useBookSearch } from "@/hooks/use-book-search";
-import { startDownload } from "@/lib/api-client";
+import { startDownload, listLibrary, getHistory } from "@/lib/api-client";
 import type { BookRecord } from "@/types";
 import {
   trackFeatureDiscovery,
@@ -48,6 +48,9 @@ function SearchContent() {
   const [downloadingMd5s, setDownloadingMd5s] = useState<Set<string>>(new Set());
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [downloadSuccess, setDownloadSuccess] = useState(false);
+  // Pre-search local shortcuts (#57) — only when library / activity have content.
+  const [hasLibraryItems, setHasLibraryItems] = useState(false);
+  const [hasHistoryItems, setHasHistoryItems] = useState(false);
   // Focused after pagination so keyboard users don't lose their place.
   const resultsHeadingRef = useRef<HTMLDivElement>(null);
 
@@ -56,6 +59,28 @@ function SearchContent() {
     completedThisSession,
     applyProgress: applyDownloadProgress,
   } = useActiveDownloads();
+
+  // Light local probes for empty-state shortcuts. Fail closed (hide) if IPC is down.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const lib = await listLibrary({});
+        if (!cancelled) setHasLibraryItems(lib.total_eligible > 0);
+      } catch {
+        if (!cancelled) setHasLibraryItems(false);
+      }
+      try {
+        const history = await getHistory();
+        if (!cancelled) setHasHistoryItems(history.length > 0);
+      } catch {
+        if (!cancelled) setHasHistoryItems(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Global shortcut: '/' focuses the search input. Ctrl/Cmd+K is owned solely by
   // the Command palette (#29). Ignored while typing in another field so '/' stays
@@ -149,6 +174,18 @@ function SearchContent() {
     });
   };
 
+  // Example chips (#57): fill the field and run search in one action (query override
+  // avoids racing setState against doSearch's closed-over query).
+  const handleExampleQuery = useCallback(
+    (example: string) => {
+      setQuery(example);
+      void doSearch(1, { query: example });
+    },
+    [setQuery, doSearch]
+  );
+
+  const showActivityShortcut = hasHistoryItems || activeDownloads.size > 0;
+
   return (
     <PageContainer size="wide" className="space-y-6">
       <header className="space-y-1">
@@ -204,7 +241,11 @@ function SearchContent() {
       )}
 
       {!data && !isLoading && !error && (
-        <SearchEmptyState onExampleQuery={setQuery} />
+        <SearchEmptyState
+          onExampleQuery={handleExampleQuery}
+          showLibrary={hasLibraryItems}
+          showActivity={showActivityShortcut}
+        />
       )}
     </PageContainer>
   );

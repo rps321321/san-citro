@@ -111,16 +111,67 @@ describe("Search route public behavior (#58)", () => {
   it("shows the pre-search empty state before any query", () => {
     installSanCitroMock();
     renderSearch();
-    expect(screen.getByText("Enter a search query to get started")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Search by title, author, ISBN, or identifier/i)
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /The Pragmatic Programmer/i })).toBeInTheDocument();
   });
 
-  it("fills the query when the example is clicked", async () => {
-    installSanCitroMock();
+  it("runs a search immediately when an example chip is activated (#57)", async () => {
+    const searchMock = vi.fn(async () => pageResults(1, false, false));
+    installSanCitroMock({ search: searchMock });
     const user = userEvent.setup();
     renderSearch();
     await user.click(screen.getByRole("button", { name: /The Pragmatic Programmer/i }));
     expect(screen.getByLabelText("Search query")).toHaveValue("The Pragmatic Programmer");
+    await waitFor(() => {
+      expect(searchMock).toHaveBeenCalledWith(
+        expect.objectContaining({ query: "The Pragmatic Programmer", page: 1 })
+      );
+    });
+    await screen.findByText("Book page 1");
+  });
+
+  it("shows Library and Activity shortcuts only when local content exists (#57)", async () => {
+    installSanCitroMock({
+      listLibrary: async () => ({
+        items: [],
+        facets: { content_types: [], extensions: [], languages: [] },
+        total_eligible: 3,
+        filtered_count: 0,
+      }),
+      getHistory: async () => [
+        {
+          md5: BOOK_MD5,
+          title: "Past book",
+          status: "completed",
+          started_at: null,
+          completed_at: null,
+          error: null,
+          filename: null,
+          filesize_bytes: null,
+        },
+      ],
+    });
+    renderSearch();
+    expect(await screen.findByRole("link", { name: /Open Library/i })).toHaveAttribute(
+      "href",
+      "#/library"
+    );
+    expect(screen.getByRole("link", { name: /Open Activity/i })).toHaveAttribute(
+      "href",
+      "#/activity"
+    );
+  });
+
+  it("hides Library and Activity shortcuts when local content is empty (#57)", async () => {
+    installSanCitroMock();
+    renderSearch();
+    // Probes resolve with empty defaults — wait a tick so we do not race hide.
+    await waitFor(() => {
+      expect(screen.queryByRole("link", { name: /Open Library/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: /Open Activity/i })).not.toBeInTheDocument();
+    });
   });
 
   it("rejects a stale slower response when a newer search wins the race", async () => {

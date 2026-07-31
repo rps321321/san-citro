@@ -17,6 +17,8 @@ import { useShellScrollOptional } from "@/contexts/shell-scroll-context";
 export type SearchFilterOverrides = {
   extension?: string;
   language?: string;
+  /** Immediate query (e.g. example chips) so the call does not wait on setState. */
+  query?: string;
 };
 
 /**
@@ -38,15 +40,19 @@ export function useBookSearch() {
   // Shell `#main-content` is the overflow scroller — never window (#59).
   const shellScroll = useShellScrollOptional();
 
-  // Optional filter overrides let filter onChange handlers pass the *committed*
-  // values immediately. Calling doSearch after setState without overrides closes
-  // over the previous render's extension/language (stale re-scrape bug #27).
+  // Optional filter/query overrides let callers pass *committed* values
+  // immediately. Calling doSearch after setState without overrides closes
+  // over the previous render (stale re-scrape bug #27; example chips #57).
   const doSearch = useCallback(
     async (
       pageNum: number = 1,
       overrides?: SearchFilterOverrides
     ): Promise<boolean> => {
-      if (!query.trim()) return false;
+      const resolvedQuery =
+        overrides && "query" in overrides
+          ? (overrides.query ?? "").trim()
+          : query.trim();
+      if (!resolvedQuery) return false;
 
       // NOTE: Do NOT use router.replace() here — in Electron's custom protocol
       // (san-citro://), it triggers a full page reload causing flicker/black screen.
@@ -62,7 +68,7 @@ export function useBookSearch() {
         overrides && "language" in overrides ? (overrides.language ?? "") : language;
 
       const params: SearchParams = {
-        query: query.trim(),
+        query: resolvedQuery,
         page: pageNum,
       };
       if (resolvedExtension) params.extension = resolvedExtension;
