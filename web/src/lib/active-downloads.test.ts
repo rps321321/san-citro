@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import {
   TERMINAL_RETENTION_MS,
   createActiveDownloadsStore,
+  evictionDelayMs,
   isLiveActiveStatus,
   isTerminalStatus,
   type ActiveDownloadsTimers,
@@ -18,13 +19,15 @@ import {
 import type { DownloadStatus } from "@/types";
 
 // ---------------------------------------------------------------------------
-// Fake timers
+// Fake timers + injectable clock
 // ---------------------------------------------------------------------------
 
 function createFakeTimers(): {
   timers: ActiveDownloadsTimers;
   advance(ms: number): void;
   pendingCount(): number;
+  nowMs(): number;
+  setNowMs(ms: number): void;
 } {
   let nextId = 1;
   const pending = new Map<number, { fn: () => void; due: number }>();
@@ -43,6 +46,12 @@ function createFakeTimers(): {
 
   return {
     timers,
+    nowMs() {
+      return now;
+    },
+    setNowMs(ms: number) {
+      now = ms;
+    },
     advance(ms: number) {
       now += ms;
       const due = [...pending.entries()]
@@ -76,7 +85,23 @@ function dl(
     filename: overrides.filename ?? null,
     file_path: overrides.file_path ?? null,
     started_at: overrides.started_at ?? null,
+    terminal_at: overrides.terminal_at,
+    terminal_expires_at: overrides.terminal_expires_at,
   };
+}
+
+/** Terminal payload with backend-owned deadline (seconds). */
+function terminal(
+  md5: string,
+  status: "completed" | "failed" | "cancelled",
+  expiresAtSec: number,
+  overrides: Partial<DownloadStatus> = {}
+): DownloadStatus {
+  return dl(md5, status, {
+    terminal_at: expiresAtSec - 300,
+    terminal_expires_at: expiresAtSec,
+    ...overrides,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -98,7 +123,10 @@ describe("isTerminalStatus / isLiveActiveStatus", () => {
 
   test("hydrate coerces legacy started status to downloading", () => {
     const fake = createFakeTimers();
-    const store = createActiveDownloadsStore({ timers: fake.timers });
+    const store = createActiveDownloadsStore({
+      timers: fake.timers,
+      now: () => fake.nowMs(),
+    });
     // Simulate pre-cleanup IPC payload that still said "started".
     const legacy = {
       md5: "a".repeat(32),
@@ -118,6 +146,24 @@ describe("isTerminalStatus / isLiveActiveStatus", () => {
   });
 });
 
+describe("evictionDelayMs (contract with backend deadline)", () => {
+  test("uses remaining duration from terminal_expires_at, not a full local window", () => {
+    const nowMs = 1_000_000;
+    // Expires 40s from now → 40_000ms remaining (not a fresh 60s/300s window).
+    assert.equal(evictionDelayMs({ terminal_expires_at: 1040 }, nowMs, 60_000), 40_000);
+  });
+
+  test("clamps overdue deadline to 0", () => {
+    assert.equal(evictionDelayMs({ terminal_expires_at: 10 }, 20_000, 60_000), 0);
+  });
+
+  test("falls back only when field is absent", () => {
+    assert.equal(evictionDelayMs({}, 0, 12_345), 12_345);
+    assert.equal(evictionDelayMs({ terminal_expires_at: null }, 0, 12_345), 12_345);
+    assert.equal(evictionDelayMs({ terminal_expires_at: undefined }, 0, 12_345), 12_345);
+  });
+});
+
 describe("createActiveDownloadsStore", () => {
   const stores: ReturnType<typeof createActiveDownloadsStore>[] = [];
 
@@ -126,11 +172,14 @@ describe("createActiveDownloadsStore", () => {
     stores.length = 0;
   });
 
-  function makeStore(retentionMs = TERMINAL_RETENTION_MS) {
+  function makeStore(fallbackRetentionMs = TERMINAL_RETENTION_MS) {
     const fake = createFakeTimers();
+    // Align wall clock with fake timer epoch so deadline math is deterministic.
+    fake.setNowMs(1_700_000_000_000);
     const store = createActiveDownloadsStore({
       timers: fake.timers,
-      retentionMs,
+      retentionMs: fallbackRetentionMs,
+      now: () => fake.nowMs(),
     });
     stores.push(store);
     return { store, fake };
@@ -166,9 +215,13 @@ describe("createActiveDownloadsStore", () => {
     assert.deepEqual(snaps, [1, 2]);
   });
 
-  test("terminal retention removes from live list after retentionMs", () => {
-    const { store, fake } = makeStore(1_000);
-    store.applyProgress(dl("a".repeat(32), "completed", { filename: "x.epub" }));
+  test("terminal retention honors backend terminal_expires_at deadline", () => {
+    const { store, fake } = makeStore(60_000);
+    const nowSec = fake.nowMs() / 1000;
+    const expiresAt = nowSec + 1; // 1000ms remaining
+    store.applyProgress(
+      terminal("a".repeat(32), "completed", expiresAt, { filename: "x.epub" })
+    );
     assert.equal(store.getSnapshot().downloads.size, 1);
 
     fake.advance(999);
@@ -179,10 +232,60 @@ describe("createActiveDownloadsStore", () => {
     assert.equal(store.getByMd5("a".repeat(32)), undefined);
   });
 
+  test("long-running download remains full retention after completion (deadline based)", () => {
+    const { store, fake } = makeStore(1); // fallback would wrongly be 1ms if used
+    const nowSec = fake.nowMs() / 1000;
+    // started long ago; terminal just now; retention window is 300s on backend
+    const startedAt = nowSec - 600;
+    const expiresAt = nowSec + 300;
+    store.applyProgress(
+      dl("a".repeat(32), "completed", {
+        started_at: startedAt,
+        terminal_at: nowSec,
+        terminal_expires_at: expiresAt,
+      })
+    );
+    // Must not vanish immediately despite old started_at / tiny fallback.
+    fake.advance(299_000);
+    assert.equal(store.getSnapshot().downloads.size, 1);
+    fake.advance(1_000);
+    assert.equal(store.getSnapshot().downloads.size, 0);
+  });
+
+  test("hydrating terminal item mid-window evicts after remaining duration", () => {
+    const { store, fake } = makeStore(300_000);
+    const nowSec = fake.nowMs() / 1000;
+    // Originally expired 300s after terminal; 100s already elapsed → 200s left.
+    const expiresAt = nowSec + 200;
+    store.hydrate([
+      terminal("a".repeat(32), "completed", expiresAt, {
+        terminal_at: expiresAt - 300,
+      }),
+    ]);
+    assert.equal(store.getSnapshot().downloads.size, 1);
+
+    // Full fallback window (300s) must NOT be used — only remaining 200s.
+    fake.advance(199_000);
+    assert.equal(store.getSnapshot().downloads.size, 1);
+    fake.advance(1_000);
+    assert.equal(store.getSnapshot().downloads.size, 0);
+  });
+
+  test("fallback retention when terminal_expires_at absent (legacy bridge)", () => {
+    const { store, fake } = makeStore(1_000);
+    store.applyProgress(dl("a".repeat(32), "completed", { filename: "x.epub" }));
+    assert.equal(store.getSnapshot().downloads.size, 1);
+    fake.advance(999);
+    assert.equal(store.getSnapshot().downloads.size, 1);
+    fake.advance(1);
+    assert.equal(store.getSnapshot().downloads.size, 0);
+  });
+
   test("completedThisSession survives live-list retention", () => {
     const { store, fake } = makeStore(100);
     const md5 = "a".repeat(32);
-    store.applyProgress(dl(md5, "completed"));
+    const expiresAt = fake.nowMs() / 1000 + 0.1;
+    store.applyProgress(terminal(md5, "completed", expiresAt));
     assert.equal(store.getSnapshot().completedThisSession.has(md5), true);
 
     fake.advance(100);
@@ -192,9 +295,10 @@ describe("createActiveDownloadsStore", () => {
 
   test("failed and cancelled are terminal and retain then evict", () => {
     const { store, fake } = makeStore(50);
+    const expiresAt = fake.nowMs() / 1000 + 0.05;
     store.applyProgress([
-      dl("f".repeat(32), "failed", { error: "boom" }),
-      dl("c".repeat(32), "cancelled"),
+      terminal("f".repeat(32), "failed", expiresAt, { error: "boom" }),
+      terminal("c".repeat(32), "cancelled", expiresAt),
     ]);
     assert.equal(store.getSnapshot().downloads.size, 2);
     fake.advance(50);
@@ -205,7 +309,8 @@ describe("createActiveDownloadsStore", () => {
 
   test("removeDownloads clears entries and cancels retention timers", () => {
     const { store, fake } = makeStore(5_000);
-    store.applyProgress(dl("a".repeat(32), "completed"));
+    const expiresAt = fake.nowMs() / 1000 + 5;
+    store.applyProgress(terminal("a".repeat(32), "completed", expiresAt));
     assert.equal(fake.pendingCount(), 1);
 
     store.removeDownloads(["a".repeat(32)]);
@@ -216,13 +321,15 @@ describe("createActiveDownloadsStore", () => {
     assert.equal(store.getSnapshot().downloads.size, 0);
   });
 
-  test("non-terminal progress after terminal cancels eviction", () => {
+  test("non-terminal progress after terminal cancels eviction (retry)", () => {
     const { store, fake } = makeStore(100);
     const md5 = "a".repeat(32);
-    store.applyProgress(dl(md5, "failed"));
-    store.applyProgress(dl(md5, "queued")); // retry
+    const expiresAt = fake.nowMs() / 1000 + 0.1;
+    store.applyProgress(terminal(md5, "failed", expiresAt));
+    store.applyProgress(dl(md5, "queued")); // retry — no terminal_expires_at
     fake.advance(100);
     assert.equal(store.getByMd5(md5)?.status, "queued");
+    assert.equal(fake.pendingCount(), 0);
   });
 
   test("setConnection updates snapshot without touching downloads", () => {
@@ -248,7 +355,9 @@ describe("createActiveDownloadsStore", () => {
     assert.equal(store.getByMd5("a".repeat(32))?.status, "downloading");
   });
 
-  test("default retention matches TERMINAL_RETENTION_MS constant", () => {
-    assert.equal(TERMINAL_RETENTION_MS, 60_000);
+  test("fallback constant is documented and not the dual-maintained primary", () => {
+    // Primary path uses terminal_expires_at; this constant is temporary only.
+    assert.equal(typeof TERMINAL_RETENTION_MS, "number");
+    assert.ok(TERMINAL_RETENTION_MS > 0);
   });
 });

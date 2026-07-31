@@ -49,6 +49,18 @@ export interface DownloadStatus {
   file_path: string | null;
   /** Unix timestamp (seconds) when the download worker started. */
   started_at: number | null;
+  /**
+   * Unix timestamp (seconds) when status first became terminal.
+   * Backend-owned; optional for older bridge payloads.
+   */
+  terminal_at?: number | null;
+  /**
+   * Unix timestamp (seconds) when this entry should leave Active downloads.
+   * Backend-owned single source of truth (`terminal_at + TERMINAL_RETENTION_S`).
+   * Renderer schedules eviction from this deadline; do not dual-maintain a second
+   * policy constant as the primary path.
+   */
+  terminal_expires_at?: number | null;
 }
 
 export interface HistoryEntry {

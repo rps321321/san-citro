@@ -6,12 +6,21 @@
  * retention. The shell provider owns one instance and wires getDownloads +
  * onDownloadProgress once; Status Island, Downloads/Activity, and Search are
  * views over the same store.
+ *
+ * Terminal retention is backend-owned: live payloads carry `terminal_expires_at`
+ * (unix seconds). The store schedules eviction from that deadline so Python prune
+ * and the renderer share one clock. A local fallback delay is used only when an
+ * older bridge omits the field.
  */
 
 import type { DownloadStatus, LiveDownloadStatus } from "@/types";
 import { normalizeDownloadStatus } from "@/lib/status";
 
-/** Auto-remove terminal entries from the live list after this window. */
+/**
+ * Temporary fallback retention when a progress/hydration payload lacks
+ * `terminal_expires_at` (pre-#45 bridge). Prefer the backend deadline field.
+ * Not the primary policy — do not dual-maintain against TERMINAL_RETENTION_S.
+ */
 export const TERMINAL_RETENTION_MS = 60_000;
 
 /** Link health for the IPC progress subscription (not a download status). */
@@ -54,6 +63,22 @@ export function normalizeLiveDownload(item: DownloadStatus): DownloadStatus {
   return { ...item, status };
 }
 
+/**
+ * Delay until backend-owned `terminal_expires_at` (seconds), else temporary
+ * full-window fallback. Exported for contract tests.
+ */
+export function evictionDelayMs(
+  item: Pick<DownloadStatus, "terminal_expires_at">,
+  nowMs: number,
+  fallbackRetentionMs: number
+): number {
+  const expiresAt = item.terminal_expires_at;
+  if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) {
+    return Math.max(0, expiresAt * 1000 - nowMs);
+  }
+  return fallbackRetentionMs;
+}
+
 export interface ActiveDownloadsStore {
   subscribe(listener: ActiveDownloadsListener): () => void;
   getSnapshot(): ActiveDownloadsSnapshot;
@@ -71,10 +96,17 @@ export interface ActiveDownloadsStore {
 
 export function createActiveDownloadsStore(options?: {
   timers?: ActiveDownloadsTimers;
+  /**
+   * Temporary fallback when payload lacks `terminal_expires_at`.
+   * Primary path uses the backend deadline field.
+   */
   retentionMs?: number;
+  /** Injectable clock (ms since epoch) for tests. Defaults to Date.now. */
+  now?: () => number;
 }): ActiveDownloadsStore {
   const timers = options?.timers ?? defaultTimers;
   const retentionMs = options?.retentionMs ?? TERMINAL_RETENTION_MS;
+  const nowFn = options?.now ?? (() => Date.now());
 
   let downloads = new Map<string, DownloadStatus>();
   let connection: ConnectionState = "connecting";
@@ -113,8 +145,9 @@ export function createActiveDownloadsStore(options?: {
     }
   }
 
-  function scheduleEviction(md5: string): void {
+  function scheduleEviction(md5: string, item: DownloadStatus): void {
     clearEviction(md5);
+    const delayMs = evictionDelayMs(item, nowFn(), retentionMs);
     const handle = timers.setTimeout(() => {
       evictionTimers.delete(md5);
       if (!downloads.has(md5)) return;
@@ -122,7 +155,7 @@ export function createActiveDownloadsStore(options?: {
       next.delete(md5);
       downloads = next;
       emit();
-    }, retentionMs);
+    }, delayMs);
     evictionTimers.set(md5, handle);
   }
 
@@ -155,7 +188,7 @@ export function createActiveDownloadsStore(options?: {
 
     for (const d of normalizedItems) {
       if (isTerminalStatus(d.status)) {
-        scheduleEviction(d.md5);
+        scheduleEviction(d.md5, d);
       } else {
         // Non-terminal update cancels a prior retention timer (e.g. retry).
         clearEviction(d.md5);
@@ -221,4 +254,3 @@ export function createActiveDownloadsStore(options?: {
     },
   };
 }
-
