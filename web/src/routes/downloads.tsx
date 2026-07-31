@@ -11,26 +11,18 @@ import { ConnectionIndicator } from "@/components/connection-indicator";
 
 import { useActiveDownloads } from "@/contexts/active-downloads-context";
 import { cancelDownload } from "@/lib/api-client";
-import { truncateMd5, formatFileSize } from "@/lib/format";
+import { truncateMd5, formatFileSize, formatDuration } from "@/lib/format";
 import { openReader } from "@/lib/reader-nav";
 import { isReadable } from "@/lib/readable-format";
 import { getStatusLabel, getStatusVariant } from "@/lib/status";
 import { trackInteraction } from "@/lib/telemetry";
 import type { DownloadStatus } from "@/types";
 
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const totalSec = Math.round(seconds);
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}m ${s}s`;
-}
-
 /**
  * Label for a 1-based Active downloads queue position.
  * Pos 1 is next up; later positions report how many jobs are ahead (N-1).
  */
-export function formatQueuePosition(queuePosition: number): string {
+function formatQueuePosition(queuePosition: number): string {
   if (queuePosition === 1) return "Next in queue";
   return `${queuePosition - 1} ahead in queue`;
 }

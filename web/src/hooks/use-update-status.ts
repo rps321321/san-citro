@@ -11,7 +11,7 @@ import {
 import type { UpdateStatus } from "@/types";
 
 /** Default snapshot before first hydrate / live push. */
-export const INITIAL_RENDERER_UPDATE_STATUS: UpdateStatus = { status: "idle" };
+const INITIAL_RENDERER_UPDATE_STATUS: UpdateStatus = { status: "idle" };
 
 export type UseUpdateStatusResult = {
   /** Latest update snapshot from hydrate + live pushes. */

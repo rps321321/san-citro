@@ -365,7 +365,7 @@ export function createPlaybackPolicy(options: {
  * Production AudioPort bound to a lazily-resolved HTMLAudioElement
  * (ref may be null until the chrome mounts).
  */
-export function createHtmlAudioPort(
+function createHtmlAudioPort(
   getAudio: () => HTMLAudioElement | null
 ): AudioPort {
   return {

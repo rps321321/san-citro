@@ -130,3 +130,35 @@ jobs:
 
       - name: Security audit
         run: npm audit --omit=dev
+
+  fallow:
+    name: Fallow architecture audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # audit compares changed files against the merge base / origin default branch
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install root tooling
+        run: npm ci
+
+      - name: Fallow architecture audit
+        run: npm run fallow:audit -- --base origin/master --format human --sarif-file fallow-audit.sarif
+
+      - name: Upload SARIF artifact
+        if: success() || failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fallow-audit-sarif
+          path: fallow-audit.sarif
+          retention-days: 14
+          if-no-files-found: ignore

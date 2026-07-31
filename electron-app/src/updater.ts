@@ -19,18 +19,8 @@ import {
   type UpdateStatusListener,
 } from './update-status-owner';
 
-// Re-export pure core + owner factory so callers/tests can import from one place.
-export {
-  INITIAL_UPDATE_STATUS,
-  reduceUpdateStatus,
-  type UpdateEvent,
-} from './update-status';
-export {
-  createUpdateStatusOwner,
-  type UpdateStatusOwner,
-  type UpdateStatusListener,
-  type AutoUpdaterAdapter,
-} from './update-status-owner';
+// Callers import pure core (update-status) and owner factory (update-status-owner)
+// directly. This module only owns the process singleton + electron-updater glue.
 
 let owner: UpdateStatusOwner | null = null;
 let rendererUnsub: (() => void) | null = null;
@@ -82,11 +72,6 @@ export function startUpdateStatusOwner(opts: {
   return owner;
 }
 
-/** Process-wide owner (after startUpdateStatusOwner). */
-export function getUpdateStatusOwner(): UpdateStatusOwner {
-  return requireOwner();
-}
-
 export function getUpdateStatus(): UpdateStatus {
   return requireOwner().getSnapshot();
 }
@@ -112,13 +97,4 @@ export function subscribeUpdateStatus(
   listener: UpdateStatusListener
 ): () => void {
   return requireOwner().subscribe(listener);
-}
-
-/** Test/teardown helper — clears the process singleton. */
-export function _resetUpdateStatusOwnerForTests(): void {
-  if (rendererUnsub) {
-    rendererUnsub();
-    rendererUnsub = null;
-  }
-  owner = null;
 }

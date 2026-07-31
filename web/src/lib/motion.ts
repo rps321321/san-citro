@@ -4,7 +4,9 @@ import type { Transition } from "motion/react";
 // changes (enter/exit of status, sheets, toggles) — not decorative flourish.
 // Pick by surface size: gentle for large surfaces/sheets, smooth for default state
 // changes, snappy for small controls (toggles, buttons).
+/** @expected-unused design token for large surfaces/sheets (ADR-0016). */
 export const springGentle: Transition = { type: "spring", stiffness: 170, damping: 26 };
+/** @expected-unused design token for default state changes (ADR-0016). */
 export const springSmooth: Transition = { type: "spring", stiffness: 260, damping: 30 };
 export const springSnappy: Transition = { type: "spring", stiffness: 420, damping: 34 };
 

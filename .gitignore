@@ -77,3 +77,7 @@ data/*.jsonl.zst
 .greptile/
 
 .venv-audit88/
+
+# Fallow local cache / snapshots (committed baselines live in fallow-baselines/)
+.fallow/
+.fallow-inventory/

@@ -1,0 +1,17 @@
+{
+  "name": "san-citro-tooling",
+  "private": true,
+  "description": "Repository-owned JS/TS tooling for San Citro (Fallow architecture gate). Product packages live in web/ and electron-app/.",
+  "scripts": {
+    "fallow": "fallow",
+    "fallow:scan": "fallow",
+    "fallow:dead-code": "fallow dead-code",
+    "fallow:dupes": "fallow dupes",
+    "fallow:health": "fallow health",
+    "fallow:audit": "fallow audit",
+    "fallow:baselines": "node ./scripts/save-fallow-baselines.mjs"
+  },
+  "devDependencies": {
+    "fallow": "^3.10.0"
+  }
+}

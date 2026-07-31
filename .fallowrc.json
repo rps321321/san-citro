@@ -1,0 +1,145 @@
+{
+  "$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+  "entry": [
+    "web/src/app/**/{page,layout,error,global-error,not-found,loading,template,default}.{ts,tsx,js,jsx}",
+    "web/src/**/*.{test,spec}.{ts,tsx}",
+    "web/src/test/setup.ts",
+    "web/next.config.ts",
+    "web/postcss.config.mjs",
+    "web/vitest.config.ts",
+    "web/eslint.config.mjs",
+    "electron-app/src/main.ts",
+    "electron-app/src/preload.ts",
+    "electron-app/src/**/*.{test,spec}.ts",
+    "electron-app/scripts/**/*.{mjs,js,ts}"
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/out/**",
+    "**/dist/**",
+    "**/release/**",
+    "web/src/vendor/**",
+    "web/test-artifacts/**",
+    "web/src/components/__snapshots__/**",
+    "electron-app/renderer/**",
+    "electron-app/python-dist/**",
+    "electron-app/python-build/**",
+    "electron-app/bin/**",
+    "electron-app/python/**",
+    "**/*.d.ts"
+  ],
+  "ignoreExports": [
+    {
+      "file": "web/src/components/ui/**",
+      "exports": ["*"]
+    },
+    {
+      "file": "web/src/test/**",
+      "exports": ["*"]
+    }
+  ],
+  "rules": {
+    "unresolved-imports": "error",
+    "unlisted-dependencies": "error",
+    "circular-dependency": "error",
+    "boundary-violation": "error",
+    "unused-files": "error",
+    "unused-exports": "error",
+    "unused-dependencies": "error",
+    "unused-types": "warn",
+    "unused-class-members": "warn",
+    "unused-enum-members": "warn"
+  },
+  "duplicates": {
+    "mode": "mild",
+    "minTokens": 50,
+    "minLines": 5,
+    "threshold": 0
+  },
+  "health": {
+    "maxCyclomatic": 20,
+    "maxCognitive": 15,
+    "maxCrap": 30,
+    "maxUnitSize": 60,
+    "thresholdOverrides": [
+      {
+        "files": ["**/*.{test,spec}.{ts,tsx}", "**/test/**"],
+        "maxUnitSize": 500,
+        "reason": "Test suites and harnesses are long by design"
+      }
+    ]
+  },
+  "audit": {
+    "gate": "new-only",
+    "deadCodeBaseline": "fallow-baselines/dead-code.json",
+    "healthBaseline": "fallow-baselines/health.json",
+    "dupesBaseline": "fallow-baselines/dupes.json"
+  },
+  "boundaries": {
+    "zones": [
+      {
+        "name": "web-test",
+        "patterns": [
+          "web/src/test/**",
+          "web/src/**/*.test.ts",
+          "web/src/**/*.test.tsx",
+          "web/src/**/*.spec.ts",
+          "web/src/**/*.spec.tsx"
+        ]
+      },
+      {
+        "name": "web-ui-primitives",
+        "patterns": ["web/src/components/ui/**"]
+      },
+      {
+        "name": "web-domain",
+        "patterns": ["web/src/lib/**", "web/src/types/**"]
+      },
+      {
+        "name": "web-features",
+        "patterns": [
+          "web/src/components/**",
+          "web/src/routes/**",
+          "web/src/hooks/**",
+          "web/src/contexts/**",
+          "web/src/app/**"
+        ]
+      },
+      {
+        "name": "electron-main",
+        "patterns": ["electron-app/src/**"]
+      },
+      {
+        "name": "electron-scripts",
+        "patterns": ["electron-app/scripts/**"]
+      }
+    ],
+    "rules": [
+      {
+        "from": "web-domain",
+        "allow": []
+      },
+      {
+        "from": "web-ui-primitives",
+        "allow": ["web-domain"]
+      },
+      {
+        "from": "web-features",
+        "allow": ["web-domain", "web-ui-primitives"]
+      },
+      {
+        "from": "web-test",
+        "allow": ["web-domain", "web-ui-primitives", "web-features"]
+      },
+      {
+        "from": "electron-main",
+        "allow": []
+      },
+      {
+        "from": "electron-scripts",
+        "allow": []
+      }
+    ]
+  }
+}
