@@ -291,9 +291,9 @@ def test_handle_list_library_uses_query_library_not_download_history():
     import src.download_history as download_history
     import src.library as library_mod
 
-    assert not hasattr(download_history, "list_library"), (
-        "download_history.list_library was removed; Library uses src.library.query_library"
-    )
+    assert not hasattr(
+        download_history, "list_library"
+    ), "download_history.list_library was removed; Library uses src.library.query_library"
     assert hasattr(library_mod, "query_library")
     # Handler is bound to the deep-module query, not a history list.
     assert bridge_handlers.query_library is library_mod.query_library
