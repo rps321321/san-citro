@@ -136,7 +136,7 @@ class TestResumeWhenServerIgnoresRange:
         prefix = payload[:12]
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
+            def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler API
                 # Always ignore Range — classic CDN misbehaviour.
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(payload)))
@@ -188,7 +188,7 @@ class TestResumeWhenServerIgnoresRange:
         progress_events: list[tuple[int, int]] = []
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
+            def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler API
                 rng = self.headers.get("Range", "")
                 if rng.startswith("bytes="):
                     start = int(rng.split("=")[1].split("-")[0])
@@ -263,7 +263,7 @@ class TestResumeWhenServerIgnoresRange:
         progress_events: list[tuple[int, int]] = []
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
+            def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler API
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(payload)))
                 self.send_header("Content-Type", "application/octet-stream")
@@ -323,7 +323,7 @@ class TestResumeWhenServerIgnoresRange:
         md5 = hashlib.md5(payload).hexdigest()
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
+            def do_GET(self):  # noqa: N802 — BaseHTTPRequestHandler API
                 # Server refuses further range — partial is already the full object.
                 self.send_response(416)
                 self.send_header("Content-Range", f"bytes */{len(payload)}")
