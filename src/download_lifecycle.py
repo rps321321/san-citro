@@ -49,6 +49,25 @@ PUBLIC_STATUSES: frozenset[str] = frozenset(
     {"queued", "downloading", "completed", "failed", "cancelled"}
 )
 
+# Durable / history-only values → public Download lifecycle alphabet.
+# Sole backend coercion table; keep in sync with web/src/lib/status.ts.
+# ``interrupted`` is intentionally absent: history-only, not a live public status.
+_DURABLE_TO_PUBLIC: dict[str, str] = {
+    "started": "downloading",
+}
+
+
+def normalize_download_status(status: str) -> str:
+    """Map durable/history statuses onto the public Download lifecycle alphabet.
+
+    Public values (``queued|downloading|completed|failed|cancelled``) are
+    identity. History-only ``started`` becomes ``downloading``. ``interrupted``
+    and unknown values pass through unchanged so callers can keep raw durable
+    rows internal and only coerce at display / live projection seams.
+    """
+    return _DURABLE_TO_PUBLIC.get(status, status)
+
+
 # Live terminal outcomes that produce a Terminal event fact.
 _TERMINAL_FACT_STATUSES: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
 

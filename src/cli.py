@@ -18,7 +18,7 @@ from .config_manager import clamp_concurrency, get_config, get_default_history_d
 from .diagnostics import run_diagnostics
 from .download_history import get_download_history
 from .migrations import SchemaMigrationError, run_migrations
-from .download_lifecycle import run_download
+from .download_lifecycle import normalize_download_status, run_download
 from .download_strategy import DownloadStrategy, create_strategy
 from .logger import get_logger, setup_logging
 from .scraper import SCRAPE_PAGE_SIZE, scrape_annas_archive
@@ -102,16 +102,21 @@ def print_download_history(history_db: str | None, limit: int = 20) -> None:
     table.add_column("Error", style="red", width=25, no_wrap=True)
 
     for idx, row in enumerate(rows, 1):
-        status_raw = row.get("status", "unknown")
-        if status_raw == "completed":
+        # History may store durable ``started``; public display uses one seam.
+        status_key = normalize_download_status(row.get("status", "unknown") or "unknown")
+        if status_key == "completed":
             status = "[bold green]completed[/bold green]"
-        elif status_raw == "failed":
+        elif status_key == "failed":
             status = "[bold red]failed[/bold red]"
-        elif status_raw == "started":
-            # History-internal row from record_download_start; public lifecycle says downloading.
+        elif status_key == "downloading":
             status = "[bold yellow]downloading[/bold yellow]"
+        elif status_key == "queued":
+            status = "[dim]queued[/dim]"
+        elif status_key == "cancelled":
+            status = "[dim]cancelled[/dim]"
         else:
-            status = status_raw
+            # History-only (e.g. interrupted) or unknown: show raw public-key as-is.
+            status = status_key
 
         started = (row.get("started_at") or "")[:19].replace("T", " ")
         completed = (row.get("completed_at") or "")[:19].replace("T", " ")

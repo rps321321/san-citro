@@ -21,6 +21,7 @@ from src.download_lifecycle import (
     PUBLIC_STATUSES,
     TERMINAL_RETENTION_S,
     build_terminal_fact,
+    normalize_download_status,
     run_download,
     strategy_label,
 )
@@ -96,6 +97,51 @@ def _run(
         on_completed=on_completed,
     )
     return path, events, terminal_facts
+
+
+# Table: durable/public input → expected public (or passthrough) value.
+# Keep aligned with web/src/lib/status.test.ts NORMALIZE_CASES.
+_NORMALIZE_CASES: list[tuple[str, str]] = [
+    ("queued", "queued"),
+    ("downloading", "downloading"),
+    ("completed", "completed"),
+    ("failed", "failed"),
+    ("cancelled", "cancelled"),
+    ("started", "downloading"),
+    ("interrupted", "interrupted"),  # history-only; not coerced to live public
+    ("unknown", "unknown"),
+    ("", ""),
+    ("bogus-status", "bogus-status"),
+]
+
+
+class TestNormalizeDownloadStatus:
+    """One backend seam for durable/history → public lifecycle vocabulary (#46)."""
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        _NORMALIZE_CASES,
+        ids=[f"{r}->{e}" for r, e in _NORMALIZE_CASES],
+    )
+    def test_normalize_table(self, raw: str, expected: str) -> None:
+        assert normalize_download_status(raw) == expected
+
+    def test_public_statuses_are_identity(self) -> None:
+        for status in PUBLIC_STATUSES:
+            assert normalize_download_status(status) == status
+
+    def test_public_alphabet_is_exactly_five(self) -> None:
+        assert PUBLIC_STATUSES == frozenset(
+            {"queued", "downloading", "completed", "failed", "cancelled"}
+        )
+
+    def test_started_is_not_public(self) -> None:
+        assert "started" not in PUBLIC_STATUSES
+        assert normalize_download_status("started") in PUBLIC_STATUSES
+
+    def test_interrupted_stays_history_only(self) -> None:
+        assert normalize_download_status("interrupted") == "interrupted"
+        assert "interrupted" not in PUBLIC_STATUSES
 
 
 class TestCancelBeforeStart:

@@ -3,12 +3,37 @@ import type { LiveDownloadStatus } from "@/types";
 type BadgeVariant = "default" | "secondary" | "outline" | "destructive" | "success" | "warning";
 
 /**
- * Map legacy / history-only DB statuses onto the public Download lifecycle
- * vocabulary (CONTEXT.md). Live UI must never treat ``started`` as a first-class
- * live status; history rows may still store it from ``record_download_start``.
+ * Durable / history-only values → public Download lifecycle alphabet
+ * (CONTEXT.md: queued | downloading | completed | failed | cancelled).
+ *
+ * Sole renderer coercion table. Keep in sync with
+ * ``normalize_download_status`` in ``src/download_lifecycle.py``.
+ *
+ * ``interrupted`` is intentionally absent: history-only, not a live public status.
+ */
+const DURABLE_TO_PUBLIC: Readonly<Record<string, LiveDownloadStatus>> = {
+  started: "downloading",
+};
+
+/** Public live Download lifecycle statuses (no history-only values). */
+export const PUBLIC_DOWNLOAD_STATUSES: readonly LiveDownloadStatus[] = [
+  "queued",
+  "downloading",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+/**
+ * Map durable/history statuses onto the public Download lifecycle alphabet.
+ * Live UI must never treat ``started`` as a first-class live status; history
+ * rows may still store it from ``record_download_start``. Unknown and
+ * history-only values (e.g. ``interrupted``) pass through unchanged.
  */
 export function normalizeDownloadStatus(status: string): LiveDownloadStatus | string {
-  if (status === "started") return "downloading";
+  if (Object.prototype.hasOwnProperty.call(DURABLE_TO_PUBLIC, status)) {
+    return DURABLE_TO_PUBLIC[status];
+  }
   return status;
 }
 

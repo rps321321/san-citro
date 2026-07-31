@@ -13,6 +13,7 @@ from .download_lifecycle import (
     StatusSink,
     TerminalFactSink,
     build_terminal_fact,
+    normalize_download_status,
     run_download,
     strategy_label,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "StatusSink",
     "TerminalFactSink",
     "build_terminal_fact",
+    "normalize_download_status",
     "run_download",
     "strategy_label",
 ]
