@@ -6,7 +6,7 @@ import {
   TITLEBAR_OVERLAY_WIDTH_PX,
   TITLEBAR_OVERLAY,
   resolveTitlebarOverlay,
-} from "./titlebar.ts";
+} from "./titlebar";
 
 describe("titlebar overlay contract (#53)", () => {
   it("uses a 36px band and a single explicit overlay safe-area width", () => {

@@ -11,9 +11,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  lint:
-    name: Lint (ruff)
+  # Stable required check name — do not rename without updating branch protection.
+  python-lint:
+    name: Python lint and format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -22,19 +26,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: Install Ruff
         run: |
           python -m pip install --upgrade pip
           pip install ruff==0.8.6
 
-      - name: Run ruff linter
+      - name: Ruff check
         run: ruff check src/ tests/
 
-      - name: Run ruff formatter check
+      - name: Ruff format check
         run: ruff format --check src/ tests/
 
-  typecheck:
-    name: Type check (mypy)
+  python-typecheck:
+    name: Python type check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -47,19 +51,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          pip install mypy==1.14.1 types-requests
 
-      - name: Run mypy
+      - name: Mypy
         run: mypy src/
 
-  test:
-    name: Test (Python ${{ matrix.python-version }})
+  python-tests:
+    name: Python tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
-
     steps:
       - uses: actions/checkout@v7
 
@@ -72,21 +74,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run tests with coverage
-        run: |
-          pip install pytest-cov
-          pytest --cov=src --cov-report=term-missing --cov-report=xml -v
+      - name: Pytest with coverage
+        run: pytest --cov=src --cov-report=term-missing --cov-report=xml -v
 
       - name: Upload coverage artifact
-        if: matrix.python-version == '3.12'
+        if: always() && matrix.python-version == '3.12'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: coverage.xml
           retention-days: 7
+          if-no-files-found: ignore
 
-  audit:
-    name: Security audit (pip-audit)
+  python-audit:
+    name: Python dependency audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -101,11 +102,11 @@ jobs:
           pip install -e ".[dev]"
           pip install pip-audit
 
-      - name: Run pip audit
+      - name: pip-audit
         run: pip-audit
 
-  frontend:
-    name: Frontend (Next.js)
+  web-quality:
+    name: Web quality
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -122,24 +123,48 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run lint
-        run: npm run lint
+      - name: Web quality check
+        run: npm run check
 
-      - name: Build
-        run: npx next build
+      - name: Production dependency audit
+        run: npm run audit:production
 
-      - name: Security audit
-        run: npm audit --omit=dev
+      - name: Upload desktop-layout failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-layout-artifacts
+          path: web/test-artifacts/desktop-layout/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  electron-quality:
+    name: Electron quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: electron-app
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: electron-app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Electron quality check
+        run: npm run check
 
   fallow:
     name: Fallow architecture audit
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
-          # audit compares changed files against the merge base / origin default branch
           fetch-depth: 0
 
       - uses: actions/setup-node@v7

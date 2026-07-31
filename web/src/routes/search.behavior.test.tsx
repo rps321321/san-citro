@@ -320,6 +320,8 @@ describe("Search route public behavior (#58)", () => {
               md5: BOOK_MD5,
               language: "English",
               filesize_bytes: 10,
+              publisher: "",
+              isbn13: "",
             }}
             downloadState="idle"
             onDownload={onDownload}
