@@ -19,21 +19,13 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
 import { useThemeToggle } from "@/components/ui/skiper-ui/skiper26";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 const NAV_ITEMS = [
   { label: "Search", href: "/search", icon: SearchIcon },
@@ -41,6 +33,13 @@ const NAV_ITEMS = [
   { label: "Activity", href: "/activity", icon: ActivityIcon },
   { label: "Settings", href: "/settings", icon: SettingsIcon },
 ] as const;
+
+// Active hierarchy (issue #55 / ADR-0016): citrus left rail + weight + restrained
+// fill — identifiable without relying on pale orange fill alone.
+const NAV_ACTIVE_CLASS =
+  "rounded-md text-sidebar-foreground/80 hover:text-sidebar-accent-foreground " +
+  "data-active:bg-primary/10 data-active:font-semibold data-active:text-primary " +
+  "data-active:shadow-[inset_3px_0_0_0_var(--sidebar-primary)]";
 
 export function AppSidebar() {
   // HashRouter: useLocation().pathname is the route (/search, /library, …);
@@ -51,37 +50,38 @@ export function AppSidebar() {
   const { resolvedTheme } = useTheme();
   const { toggleTheme } = useThemeToggle({ variant: "circle", start: "bottom-left" });
   const isDark = mounted && resolvedTheme === "dark";
+  // Explicit action copy — not a passive "current theme" label.
+  const themeActionLabel = isDark ? "Switch to light" : "Switch to dark";
 
   // Flush to the window edge (not floating): DWM window radius clips the
   // glass rail so it matches the app chrome.
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="app-region-drag h-9 justify-center py-0">
-        <div className="flex items-center justify-between gap-2 px-1 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
+      <SidebarHeader className="app-region-drag h-[var(--titlebar-height)] justify-center border-b border-sidebar-border p-0">
+        <div className="flex h-full items-center justify-between gap-1 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0">
           <Link
             to="/search"
             aria-label="San Citro — home"
-            className="app-region-no-drag flex items-center gap-2 overflow-hidden group-data-[collapsible=icon]:hidden"
+            className="app-region-no-drag flex min-w-0 items-center gap-1.5 overflow-hidden group-data-[collapsible=icon]:hidden"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.png"
               alt="San Citro logo"
-              width={32}
-              height={32}
-              className="size-8 shrink-0 rounded-xl"
+              width={24}
+              height={24}
+              className="size-6 shrink-0 rounded-md"
             />
-            <span className="text-sm font-semibold tracking-tight">San Citro</span>
+            <span className="truncate text-sm font-semibold tracking-tight">
+              San Citro
+            </span>
           </Link>
-          <SidebarTrigger className="app-region-no-drag" />
+          <SidebarTrigger className="app-region-no-drag shrink-0" />
         </div>
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-sidebar-foreground/50">
-            Navigation
-          </SidebarGroupLabel>
+        <SidebarGroup className="py-2">
           <SidebarGroupContent>
             <SidebarMenu>
               {NAV_ITEMS.map((item) => {
@@ -93,8 +93,13 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={isActive}
                       tooltip={item.label}
-                      className="rounded-md data-active:bg-primary/12 data-active:font-medium data-active:text-primary data-active:shadow-[inset_0_0_0_1px] data-active:shadow-primary/15"
-                      render={<NavLink to={item.href} aria-current={isActive ? "page" : undefined} />}
+                      className={NAV_ACTIVE_CLASS}
+                      render={
+                        <NavLink
+                          to={item.href}
+                          aria-current={isActive ? "page" : undefined}
+                        />
+                      }
                     >
                       <item.icon />
                       <span>{item.label}</span>
@@ -107,39 +112,33 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="w-full justify-start gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-                      onClick={() => {
-                        trackInteraction("theme_toggle", "sidebar", {
-                          theme: isDark ? "light" : "dark",
-                        });
-                        toggleTheme();
-                      }}
-                      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-                    >
-                      <SunIcon className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0" aria-hidden="true" />
-                      <MoonIcon className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100" aria-hidden="true" />
-                      <span className="group-data-[collapsible=icon]:hidden">
-                        {isDark ? "Light mode" : "Dark mode"}
-                      </span>
-                    </Button>
-                  }
+            {/* Same row geometry as nav; tooltip only when icon-collapsed. */}
+            <SidebarMenuButton
+              tooltip={themeActionLabel}
+              aria-label={themeActionLabel}
+              className="relative text-sidebar-foreground/80 hover:text-sidebar-accent-foreground"
+              onClick={() => {
+                trackInteraction("theme_toggle", "sidebar", {
+                  theme: isDark ? "light" : "dark",
+                });
+                toggleTheme();
+              }}
+            >
+              <span className="relative flex size-4 shrink-0 items-center justify-center">
+                <SunIcon
+                  className="size-4 rotate-0 scale-100 transition-transform dark:-rotate-90 dark:scale-0"
+                  aria-hidden="true"
                 />
-                {/* Tooltip label for when sidebar is icon-collapsed and text span is hidden */}
-                <TooltipContent side="right">
-                  {isDark ? "Light mode" : "Dark mode"}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                <MoonIcon
+                  className="absolute size-4 rotate-90 scale-0 transition-transform dark:rotate-0 dark:scale-100"
+                  aria-hidden="true"
+                />
+              </span>
+              <span>{themeActionLabel}</span>
+            </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

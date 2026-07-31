@@ -14,13 +14,13 @@ export function StartupShell() {
       aria-busy="true"
       aria-label="Loading San Citro"
     >
-      {/* Sidebar rail — same 16rem width as SidebarProvider SIDEBAR_WIDTH. */}
+      {/* Sidebar rail — same 14rem width as SidebarProvider SIDEBAR_WIDTH (issue #55). */}
       <aside
-        className="sidebar-glass hidden h-full w-64 shrink-0 flex-col border-r border-sidebar-border md:flex"
+        className="sidebar-glass hidden h-full w-[14rem] shrink-0 flex-col border-r border-sidebar-border md:flex"
         aria-hidden="true"
       >
-        <div className="flex h-[var(--titlebar-height)] items-center gap-2 border-b border-sidebar-border px-3">
-          <Skeleton className="size-8 shrink-0 rounded-xl" />
+        <div className="flex h-[var(--titlebar-height)] items-center gap-1.5 border-b border-sidebar-border px-2">
+          <Skeleton className="size-6 shrink-0 rounded-md" />
           <Skeleton className="h-4 w-20" />
         </div>
         <div className="flex flex-col gap-2 p-3">

@@ -101,4 +101,62 @@ describe("AppSidebar glass chrome contract", () => {
     const nav = container.querySelector('[data-slot="sidebar-menu"]');
     expect(nav?.querySelector(".opacity-0")).toBeNull();
   });
+
+  // --- Density + active hierarchy (issue #55) ---
+
+  it("uses a denser expanded width (14rem, not 16rem)", () => {
+    const { container } = renderSidebar();
+    const wrapper = container.querySelector(
+      '[data-slot="sidebar-wrapper"]',
+    ) as HTMLElement | null;
+    expect(wrapper).toBeTruthy();
+    expect(wrapper?.style.getPropertyValue("--sidebar-width").trim()).toBe(
+      "14rem",
+    );
+  });
+
+  it("does not render a redundant Navigation group label", () => {
+    const { queryByText } = renderSidebar();
+    expect(queryByText("Navigation")).toBeNull();
+  });
+
+  it("marks the active route with aria-current and a citrus rail (not fill alone)", () => {
+    const { container, getByText } = renderSidebar();
+    const search = getByText("Search").closest(
+      '[data-slot="sidebar-menu-button"]',
+    ) as HTMLElement | null;
+    expect(search).toBeTruthy();
+    expect(search?.getAttribute("aria-current")).toBe("page");
+    // Active hierarchy: inset citrus rail + weight (not pale fill only).
+    const cls = search?.className ?? "";
+    expect(cls).toContain(
+      "data-active:shadow-[inset_3px_0_0_0_var(--sidebar-primary)]",
+    );
+    expect(cls).toContain("data-active:font-semibold");
+    expect(cls).toContain("data-active:bg-primary/10");
+    // Keyboard focus remains visible (ring from menu-button variants).
+    expect(cls).toContain("focus-visible:ring-2");
+    // Inactive destinations still listed for density check.
+    expect(container.textContent).toContain("Library");
+    expect(container.textContent).toContain("Activity");
+    expect(container.textContent).toContain("Settings");
+  });
+
+  it("presents theme switching as an explicit action with nav-row geometry", async () => {
+    const { findByRole, findByLabelText } = renderSidebar();
+    // Mock resolves dark; mounted gate flips after effect → "Switch to light".
+    const action = await findByLabelText("Switch to light");
+    expect(action).toBeTruthy();
+    expect(action.getAttribute("data-slot")).toBe("sidebar-menu-button");
+    expect(await findByRole("button", { name: "Switch to light" })).toBeTruthy();
+  });
+
+  it("aligns the brand header to the title-bar height token", () => {
+    const { container } = renderSidebar();
+    const header = container.querySelector('[data-slot="sidebar-header"]');
+    expect(header).toBeTruthy();
+    expect(header?.className ?? "").toContain(
+      "h-[var(--titlebar-height)]",
+    );
+  });
 });
