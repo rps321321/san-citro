@@ -10,18 +10,23 @@ import {
 import path from 'path';
 import fs from 'fs';
 import { pathToFileURL } from 'node:url';
-import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { registerIpcHandlers } from './ipc-handlers';
 import { registerMediaProtocol } from './media-protocol';
 import { showSplash, closeSplash } from './splash';
-import { createTray, destroyTray, setTrayUpdateStatus } from './tray';
 import {
-  initAutoUpdater,
+  createTray,
+  destroyTray,
+  refreshTrayUpdatePresentation,
+} from './tray';
+import {
+  startUpdateStatusOwner,
   checkForUpdates,
   quitAndInstall,
+  getUpdateStatus,
+  subscribeUpdateStatus,
 } from './updater';
 
 // ---------------------------------------------------------------------------
@@ -247,13 +252,21 @@ app.whenReady().then(async () => {
     console.error('[main] Failed to spawn Python bridge:', err);
   }
 
-  // 5. Register bridge IPC handlers
+  // 5. Single Update status owner before any window/IPC client can call it.
+  // Owns library wiring, snapshot, check, quit-and-install, renderer push.
+  // Main must not call electron-updater on a parallel path (issue #48).
+  startUpdateStatusOwner({
+    isPackaged: app.isPackaged,
+    getMainWindow,
+  });
+
+  // 6. Register bridge IPC handlers (update IPC uses the owner above)
   registerIpcHandlers(bridge, getMainWindow);
 
-  // 5b. Register the audiobook media protocol (san-citro-media://).
+  // 6b. Register the audiobook media protocol (san-citro-media://).
   registerMediaProtocol(bridge);
 
-  // 6. Set up CSP BEFORE creating the window (must be active before loadURL fires)
+  // 7. Set up CSP BEFORE creating the window (must be active before loadURL fires)
   // Dev HMR needs the Next dev server origin + its websocket for fast refresh.
   const devConnect = DEV_SERVER_URL ? `${DEV_SERVER_URL} ${DEV_SERVER_URL.replace('http', 'ws')} ` : '';
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
@@ -283,17 +296,17 @@ app.whenReady().then(async () => {
     });
   });
 
-  // 7. Create main window (AFTER CSP is active)
+  // 8. Create main window (AFTER CSP is active)
   const win = createMainWindow();
 
-  // 8. When main window is ready, close splash and show it
+  // 9. When main window is ready, close splash and show it
   win.once('ready-to-show', () => {
     closeSplash();
     win.show();
     win.focus();
   });
 
-  // 9. Fallback: close splash after 10s even if window hasn't loaded
+  // 10. Fallback: close splash after 10s even if window hasn't loaded
   setTimeout(() => {
     closeSplash();
     if (win && !win.isDestroyed() && !win.isVisible()) {
@@ -301,25 +314,26 @@ app.whenReady().then(async () => {
     }
   }, 10_000);
 
-  // 10. Create system tray
+  // 11. Create system tray — projection over the owner only (no local store).
   createTray(
     getMainWindow,
     DOWNLOADS_DIR,
     () => {
-      void checkForUpdates(app.isPackaged);
+      void checkForUpdates();
     },
-    () => quitAndInstall()
+    () => quitAndInstall(),
+    () => getUpdateStatus()
   );
+  subscribeUpdateStatus(() => {
+    refreshTrayUpdatePresentation();
+  });
 
-  // 11. Auto-update — packaged builds only (autoUpdater throws in dev).
-  if (app.isPackaged) {
-    autoUpdater.logger = log;
-    initAutoUpdater(getMainWindow, (status) => setTrayUpdateStatus(status));
-    try {
-      await autoUpdater.checkForUpdatesAndNotify();
-    } catch (err) {
-      console.error('[main] Auto-update check failed:', err);
-    }
+  // 12. Launch-time check (same owner method as manual IPC / tray check).
+  // Non-packaged builds dispatch a live not-available snapshot.
+  try {
+    await checkForUpdates();
+  } catch (err) {
+    console.error('[main] Auto-update check failed:', err);
   }
 });
 

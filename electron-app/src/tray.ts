@@ -5,26 +5,33 @@ import { UpdateStatus } from './types';
 let tray: Tray | null = null;
 
 // Captured so we can rebuild the menu when an update becomes available.
+// Update status is NOT stored here — the main-side owner is authoritative;
+// we always read via getUpdateStatusRef (issue #48).
 let getMainWindowRef: (() => BrowserWindow | null) | null = null;
 let downloadsDirRef = '';
 let onCheckForUpdatesRef: (() => void) | null = null;
 let onQuitAndInstallRef: (() => void) | null = null;
-let latestUpdate: UpdateStatus = { status: 'idle' };
+let getUpdateStatusRef: (() => UpdateStatus) | null = null;
 
 /**
  * Create the system tray icon with context menu.
  * Returns the Tray instance for lifecycle management.
+ *
+ * `getUpdateStatus` must read from the single Update status owner — tray is a
+ * projection only and must not keep an independent status store.
  */
 export function createTray(
   getMainWindow: () => BrowserWindow | null,
   downloadsDir: string,
   onCheckForUpdates: () => void,
-  onQuitAndInstall: () => void
+  onQuitAndInstall: () => void,
+  getUpdateStatus: () => UpdateStatus = () => ({ status: 'idle' })
 ): Tray {
   getMainWindowRef = getMainWindow;
   downloadsDirRef = downloadsDir;
   onCheckForUpdatesRef = onCheckForUpdates;
   onQuitAndInstallRef = onQuitAndInstall;
+  getUpdateStatusRef = getUpdateStatus;
 
   const iconPath = path.join(app.getAppPath(), 'resources', 'icon.ico');
 
@@ -64,10 +71,15 @@ export function destroyTray(): void {
   }
 }
 
-/** Reflect the latest update state in the tray tooltip and menu. */
-export function setTrayUpdateStatus(status: UpdateStatus): void {
-  latestUpdate = status;
-  if (!tray) return;
+/**
+ * Project the owner's current Update status into tray tooltip + menu.
+ * Does not store status — always re-reads via the injected getter on rebuild.
+ * Safe to call on every owner transition (subscriber).
+ */
+export function refreshTrayUpdatePresentation(): void {
+  if (!tray || !getUpdateStatusRef) return;
+
+  const status = getUpdateStatusRef();
 
   if (status.status === 'downloaded') {
     tray.setToolTip(
@@ -93,6 +105,11 @@ function buildContextMenu(
   getMainWindow: () => BrowserWindow | null,
   downloadsDir: string
 ): Menu {
+  // Read-through only — never cached as tray-owned state (issue #48).
+  const status: UpdateStatus = getUpdateStatusRef
+    ? getUpdateStatusRef()
+    : { status: 'idle' };
+
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: 'Show / Hide',
@@ -116,22 +133,22 @@ function buildContextMenu(
     { type: 'separator' },
   ];
 
-  if (latestUpdate.status === 'downloaded') {
+  if (status.status === 'downloaded') {
     template.push({
-      label: `Restart to install update ${latestUpdate.version ?? ''}`.trim(),
+      label: `Restart to install update ${status.version ?? ''}`.trim(),
       click: () => onQuitAndInstallRef?.(),
     });
   } else if (
-    latestUpdate.status === 'available' ||
-    latestUpdate.status === 'downloading' ||
-    latestUpdate.status === 'checking'
+    status.status === 'available' ||
+    status.status === 'downloading' ||
+    status.status === 'checking'
   ) {
     const pct =
-      latestUpdate.status === 'downloading' && latestUpdate.percent != null
-        ? ` ${Math.round(latestUpdate.percent)}%`
+      status.status === 'downloading' && status.percent != null
+        ? ` ${Math.round(status.percent)}%`
         : '';
     template.push({
-      label: `Downloading update ${latestUpdate.version ?? ''}${pct}…`.trim(),
+      label: `Downloading update ${status.version ?? ''}${pct}…`.trim(),
       enabled: false,
     });
   } else {
