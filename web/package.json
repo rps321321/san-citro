@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "test:component": "vitest run",
-    "test:unit": "npx tsx --test src/lib/active-downloads.test.ts src/lib/playback-policy.test.ts src/lib/readable-format.test.ts src/lib/status.test.ts src/lib/telemetry.test.ts src/lib/motion.test.ts src/lib/titlebar.test.ts"
+    "test:unit": "npx tsx --test src/lib/active-downloads.test.ts src/lib/playback-policy.test.ts src/lib/readable-format.test.ts src/lib/status.test.ts src/lib/telemetry.test.ts src/lib/motion.test.ts src/lib/titlebar.test.ts src/lib/route-meta.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -12,8 +12,10 @@ import {
   SunMoonIcon,
 } from "lucide-react";
 
-// Ctrl+K command palette (ADR-0011 + grill). A .glass overlay over cmdk's headless
-// Command (filtering + keyboard nav). Mac aesthetic, Windows convention: Ctrl+K.
+// Ctrl+K command palette (ADR-0016 shell chrome). Glass overlay over cmdk.
+// Windows convention: Ctrl+K. Title-bar button dispatches OPEN_COMMAND_PALETTE_EVENT (#54).
+export const OPEN_COMMAND_PALETTE_EVENT = "san-citro:open-command-palette";
+
 const NAV = [
   { label: "Search", icon: SearchIcon, to: "/search" },
   { label: "Library", icon: LibraryIcon, to: "/library" },
@@ -61,6 +63,13 @@ export function CommandPalette() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [closePalette, open, openPalette]);
+
+  useEffect(() => {
+    const onOpenRequest = () => openPalette();
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
+    return () =>
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpenRequest);
+  }, [openPalette]);
 
   const run = (fn: () => void) => {
     closePalette(fn);
