@@ -57,6 +57,8 @@ Thumbs.db
 node_modules/
 web/.next/
 web/out/
+# Layout regression failure dumps (issue #64); baselines live in __snapshots__
+web/test-artifacts/
 
 # Electron app build artifacts
 electron-app/dist/
