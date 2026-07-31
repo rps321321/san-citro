@@ -91,4 +91,14 @@ describe("AppSidebar glass chrome contract", () => {
     // Floating/inset add p-2; default rail must not.
     expect(cls.split(/\s+/)).not.toContain("p-2");
   });
+
+  it("uses plain brand text (no TextRepel) and no decorative hover arrows", () => {
+    const { container, getByText } = renderSidebar();
+    expect(getByText("San Citro")).toBeTruthy();
+    expect(container.querySelector("[data-text-repel]")).toBeNull();
+    // ArrowIcon from skiper99 rendered a chevron+line affordance; product nav is label-only.
+    expect(container.querySelectorAll("svg").length).toBeGreaterThan(0);
+    const nav = container.querySelector('[data-slot="sidebar-menu"]');
+    expect(nav?.querySelector(".opacity-0")).toBeNull();
+  });
 });

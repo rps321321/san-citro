@@ -51,6 +51,11 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+  Visual language tokens — ADR-0016 (warm precise Windows desktop library utility).
+  Later surface tickets consume these roles; do not invent parallel scales.
+*/
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -58,8 +63,7 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  /* Citrus accent (ADR-0011) — the single brand color, on primary buttons,
-     focus rings, and the active nav. */
+  /* Semantic citrus (ADR-0016): primary actions, active nav, progress, focus only. */
   --primary: oklch(0.63 0.19 48);
   --primary-foreground: oklch(0.99 0.01 80);
   --secondary: oklch(0.97 0 0);
@@ -79,9 +83,27 @@
   --input: oklch(0.922 0 0);
   --ring: oklch(0.63 0.19 48);
   --destructive-foreground: oklch(0.985 0 0);
+  /* Base radius; ladder exposed via --radius-* theme keys. */
   --radius: 0.625rem;
-  /* Sidebar = Apple-style glass control rail over Mica (ADR-0011). More
-     translucent than a solid panel so blur + window material read through. */
+
+  /* Spacing scale (4px base) — use for new layout; Tailwind spacing remains valid. */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.25rem; /* 20px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+  --space-10: 2.5rem; /* 40px */
+  --space-12: 3rem; /* 48px */
+
+  /* Elevation — floating shell chrome only (status, palette, sheets). Content stays flat. */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px oklch(0 0 0 / 0.06);
+  --elevation-2: 0 4px 12px oklch(0 0 0 / 0.1);
+  --elevation-3: 0 8px 30px oklch(0 0 0 / 0.12);
+
+  /* Sidebar = translucent shell chrome over window Mica (ADR-0016). */
   --sidebar: oklch(0.99 0 0 / 0.52);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.63 0.19 48);
@@ -90,15 +112,12 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0 0 0 / 0.08);
   --sidebar-ring: oklch(0.63 0.19 48);
-  /* Liquid Glass tokens (ADR-0011) — consumed by the .glass utility on the
-     control layer. Blur ≤16px per the perf research; keep glass OUT of any
-     Motion-transformed ancestor (the containing-block trap blanks backdrop-filter). */
+  /* Shell glass tokens — control chrome only. Blur ≤16px; keep glass OUT of any
+     Motion-transformed ancestor (containing-block trap blanks backdrop-filter). */
   --glass-bg: oklch(1 0 0 / 0.55);
   --glass-border: oklch(0 0 0 / 0.08);
   --glass-blur: 16px;
-  --glass-shadow: 0 8px 30px oklch(0 0 0 / 0.12);
-  /* Sidebar-specific glass (same blur budget as .glass). Soft depth only —
-     no large custom radius; window DWM owns outer corner rounding. */
+  --glass-shadow: var(--elevation-3);
   --sidebar-glass-blur: var(--glass-blur);
   --sidebar-glass-shadow: inset -1px 0 0 oklch(0 0 0 / 0.04);
 }
@@ -110,7 +129,7 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  /* Citrus brightens in dark (ADR-0011). */
+  /* Citrus brightens slightly in dark for contrast on charcoal surfaces. */
   --primary: oklch(0.70 0.17 52);
   --primary-foreground: oklch(0.16 0.02 48);
   --secondary: oklch(0.269 0 0);
@@ -130,6 +149,9 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.70 0.17 52);
   --destructive-foreground: oklch(0.985 0 0);
+  --elevation-1: 0 1px 2px oklch(0 0 0 / 0.35);
+  --elevation-2: 0 4px 12px oklch(0 0 0 / 0.4);
+  --elevation-3: 0 8px 30px oklch(0 0 0 / 0.4);
   --sidebar: oklch(0.18 0 0 / 0.52);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.70 0.17 52);
@@ -140,7 +162,7 @@
   --sidebar-ring: oklch(0.70 0.17 52);
   --glass-bg: oklch(0.21 0 0 / 0.55);
   --glass-border: oklch(1 0 0 / 0.1);
-  --glass-shadow: 0 8px 30px oklch(0 0 0 / 0.4);
+  --glass-shadow: var(--elevation-3);
   --sidebar-glass-shadow: inset -1px 0 0 oklch(1 0 0 / 0.06);
 }
 
@@ -150,17 +172,62 @@
   }
   body {
     @apply text-foreground;
-    /* Transparent so the window's Mica material shows through translucent
-       surfaces (the sidebar). Opaque panels (content) re-establish their bg. */
+    /* Transparent so window Mica shows through translucent shell chrome.
+       Opaque content surfaces re-establish background (SidebarInset, .surface-content). */
     background-color: transparent;
   }
   html {
     @apply font-sans;
   }
-  /* Apple type metrics (ADR-0011): tighten tracking on larger text. */
+  /* Slight tracking tighten on headings — desktop utility density, not display marketing type. */
   h1, h2, h3, h4 {
     letter-spacing: -0.02em;
   }
+}
+
+/* Typography roles (ADR-0016) — shared hierarchy for Search / Library / Activity / Settings. */
+.type-page-title {
+  font-family: var(--font-heading);
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+.type-section-title {
+  font-family: var(--font-heading);
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+.type-body {
+  font-family: var(--font-sans);
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.45;
+  font-weight: 400;
+  color: var(--foreground);
+}
+.type-meta {
+  font-family: var(--font-sans);
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.4;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.type-mono {
+  font-family: var(--font-mono);
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.4;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Opaque content surface — main column, tables, Settings, Reader (ADR-0016). */
+.surface-content {
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 /* Frameless window (Electron titleBarStyle: hidden): draggable title-bar regions.
@@ -172,10 +239,9 @@
   -webkit-app-region: no-drag;
 }
 
-/* Liquid Glass surface (ADR-0011) — translucent + blurred control-layer surfaces
-   (sheets, popovers, the command palette, the expanded player). Keep OUT of any
-   Motion-transformed ancestor: a transform/filter on an ancestor establishes a
-   containing block that makes backdrop-filter sample nothing, blanking the blur. */
+/* Shell glass (ADR-0016) — translucent + blurred chrome only (status pill, command palette,
+   floating overlays). Keep OUT of Motion-transformed ancestors: a transform/filter on an
+   ancestor establishes a containing block that blanks backdrop-filter. */
 .glass {
   background-color: var(--glass-bg);
   -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -184,8 +250,7 @@
   box-shadow: var(--glass-shadow);
 }
 
-/* Apple-style glass rail: translucent fill + blur + saturate so Mica reads
-   through. Applied to the sidebar inner surface (control layer only). */
+/* Shell sidebar rail: translucent fill + blur + saturate so Mica reads through. */
 .sidebar-glass {
   background-color: var(--sidebar);
   -webkit-backdrop-filter: blur(var(--sidebar-glass-blur)) saturate(1.4);
@@ -199,6 +264,7 @@
   --expo-in: cubic-bezier(0.7, 0, 0.84, 0);
 }
 
+/* Reduced motion (ADR-0016): product motion must honor OS preference. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -210,7 +276,7 @@
   }
 }
 
-/* Card enter animation used by download cards */
+/* Card enter animation used by download cards (disabled under reduced-motion above). */
 @keyframes card-enter {
   from {
     opacity: 0;

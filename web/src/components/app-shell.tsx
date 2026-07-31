@@ -36,7 +36,7 @@ function ShellInner() {
         <AppHeader />
         <main
           id="main-content"
-          className="flex-1 overflow-auto p-4 md:p-6"
+          className="surface-content flex-1 overflow-auto p-4 md:p-6"
           style={active ? { paddingBottom: 72 } : undefined}
         >
           <Outlet />

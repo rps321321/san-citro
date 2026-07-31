@@ -7,11 +7,11 @@ import { DownloadIcon, Loader2Icon, CheckCircle2Icon } from "lucide-react";
 import { useActiveDownloadCount } from "@/contexts/active-downloads-context";
 import { onAudiobookStatus } from "@/lib/api-client";
 
-// Title-bar "Dynamic Island" (ADR-0011): a glass status pill that appears on
-// activity (downloading / processing → ready) and settles to nothing when idle.
-// Click → Downloads. Centered via FLEX and animated with OPACITY ONLY — never a
-// transform on the glass or an ancestor (the containing-block trap blanks
-// backdrop-filter). Live download count comes from the shell Active downloads store.
+// Title-bar status pill (ADR-0016): shell-glass activity indicator that appears on
+// downloading / processing → ready and settles when idle. Click → Activity.
+// Centered via FLEX; animate with OPACITY ONLY — never a transform on the glass or
+// an ancestor (containing-block trap blanks backdrop-filter). Live download count
+// comes from the shell Active downloads store.
 export function StatusIsland() {
   const navigate = useNavigate();
   const activeDownloads = useActiveDownloadCount();

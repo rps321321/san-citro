@@ -27,9 +27,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { TextRepel } from "@/components/ui/text-repel";
 import { useThemeToggle } from "@/components/ui/skiper-ui/skiper26";
-import { ArrowIcon } from "@/components/ui/skiper-ui/skiper99";
 import {
   Tooltip,
   TooltipContent,
@@ -73,7 +71,7 @@ export function AppSidebar() {
               height={32}
               className="size-8 shrink-0 rounded-xl"
             />
-            <TextRepel text="San Citro" className="text-sm font-semibold tracking-tight" radius={70} strength={16} />
+            <span className="text-sm font-semibold tracking-tight">San Citro</span>
           </Link>
           <SidebarTrigger className="app-region-no-drag" />
         </div>
@@ -95,12 +93,11 @@ export function AppSidebar() {
                     <SidebarMenuButton
                       isActive={isActive}
                       tooltip={item.label}
-                      className="rounded-xl data-active:bg-primary/12 data-active:font-medium data-active:text-primary data-active:shadow-[inset_0_0_0_1px] data-active:shadow-primary/15"
+                      className="rounded-md data-active:bg-primary/12 data-active:font-medium data-active:text-primary data-active:shadow-[inset_0_0_0_1px] data-active:shadow-primary/15"
                       render={<NavLink to={item.href} aria-current={isActive ? "page" : undefined} />}
                     >
                       <item.icon />
                       <span>{item.label}</span>
-                      <ArrowIcon className="ml-auto size-4 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover/menu-item:opacity-100 group-data-[collapsible=icon]:hidden" />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );

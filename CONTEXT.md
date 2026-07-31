@@ -134,23 +134,29 @@ A Book Artifact extension the in-app reader can open (foliate multi-format set).
 Category and from “file exists on disk.”
 _Avoid_: hardcoding EPUB-only on some surfaces and multi-format on others.
 
-## Language — Visual design (ADR-0011)
+## Language — Visual design (ADR-0016; supersedes ADR-0011 north star)
 
-**Liquid Glass**:
-San Citro's material language — translucent, blurred, layered surfaces evoking Apple's Liquid
-Glass. On Windows it is *approximated*: **Mica** at the window level (the sidebar) + CSS
-`backdrop-filter` for in-app overlays. There is no true refraction.
-_Avoid_: calling any flat/opaque panel "glass".
+**Windows desktop library utility**:
+Product direction for the renderer: warm, precise, Windows-native proportions and interaction
+behavior — a personal library tool, not Mac cosplay or kit maximalism. Tokens/roles live in
+`web/src/app/globals.css`. Full decision: [[#ADR-0016]] / `docs/adr/0016-desktop-visual-language.md`.
+_Avoid_: "Liquid Glass", "Dynamic Island", "Apple-like" as product language.
 
-**Control layer vs Content layer**:
-The two-tier rule for where glass goes. The **control layer** (sidebar, toolbars, sheets,
-popovers, dropdowns, the expanded player, the status island) floats above and is **glass**;
-the **content layer** (lists, cards, the library/reading surface) stays **solid** for legibility.
+**Shell chrome vs content**:
+Two-tier materials rule. **Shell chrome** (sidebar rail, title-bar **status pill**, floating
+overlays such as the command palette) may use **Mica** + CSS translucency/blur. **Content**
+(main inset, tables, Settings, Reader, result rows, primary cards) stays **opaque** for legibility.
+_Avoid_: glass on tables/forms/reader; calling any flat panel "glass".
+
+**Status pill**:
+Title-bar-centered live activity control (downloading / processing / ready). Product name is
+**status pill** (or activity status), not Dynamic Island.
+_Avoid_: Dynamic Island naming in UI copy or new code comments.
 
 **Citrus accent**:
-The single brand accent — a citrus orange from the logo — used with Apple restraint (active nav,
-primary buttons, focus rings, the playing chapter). Not a general fill; glass + grays carry the
-rest. _Avoid_: Apple system blue, or multiple accent hues.
+The single brand accent — a citrus orange from the logo — reserved for primary actions, active
+nav, progress/status emphasis, and focus rings. Neutrals and borders carry structure.
+_Avoid_: system blue as brand, or citrus on every decorative element.
 
 ## Language — Distribution (ADR-0015)
 
