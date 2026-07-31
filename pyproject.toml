@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=78.1.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -12,7 +12,7 @@ dependencies = [
     "beautifulsoup4~=4.12.0",
     "zstandard~=0.21.0",
     "rich~=13.0.0",
-    "tqdm~=4.65.0",
+    "tqdm>=4.66.3,<5",
     # Anti-bot: Chrome strategy (real browser) + TLS impersonation are required
     # to download from Anna's Archive without a VPN — the slow_download endpoint
     # 403s plain HTTP. Promoted from optional extras so downloads work by default.
@@ -23,8 +23,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest~=7.4.0",
-    "pytest-mock~=3.12.0",
+    "pytest>=9.0.3,<10",
+    "pytest-mock>=3.14.0,<4",
+    "pytest-cov>=6.0.0,<7",
+    # Keep the audit env's setuptools on a patched line (build isolation alone
+    # does not upgrade the interpreter's installed setuptools for pip-audit).
+    "setuptools>=78.1.1",
     "undetected-chromedriver~=3.5.0",
     "ruff==0.8.6",
     "mypy==1.14.1",

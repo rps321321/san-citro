@@ -75,3 +75,5 @@ data/*.jsonl.zst
 # Agent / code-review tooling (per-session, machine-specific; not app source)
 .codex/
 .greptile/
+
+.venv-audit88/
