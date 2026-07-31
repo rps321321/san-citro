@@ -247,10 +247,8 @@ export interface SanCitroApi {
   quitAndInstall(): Promise<void>;
   /** Subscribe to pushed update-status events. Returns an unsubscribe function. */
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
-  /** DB-driven Library query (filters, sort, facets). */
+  /** DB-driven Library query (filters, sort, facets). Sole collection path. */
   listLibrary(params?: LibraryQueryParams): Promise<LibraryQueryResult>;
-  /** List all audiobooks tracked in the audiobook DB (detail/player path). */
-  listAudiobooks(): Promise<Audiobook[]>;
   /** Get detail (audiobook row + chapters) for a single audiobook. */
   getAudiobookDetail(md5: string): Promise<AudiobookDetail>;
   /** Subscribe to live audiobook status events. Returns an unsubscribe function. */

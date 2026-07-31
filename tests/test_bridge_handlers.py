@@ -257,47 +257,6 @@ def test_handle_list_library_uses_query_library_not_download_history():
 
 
 # ---------------------------------------------------------------------------
-# handle_list_audiobooks
-# ---------------------------------------------------------------------------
-
-
-def test_handle_list_audiobooks_returns_rows():
-    fake_rows = [
-        {
-            "md5": "b" * 32,
-            "title": "Great Audiobook",
-            "cover_url": "https://example.com/cover.jpg",
-            "status": "ready",
-            "container_type": "zip",
-            "track_count": 12,
-            "total_duration_seconds": 36000.0,
-            "error_message": None,
-        }
-    ]
-
-    with (
-        patch.object(bridge_handlers, "list_audiobooks", return_value=fake_rows),
-        patch.object(bridge_handlers, "_get_history_db", return_value=None),
-    ):
-        result = bridge_handlers.handle_list_audiobooks({})
-
-    assert result == fake_rows
-    assert result[0]["md5"] == "b" * 32
-    assert result[0]["status"] == "ready"
-
-
-def test_handle_list_audiobooks_propagates_error():
-    import pytest
-
-    with (
-        patch.object(bridge_handlers, "list_audiobooks", side_effect=OSError("db gone")),
-        patch.object(bridge_handlers, "_get_history_db", return_value=None),
-        pytest.raises(RuntimeError, match="Failed to retrieve audiobooks"),
-    ):
-        bridge_handlers.handle_list_audiobooks({})
-
-
-# ---------------------------------------------------------------------------
 # handle_get_audiobook_detail
 # ---------------------------------------------------------------------------
 
@@ -586,7 +545,7 @@ _EXPECTED_PYTHON_METHODS = frozenset(
         "resolve_download_path",
         "set_telemetry_context",
         "list_library",
-        "list_audiobooks",
+        # list_audiobooks product RPC retired (#47); DB helper remains internal-only.
         "get_audiobook_detail",
         "get_chapter_path",
         "get_audiobook_progress",
