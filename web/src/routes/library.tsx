@@ -38,6 +38,7 @@ import {
 import { listLibrary, onAudiobookStatus } from "@/lib/api-client";
 import { usePlayer } from "@/contexts/player-context";
 import { DetailSheet } from "@/components/detail-sheet";
+import { RemoteCoverImage } from "@/components/remote-cover-image";
 import type { LibraryFacets, LibraryItem, LibraryQueryParams } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -49,7 +50,11 @@ const VIEW_KEY = "library:view";
 
 function readStoredView(): View {
   if (typeof window === "undefined") return "grid";
-  return window.localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
+  try {
+    return window.localStorage.getItem(VIEW_KEY) === "list" ? "list" : "grid";
+  } catch {
+    return "grid";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +73,7 @@ const SORT_LABELS: Record<SortKey, string> = {
 // Book open behavior now lives in DetailSheet: click a cover → detail → Read/Reveal.
 
 // ---------------------------------------------------------------------------
-// Cover — inlined per contract, same fallback pattern as search BookCover
+// Cover — product RemoteCoverImage (one img-element boundary)
 // ---------------------------------------------------------------------------
 
 function Cover({
@@ -80,31 +85,19 @@ function Cover({
   title: string;
   size: "thumb" | "grid";
 }) {
-  const [failed, setFailed] = useState(false);
   const box =
     size === "thumb"
       ? "w-12 h-16 rounded shrink-0"
       : "aspect-[2/3] w-full rounded-lg shadow-md ring-1 ring-black/5 transition duration-200 group-hover:shadow-xl group-hover:ring-2 group-hover:ring-primary/50";
   const icon = size === "thumb" ? "size-5" : "size-8";
 
-  if (!coverUrl || failed) {
-    return (
-      <div className={`${box} bg-muted flex items-center justify-center`}>
-        <BookOpenIcon className={`${icon} text-muted-foreground/40`} />
-      </div>
-    );
-  }
-
   return (
-    <div className={`${box} bg-muted overflow-hidden`}>
-      <img
-        src={coverUrl}
-        alt={`Cover of ${title}`}
-        loading="lazy"
-        className="object-cover w-full h-full"
-        onError={() => setFailed(true)}
-      />
-    </div>
+    <RemoteCoverImage
+      src={coverUrl}
+      alt={`Cover of ${title}`}
+      className={box}
+      fallbackIconClassName={icon}
+    />
   );
 }
 
@@ -297,65 +290,107 @@ export default function LibraryPage() {
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [facets, setFacets] = useState<LibraryFacets>(EMPTY_FACETS);
   const [totalEligible, setTotalEligible] = useState(0);
+  // Initial load starts in loading; effects never sync setLoading(true).
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [view, setView] = useState<View>("grid");
+  // Client-routed shell only: lazy localStorage read is safe (no SSR mismatch).
+  const [view, setView] = useState<View>(readStoredView);
   const [sort, setSort] = useState<SortKey>("author");
   const [category, setCategory] = useState(ALL);
   const [format, setFormat] = useState(ALL);
   const [language, setLanguage] = useState(ALL);
   const [detailItem, setDetailItem] = useState<LibraryItem | null>(null);
 
-  // Read the persisted view after mount to avoid SSR/localStorage mismatch.
-  useEffect(() => {
-    setView(readStoredView());
-  }, []);
-
   const setAndStoreView = (next: View) => {
     setView(next);
-    window.localStorage.setItem(VIEW_KEY, next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* private mode / quota */
+    }
   };
 
-  const load = useCallback(
-    async (showSpinner = true) => {
-      if (showSpinner) setIsLoading(true);
-      const params: LibraryQueryParams = {
-        media_kind: tab === "books" ? "books" : "audiobooks",
-        sort: tab === "books" ? sort : "recent",
-        content_type: tab === "books" && category !== ALL ? category : null,
-        extension: tab === "books" && format !== ALL ? format : null,
-        language: tab === "books" && language !== ALL ? language : null,
-      };
+  const buildParams = useCallback((): LibraryQueryParams => {
+    return {
+      media_kind: tab === "books" ? "books" : "audiobooks",
+      sort: tab === "books" ? sort : "recent",
+      content_type: tab === "books" && category !== ALL ? category : null,
+      extension: tab === "books" && format !== ALL ? format : null,
+      language: tab === "books" && language !== ALL ? language : null,
+    };
+  }, [tab, sort, category, format, language]);
+
+  /** Completes async load only — no synchronous setLoading before await. */
+  const fetchLibrary = useCallback(async () => {
+    const params = buildParams();
+    try {
+      const data = await listLibrary(params);
+      setItems(data.items);
+      setFacets(data.facets);
+      setTotalEligible(data.total_eligible);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load library");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [buildParams]);
+
+  /** Silent revalidate (live audiobook status) — never toggles skeleton. */
+  const revalidateLibrary = useCallback(async () => {
+    const params = buildParams();
+    try {
+      const data = await listLibrary(params);
+      setItems(data.items);
+      setFacets(data.facets);
+      setTotalEligible(data.total_eligible);
+      setError(null);
+    } catch {
+      /* keep previous rows on soft refresh failure */
+    }
+  }, [buildParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const params = buildParams();
       try {
         const data = await listLibrary(params);
+        if (cancelled) return;
         setItems(data.items);
         setFacets(data.facets);
         setTotalEligible(data.total_eligible);
         setError(null);
       } catch (err) {
+        if (cancelled) return;
         setError(err instanceof Error ? err.message : "Failed to load library");
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
-    },
-    [tab, sort, category, format, language]
-  );
-
-  useEffect(() => {
-    void load(true);
-  }, [load]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [buildParams]);
 
   // Live audiobook status: re-fetch without skeleton so Processing… flips to Ready.
   useEffect(() => {
     if (tab !== "audiobooks") return;
     const unsubscribe = onAudiobookStatus(() => {
-      void load(false);
+      void revalidateLibrary();
     });
     return unsubscribe;
-  }, [tab, load]);
+  }, [tab, revalidateLibrary]);
+
+  /** User/filter-driven reload: may set loading from the action path. */
+  const reloadWithSpinner = () => {
+    setIsLoading(true);
+    void fetchLibrary();
+  };
 
   const switchTab = (next: Tab) => {
+    setIsLoading(true);
     setTab(next);
     // Reset facet filters when leaving books so stale filters don't stick.
     if (next === "audiobooks") {
@@ -363,6 +398,26 @@ export default function LibraryPage() {
       setFormat(ALL);
       setLanguage(ALL);
     }
+  };
+
+  const changeSort = (next: SortKey) => {
+    setIsLoading(true);
+    setSort(next);
+  };
+
+  const changeCategory = (next: string) => {
+    setIsLoading(true);
+    setCategory(next);
+  };
+
+  const changeFormat = (next: string) => {
+    setIsLoading(true);
+    setFormat(next);
+  };
+
+  const changeLanguage = (next: string) => {
+    setIsLoading(true);
+    setLanguage(next);
   };
 
   return (
@@ -394,7 +449,10 @@ export default function LibraryPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="w-44">
-              <Select value={sort} onValueChange={(v) => setSort((v as SortKey) ?? "author")}>
+              <Select
+                value={sort}
+                onValueChange={(v) => changeSort((v as SortKey) ?? "author")}
+              >
                 <SelectTrigger className="w-full" aria-label="Sort library">
                   <SelectValue>
                     {(v) => `Sort: ${SORT_LABELS[(v as SortKey) ?? "author"]}`}
@@ -414,20 +472,20 @@ export default function LibraryPage() {
               label="Categories"
               value={category}
               options={facets.content_types}
-              onChange={setCategory}
+              onChange={changeCategory}
             />
             <FilterSelect
               label="Formats"
               value={format}
               options={facets.extensions}
-              onChange={setFormat}
+              onChange={changeFormat}
               format={(v) => v.toUpperCase()}
             />
             <FilterSelect
               label="Languages"
               value={language}
               options={facets.languages}
-              onChange={setLanguage}
+              onChange={changeLanguage}
             />
           </div>
 
@@ -466,7 +524,7 @@ export default function LibraryPage() {
           <button
             type="button"
             className="shrink-0 underline underline-offset-2 font-medium"
-            onClick={() => void load(true)}
+            onClick={reloadWithSpinner}
           >
             Retry
           </button>

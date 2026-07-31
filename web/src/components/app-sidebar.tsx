@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router";
 import { useTheme } from "next-themes";
 import { trackInteraction } from "@/lib/telemetry";
@@ -25,7 +24,6 @@ import {
   SidebarMenuItem,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { useThemeToggle } from "@/components/ui/skiper-ui/skiper26";
 
 const NAV_ITEMS = [
   { label: "Search", href: "/search", icon: SearchIcon },
@@ -45,13 +43,13 @@ export function AppSidebar() {
   // HashRouter: useLocation().pathname is the route (/search, /library, …);
   // window.location.pathname would be "/" always (the route lives in the hash).
   const { pathname } = useLocation();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const { resolvedTheme } = useTheme();
-  const { toggleTheme } = useThemeToggle({ variant: "circle", start: "bottom-left" });
-  const isDark = mounted && resolvedTheme === "dark";
+  const { resolvedTheme, setTheme } = useTheme();
+  // next-themes: resolvedTheme is undefined until hydrated; treat as light until then.
+  // Icon CSS (dark: variants) still flips correctly via the document class.
+  const isDark = resolvedTheme === "dark";
   // Explicit action copy — not a passive "current theme" label.
   const themeActionLabel = isDark ? "Switch to light" : "Switch to dark";
+  const toggleTheme = () => setTheme(isDark ? "light" : "dark");
 
   // Flush to the window edge (not floating): DWM window radius clips the
   // glass rail so it matches the app chrome.

@@ -84,7 +84,7 @@ async function searchAndWaitForResults(
 
 describe("Search filters re-scrape with committed values (#27)", () => {
   it("re-searches with the new format when format filter changes", async () => {
-    const searchMock = vi.fn(async (_params: SearchCallParams) => SAMPLE_RESULTS);
+    const searchMock = vi.fn(async () => SAMPLE_RESULTS);
     installSanCitroMock({ search: searchMock });
     const user = userEvent.setup();
     renderSearch();
@@ -106,7 +106,7 @@ describe("Search filters re-scrape with committed values (#27)", () => {
   });
 
   it("re-searches with the new language when language filter changes", async () => {
-    const searchMock = vi.fn(async (_params: SearchCallParams) => SAMPLE_RESULTS);
+    const searchMock = vi.fn(async () => SAMPLE_RESULTS);
     installSanCitroMock({ search: searchMock });
     const user = userEvent.setup();
     renderSearch();
@@ -128,7 +128,7 @@ describe("Search filters re-scrape with committed values (#27)", () => {
   });
 
   it("re-searches without filters when Clear filters is clicked", async () => {
-    const searchMock = vi.fn(async (_params: SearchCallParams) => SAMPLE_RESULTS);
+    const searchMock = vi.fn(async () => SAMPLE_RESULTS);
     installSanCitroMock({ search: searchMock });
     const user = userEvent.setup();
     renderSearch();

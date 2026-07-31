@@ -31,10 +31,6 @@ import {
   type ShellLayoutFingerprint,
 } from "@/test/layout-baseline";
 
-vi.mock("@/components/ui/skiper-ui/skiper26", () => ({
-  useThemeToggle: () => ({ toggleTheme: vi.fn() }),
-}));
-
 vi.mock("@/lib/telemetry", () => ({
   trackInteraction: vi.fn(),
   trackFeatureDiscovery: vi.fn(),

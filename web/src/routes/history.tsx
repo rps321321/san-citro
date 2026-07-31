@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClockIcon,
   FileSpreadsheetIcon,
@@ -106,33 +106,48 @@ function compareEntries(a: HistoryEntry, b: HistoryEntry, key: SortKey): number 
 
 export default function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  // Initial load starts in loading; effect never sync setLoading(true).
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Default view: most recent first, matching prior behavior.
   const [sort, setSort] = useState<SortState<SortKey>>({ key: "started", direction: "desc" });
 
-  const load = useCallback(async (refresh = false) => {
-    if (refresh) setIsRefreshing(true);
-    try {
-      const data = await getHistory();
-      setEntries(data);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load history");
-    } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await getHistory();
+        if (cancelled) return;
+        setEntries(data);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load history");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleRefresh = () => {
     trackInteraction("refresh", "history");
-    void load(true);
+    setIsRefreshing(true);
+    void (async () => {
+      try {
+        const data = await getHistory();
+        setEntries(data);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load history");
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
+    })();
   };
 
   const handleSort = (key: SortKey) => {

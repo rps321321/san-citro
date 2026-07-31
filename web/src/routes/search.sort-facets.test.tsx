@@ -109,7 +109,7 @@ async function searchAndWait(
 
 describe("Search authoritative sort and facets (#61)", () => {
   it("defaults to relevance (no sort param) on first search", async () => {
-    const searchMock = vi.fn(async (_params: SearchCallParams) => pageResults(1, true, false));
+    const searchMock = vi.fn(async () => pageResults(1, true, false));
     installSanCitroMock({ search: searchMock });
     const user = userEvent.setup();
     renderSearch();

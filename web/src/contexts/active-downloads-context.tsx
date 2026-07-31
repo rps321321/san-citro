@@ -11,7 +11,7 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
+  useState,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -43,11 +43,8 @@ function useStore(): ActiveDownloadsStore {
 
 /** Mount once in the SPA shell. Owns the sole IPC hydrate + progress subscription. */
 export function ActiveDownloadsProvider({ children }: { children: ReactNode }) {
-  const storeRef = useRef<ActiveDownloadsStore | null>(null);
-  if (!storeRef.current) {
-    storeRef.current = createActiveDownloadsStore();
-  }
-  const store = storeRef.current;
+  // One store per mounted provider — lazy useState, not render-time ref mutation.
+  const [store] = useState(createActiveDownloadsStore);
 
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   PlayIcon,
   PauseIcon,
@@ -9,10 +9,10 @@ import {
   ChevronUpIcon,
   ChevronDownIcon,
   XIcon,
-  BookOpenIcon,
 } from "lucide-react";
 
 import { usePlayer } from "@/contexts/player-context";
+import { RemoteCoverImage } from "@/components/remote-cover-image";
 import { mediaUrlForChapter } from "@/lib/playback-policy";
 import type { Chapter } from "@/types";
 
@@ -35,6 +35,32 @@ function formatTime(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
+/** Cover keyed by md5 so error state resets without a setState-in-effect. */
+function PlayerCover({
+  md5,
+  coverUrl,
+  title,
+  sizeClass,
+  iconClass,
+}: {
+  md5: string;
+  coverUrl: string | null;
+  title: string;
+  sizeClass: string;
+  iconClass: string;
+}) {
+  return (
+    <RemoteCoverImage
+      key={md5}
+      src={coverUrl}
+      alt={`Cover of ${title}`}
+      className={`${sizeClass} rounded-md shrink-0 shadow-lg ring-1 ring-black/10`}
+      fallbackIconClassName={iconClass}
+      loading="eager"
+    />
+  );
+}
+
 export function InPagePlayer() {
   const {
     payload,
@@ -46,7 +72,6 @@ export function InPagePlayer() {
     session,
   } = usePlayer();
 
-  const [coverFailed, setCoverFailed] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const md5 = payload?.md5 ?? null;
@@ -66,11 +91,6 @@ export function InPagePlayer() {
     },
     [bindAudio]
   );
-
-  // Reset cover-error flag when the loaded book changes.
-  useEffect(() => {
-    setCoverFailed(false);
-  }, [md5]);
 
   // ---- Load media when the chapter (or book) changes ----------------------
   useEffect(() => {
@@ -146,21 +166,15 @@ export function InPagePlayer() {
     currentChapter.title || `Chapter ${currentChapter.chapter_index + 1}`;
   const src = mediaUrlForChapter(md5, currentChapter.chapter_id);
 
-  const cover = (sizeClass: string, iconClass: string) =>
-    !coverUrl || coverFailed ? (
-      <div className={`${sizeClass} bg-muted flex items-center justify-center rounded-md shrink-0`}>
-        <BookOpenIcon className={`${iconClass} text-muted-foreground/40`} />
-      </div>
-    ) : (
-      <div className={`${sizeClass} bg-muted overflow-hidden rounded-md shrink-0 shadow-lg ring-1 ring-black/10`}>
-        <img
-          src={coverUrl}
-          alt={`Cover of ${title}`}
-          className="h-full w-full object-cover"
-          onError={() => setCoverFailed(true)}
-        />
-      </div>
-    );
+  const cover = (sizeClass: string, iconClass: string) => (
+    <PlayerCover
+      md5={md5}
+      coverUrl={coverUrl}
+      title={title}
+      sizeClass={sizeClass}
+      iconClass={iconClass}
+    />
+  );
 
   // Single <audio> outside mini/expanded chrome so mode toggles cannot remount
   // the media element (ticket #28). Only chrome differs between modes.
@@ -181,9 +195,17 @@ export function InPagePlayer() {
     // In-page: a fixed overlay over the content column, below the 36px title bar.
     <div className="absolute inset-x-0 bottom-0 top-9 z-40 isolate flex flex-col overflow-hidden text-foreground">
       <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        {coverUrl && !coverFailed && (
-          <img src={coverUrl} alt="" className="h-full w-full scale-125 object-cover blur-3xl" />
-        )}
+        {coverUrl ? (
+          <RemoteCoverImage
+            key={`${md5}-blur`}
+            src={coverUrl}
+            alt=""
+            decorative
+            className="h-full w-full"
+            imgClassName="h-full w-full scale-125 object-cover blur-3xl"
+            loading="eager"
+          />
+        ) : null}
         <div className="absolute inset-0 bg-background/75 backdrop-blur-2xl" />
       </div>
       <div className="flex items-center justify-between border-b border-border/40 px-4 py-2">
