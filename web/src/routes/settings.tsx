@@ -29,11 +29,8 @@ import {
   getDiagnostics,
   showOpenDialog,
   getAppVersion,
-  checkForUpdates,
-  getUpdateStatus,
-  onUpdateStatus,
-  quitAndInstall,
 } from "@/lib/api-client";
+import { useUpdateStatus } from "@/hooks/use-update-status";
 import {
   trackInteraction, trackSettingsChange, trackFeatureDiscovery,
   incrementEngagement,
@@ -73,9 +70,15 @@ export default function SettingsPage() {
   const [isRunningDiag, setIsRunningDiag] = useState(false);
   const [diagError, setDiagError] = useState<string | null>(null);
 
-  // About & updates
+  // About & updates — live status owned by useUpdateStatus (issue #49).
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const {
+    status: updateStatus,
+    isReadyToInstall,
+    check: checkForUpdates,
+    restart,
+  } = useUpdateStatus();
+  // Local busy flag for the Check button only; live status is authoritative.
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
   // Snapshot of last-saved values for trackSettingsChange diffing
@@ -127,25 +130,8 @@ export default function SettingsPage() {
       .catch(() => {
         // Version is informational only — leave null if unavailable.
       });
-    // checkForUpdates() resolves when a release is *found* ("available"), not
-    // when the installer is downloaded. Subscribe so UI advances to "downloaded"
-    // and can offer Restart (banner + Settings button).
-    let unsub: (() => void) | undefined;
-    try {
-      unsub = onUpdateStatus((s) => {
-        if (!cancelled) setUpdateStatus(s);
-      });
-      void getUpdateStatus()
-        .then((s) => {
-          if (!cancelled) setUpdateStatus(s);
-        })
-        .catch(() => {});
-    } catch {
-      /* browser / no bridge */
-    }
     return () => {
       cancelled = true;
-      unsub?.();
     };
   }, []);
 
@@ -153,13 +139,11 @@ export default function SettingsPage() {
     trackInteraction("check_for_updates", "settings");
     setIsCheckingUpdate(true);
     try {
-      const status = await checkForUpdates();
-      setUpdateStatus(status);
-    } catch (err) {
-      setUpdateStatus({
-        status: "error",
-        message: err instanceof Error ? err.message : "Update check failed",
-      });
+      // Trigger only — do not write the return value into status state.
+      // Main owner pushes available → downloading → downloaded via the hook.
+      await checkForUpdates();
+    } catch {
+      // Live error (if any) arrives through the owner push; keep spinner feedback only.
     } finally {
       setIsCheckingUpdate(false);
     }
@@ -581,19 +565,19 @@ export default function SettingsPage() {
               )}
               {isCheckingUpdate ? "Checking…" : "Check for updates"}
             </Button>
-            {updateStatus?.status === "downloaded" && (
+            {isReadyToInstall && (
               <Button
                 variant="default"
                 onClick={() => {
                   trackInteraction("quit_and_install", "settings");
-                  void quitAndInstall();
+                  restart();
                 }}
               >
                 Restart to install
                 {updateStatus.version ? ` v${updateStatus.version}` : ""}
               </Button>
             )}
-            {updateStatus && (
+            {updateStatus.status !== "idle" && (
               <span className="text-xs text-muted-foreground">
                 {updateStatusLabel(updateStatus)}
               </span>
