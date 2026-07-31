@@ -83,15 +83,6 @@ function exportToJson(entries: HistoryEntry[]): void {
   );
 }
 
-/** History status can be any string; legacy ``started`` maps to Downloading. */
-function statusLabel(status: string): string {
-  return getStatusLabel(status);
-}
-
-function statusVariant(status: string) {
-  return getStatusVariant(status);
-}
-
 // Cap rendered rows so a multi-thousand-entry history stays responsive. Export
 // (CSV/JSON) still operates on the full set — only the table is windowed.
 const ROW_CAP = 500;
@@ -289,8 +280,8 @@ export default function HistoryPage() {
                     </span>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={statusVariant(entry.status)}>
-                      {statusLabel(entry.status)}
+                    <Badge variant={getStatusVariant(entry.status)}>
+                      {getStatusLabel(entry.status)}
                     </Badge>
                   </TableCell>
                   <TableCell>{formatFileSize(entry.filesize_bytes)}</TableCell>
