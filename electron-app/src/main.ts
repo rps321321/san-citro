@@ -17,6 +17,10 @@ import { registerIpcHandlers } from './ipc-handlers';
 import { registerMediaProtocol } from './media-protocol';
 import { showSplash, closeSplash } from './splash';
 import {
+  createSplashHandoff,
+  SPLASH_HANDOFF_TIMEOUT_MS,
+} from './splash-handoff';
+import {
   createTray,
   destroyTray,
   refreshTrayUpdatePresentation,
@@ -189,15 +193,6 @@ function createMainWindow(): BrowserWindow {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
-  // Log renderer crashes
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
-    console.error('[main] Renderer crashed:', details.reason, details.exitCode);
-  });
-
-  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    console.error('[main] Failed to load:', errorCode, errorDescription, validatedURL);
-  });
-
   // Hide to tray on close instead of quitting (unless app is actually quitting)
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
@@ -244,8 +239,8 @@ app.whenReady().then(async () => {
   // 1. Register custom protocol
   registerProtocol();
 
-  // 2. Show splash screen
-  const splash = showSplash();
+  // 2. Show splash screen (closed only via splashHandoff below — issue #62)
+  showSplash();
 
   // 3. Register utility IPC handlers
   ipcMain.handle(IPC_CHANNELS.GET_APP_VERSION, () => app.getVersion());
@@ -301,23 +296,44 @@ app.whenReady().then(async () => {
     });
   });
 
-  // 8. Create main window (AFTER CSP is active)
+  // 8. Create main window (AFTER CSP is active). Stays hidden until handoff.
   const win = createMainWindow();
 
-  // 9. When main window is ready, close splash and show it
-  win.once('ready-to-show', () => {
-    closeSplash();
-    win.show();
-    win.focus();
+  // 9. Splash stays until meaningful shell paint (renderer-ready), not mere
+  // document load. One-shot so ready / timeout / load-failure can all call it.
+  const splashHandoff = createSplashHandoff({
+    closeSplash,
+    showMain: () => {
+      if (win && !win.isDestroyed()) {
+        if (!win.isVisible()) win.show();
+        win.focus();
+      }
+    },
+    log: (msg) => console.log(msg),
   });
 
-  // 10. Fallback: close splash after 10s even if window hasn't loaded
-  setTimeout(() => {
-    closeSplash();
-    if (win && !win.isDestroyed() && !win.isVisible()) {
-      win.show();
+  ipcMain.on(IPC_CHANNELS.RENDERER_READY, (event) => {
+    if (mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents) {
+      splashHandoff.complete('renderer-ready');
     }
-  }, 10_000);
+  });
+
+  // Recovery: failed load / crashed renderer must not leave splash eternal.
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    // Ignore aborted navigations / subframe noise; still recover on main-frame failure.
+    if (errorCode === -3 /* ERR_ABORTED */) return;
+    console.error('[main] Failed to load (handoff):', errorCode, errorDescription, validatedURL);
+    splashHandoff.complete('did-fail-load');
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[main] Renderer gone (handoff):', details.reason, details.exitCode);
+    splashHandoff.complete('render-process-gone');
+  });
+
+  // 10. Timeout: never leave splash forever if the ready signal is lost.
+  setTimeout(() => {
+    splashHandoff.complete('timeout');
+  }, SPLASH_HANDOFF_TIMEOUT_MS);
 
   // 11. Create system tray — projection over the owner only (no local store).
   createTray(

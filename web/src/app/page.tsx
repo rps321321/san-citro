@@ -1,23 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { HashRouter, Routes, Route, Navigate } from "react-router";
 
 import AppShell from "@/components/app-shell";
+import { StartupShell } from "@/components/startup-shell";
 import SearchPage from "@/routes/search";
 import LibraryPage from "@/routes/library";
 import ActivityPage from "@/routes/activity";
 import SettingsPage from "@/routes/settings";
 import ReaderPage from "@/routes/reader";
 
-// The renderer is a hash-routed SPA (ADR-0013): one index.html shell mounts the
-// HashRouter and the former Next pages become route components under AppShell's
-// <Outlet>. HashRouter is client-only, so gate on mount — Next prerenders this to
-// an empty shell, then the client hydrates and boots the router.
-export default function Page() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) return null;
+/** Fire-and-forget: Electron keeps splash until this (issue #62). */
+function notifyRendererReady(): void {
+  try {
+    window.sanCitro?.notifyRendererReady?.();
+  } catch {
+    // Browser / tests without preload.
+  }
+}
+
+/**
+ * Pure mount gate: shell fallback vs HashRouter. Exported for tests so the
+ * prerender contract is assertable without fighting React effect flush timing.
+ */
+export function ClientRoutedApp({ ready }: { ready: boolean }): ReactNode {
+  if (!ready) {
+    return <StartupShell />;
+  }
 
   return (
     <HashRouter>
@@ -36,4 +46,35 @@ export default function Page() {
       </Routes>
     </HashRouter>
   );
+}
+
+// The renderer is a hash-routed SPA (ADR-0013): one index.html shell mounts the
+// HashRouter and the former Next pages become route components under AppShell's
+// <Outlet>. HashRouter is client-only, so gate on mount — Next prerenders this
+// with StartupShell (not null), then the client hydrates and boots the router.
+export default function Page() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // After the first client paint of the shell-shaped fallback, signal main so
+  // splash → main handoff follows meaningful chrome rather than document load.
+  useEffect(() => {
+    let cancelled = false;
+    let innerId = 0;
+    const outerId = requestAnimationFrame(() => {
+      innerId = requestAnimationFrame(() => {
+        if (!cancelled) notifyRendererReady();
+      });
+    });
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(outerId);
+      if (innerId) cancelAnimationFrame(innerId);
+    };
+  }, []);
+
+  return <ClientRoutedApp ready={mounted} />;
 }

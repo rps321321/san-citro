@@ -41,6 +41,7 @@ const IPC_CHANNELS = {
   PLAY_AUDIOBOOK: 'san-citro:playAudiobook',
   SAVE_AUDIOBOOK_PROGRESS: 'san-citro:saveAudiobookProgress',
   SET_TITLEBAR_OVERLAY: 'san-citro:setTitlebarOverlay',
+  RENDERER_READY: 'san-citro:rendererReady',
 } as const;
 
 const api = {
@@ -95,6 +96,11 @@ const api = {
   // Theme-sync the OS window-controls overlay colors to the title bar.
   setTitlebarOverlay: (opts: { color: string; symbolColor: string }): void =>
     ipcRenderer.send(IPC_CHANNELS.SET_TITLEBAR_OVERLAY, opts),
+
+  // First meaningful shell paint — main closes splash and shows the window.
+  notifyRendererReady: (): void => {
+    ipcRenderer.send(IPC_CHANNELS.RENDERER_READY);
+  },
 
   getStats: (): Promise<unknown> =>
     ipcRenderer.invoke(IPC_CHANNELS.GET_STATS),

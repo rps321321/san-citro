@@ -66,6 +66,8 @@ export const IPC_CHANNELS = {
   // renderer -> main: theme-synced colors for the OS window-controls overlay so
   // the control area matches the title-bar background.
   SET_TITLEBAR_OVERLAY: 'san-citro:setTitlebarOverlay',
+  // renderer -> main: first meaningful shell paint; closes splash (issue #62).
+  RENDERER_READY: 'san-citro:rendererReady',
 } as const;
 
 export interface UpdateStatus {
