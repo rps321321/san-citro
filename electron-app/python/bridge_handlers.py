@@ -109,12 +109,15 @@ def _redact_sensitive_message(name: str, success: bool | None, message: str) -> 
 
 def handle_search(params: dict[str, Any]) -> dict[str, Any]:
     """search — live scrape from Anna's Archive."""
+    from src.search_capabilities import normalize_sort, search_capabilities
+
     query: str = params.get("query", "")
     if not query:
         raise ValueError("query parameter is required")
 
     ext = params.get("ext") or params.get("extension")
     lang = params.get("lang") or params.get("language")
+    sort = normalize_sort(params.get("sort"))
     page: int = max(1, int(params.get("page", 1)))
 
     config = get_config()
@@ -124,6 +127,7 @@ def handle_search(params: dict[str, Any]) -> dict[str, Any]:
         query,
         ext=ext,
         lang=lang,
+        sort=sort or None,
         page=page,
         proxies=proxy_list,
         on_health=lambda h: telemetry_emitter.emit("scraper_health", h),
@@ -140,13 +144,16 @@ def handle_search(params: dict[str, Any]) -> dict[str, Any]:
 
     # A live scrape has no grand total or page count, so report only what this
     # page returned. Pagination rides on has_next/has_prev — no fabricated
-    # total_count-as-total or total_pages.
+    # total_count-as-total or total_pages. sort + capabilities are additive
+    # (#61) so older clients that ignore them keep working.
     return {
         "results": results,
         "total_count": len(results),
         "page": page,
         "has_next": len(results) >= SCRAPE_PAGE_SIZE,
         "has_prev": page > 1,
+        "sort": sort,
+        "capabilities": search_capabilities(),
     }
 
 

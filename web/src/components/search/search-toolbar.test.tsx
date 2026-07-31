@@ -1,5 +1,6 @@
 /**
  * Ticket #60 — Search control affordances and focus states.
+ * Ticket #61 — Sort + facet options driven by capabilities props.
  *
  * Semantic coverage for enabled, disabled, loading, focus-group wiring,
  * primary height, and stable Search ↔ Searching… label width.
@@ -9,6 +10,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { SearchToolbar } from "@/components/search/search-toolbar";
+import { BOOTSTRAP_SEARCH_CAPABILITIES } from "@/lib/search-capabilities";
 
 function renderToolbar(
   overrides: Partial<React.ComponentProps<typeof SearchToolbar>> = {}
@@ -18,12 +20,17 @@ function renderToolbar(
     onQueryChange: vi.fn(),
     extension: "",
     language: "",
+    sort: "",
+    extensions: BOOTSTRAP_SEARCH_CAPABILITIES.extensions,
+    languages: BOOTSTRAP_SEARCH_CAPABILITIES.languages,
+    sorts: BOOTSTRAP_SEARCH_CAPABILITIES.sorts,
     isLoading: false,
     activeFilterCount: 0,
     searchInputRef: createRef<HTMLInputElement>(),
     onSubmit: vi.fn((e) => e.preventDefault()),
     onExtensionChange: vi.fn(),
     onLanguageChange: vi.fn(),
+    onSortChange: vi.fn(),
     onClearFilters: vi.fn(),
     ...overrides,
   };
@@ -78,12 +85,17 @@ describe("SearchToolbar affordances (#60)", () => {
         onQueryChange={vi.fn()}
         extension=""
         language=""
+        sort=""
+        extensions={BOOTSTRAP_SEARCH_CAPABILITIES.extensions}
+        languages={BOOTSTRAP_SEARCH_CAPABILITIES.languages}
+        sorts={BOOTSTRAP_SEARCH_CAPABILITIES.sorts}
         isLoading={true}
         activeFilterCount={0}
         searchInputRef={createRef<HTMLInputElement>()}
         onSubmit={vi.fn((e) => e.preventDefault())}
         onExtensionChange={vi.fn()}
         onLanguageChange={vi.fn()}
+        onSortChange={vi.fn()}
         onClearFilters={vi.fn()}
       />
     );
@@ -138,5 +150,27 @@ describe("SearchToolbar affordances (#60)", () => {
     renderToolbar({ query: "habits", onSubmit });
     await user.click(screen.getByRole("button", { name: /^Search$/i }));
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SearchToolbar capabilities (#61)", () => {
+  it("renders format options from capabilities props, not hard-coded constants", async () => {
+    const user = userEvent.setup();
+    renderToolbar({
+      extensions: [
+        { value: "epub", label: "EPUB" },
+        { value: "xyz", label: "XYZ" },
+      ],
+    });
+    await user.click(screen.getByLabelText("Filter by file extension"));
+    expect(await screen.findByRole("option", { name: "XYZ" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "EPUB" })).toBeInTheDocument();
+  });
+
+  it("exposes an authoritative Sort control with relevance default", () => {
+    renderToolbar({ sort: "" });
+    const sort = screen.getByLabelText("Sort results");
+    expect(sort).toBeInTheDocument();
+    expect(sort).toHaveTextContent("Relevance");
   });
 });

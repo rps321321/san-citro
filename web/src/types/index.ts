@@ -19,6 +19,19 @@ export interface BookRecord {
   is_downloaded?: boolean;
 }
 
+/** One selectable sort or facet value from the Search boundary (#61). */
+export interface SearchCapabilityOption {
+  value: string;
+  label: string;
+}
+
+/** Backend-owned sort + filter vocabulary returned with every search. */
+export interface SearchCapabilities {
+  sorts: SearchCapabilityOption[];
+  extensions: SearchCapabilityOption[];
+  languages: SearchCapabilityOption[];
+}
+
 export interface SearchResponse {
   results: BookRecord[];
   /** Number of results on this page (a live scrape has no grand total). */
@@ -26,6 +39,16 @@ export interface SearchResponse {
   page: number;
   has_next: boolean;
   has_prev: boolean;
+  /**
+   * Authoritative AA sort applied for this page ("" = relevance).
+   * Optional for older bridge builds during migration.
+   */
+  sort?: string;
+  /**
+   * Supported sorts/formats/languages from the Search boundary.
+   * Optional for older bridge builds; renderer falls back to bootstrap defaults.
+   */
+  capabilities?: SearchCapabilities;
 }
 
 /** Live Download lifecycle statuses (CONTEXT.md). History DB may still store internal rows. */
@@ -203,6 +226,8 @@ export interface SanCitroApi {
     page?: number;
     extension?: string;
     language?: string;
+    /** AA global sort ("" / omit = relevance). */
+    sort?: string;
   }): Promise<SearchResponse>;
   startDownload(params: {
     md5: string;

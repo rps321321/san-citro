@@ -29,6 +29,12 @@ export function createSanCitroMock(
       page: 1,
       has_next: false,
       has_prev: false,
+      sort: "",
+      capabilities: {
+        sorts: [{ value: "", label: "Relevance" }, { value: "newest", label: "Newest" }],
+        extensions: [{ value: "epub", label: "EPUB" }, { value: "pdf", label: "PDF" }],
+        languages: [{ value: "English", label: "English" }],
+      },
     }),
     startDownload: async ({ md5, title }) => ({
       md5,
