@@ -1,0 +1,418 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Desktop layout regression (#64) — sidebar + status > covers sidebar expanded and collapsed states > fingerprint:sidebar-collapsed-search-empty 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": true,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": false,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 0,
+  "scenario": "sidebar-collapsed-search-empty",
+  "searchState": "empty",
+  "sidebar": "collapsed",
+  "statusIslandLabel": null,
+  "statusIslandVisible": false,
+  "theme": "dark",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "default",
+  "viewportPx": {
+    "height": 920,
+    "width": 1360,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — sidebar + status > covers sidebar expanded and collapsed states > fingerprint:sidebar-expanded-search-empty 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": true,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": false,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 0,
+  "scenario": "sidebar-expanded-search-empty",
+  "searchState": "empty",
+  "sidebar": "expanded",
+  "statusIslandLabel": null,
+  "statusIslandVisible": false,
+  "theme": "dark",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "default",
+  "viewportPx": {
+    "height": 920,
+    "width": 1360,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — sidebar + status > covers sidebar expanded and collapsed states > structure:sidebar-collapsed-search-empty 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=collapsed class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=1
+  [0] Search tips state= class=flex min-h-[min(48vh,22rem)] flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-mu
+data-search-results-table: count=0
+data-search-result-row: count=0
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: hidden"
+`;
+
+exports[`Desktop layout regression (#64) — sidebar + status > covers sidebar expanded and collapsed states > structure:sidebar-expanded-search-empty 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=expanded class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=1
+  [0] Search tips state= class=flex min-h-[min(48vh,22rem)] flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-mu
+data-search-results-table: count=0
+data-search-result-row: count=0
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: hidden"
+`;
+
+exports[`Desktop layout regression (#64) — sidebar + status > shows active download Status Island without invading overlay safe-area > fingerprint:status-island-active-download 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": true,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": false,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 0,
+  "scenario": "status-island-active-download",
+  "searchState": "empty",
+  "sidebar": "expanded",
+  "statusIslandLabel": "Downloading…",
+  "statusIslandVisible": true,
+  "theme": "dark",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "default",
+  "viewportPx": {
+    "height": 920,
+    "width": 1360,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — sidebar + status > shows active download Status Island without invading overlay safe-area > structure:status-island-active-download 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=expanded class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=1
+  [0] Search tips state= class=flex min-h-[min(48vh,22rem)] flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-mu
+data-search-results-table: count=0
+data-search-result-row: count=0
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: Downloading…"
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders Search results at default window size > fingerprint:search-results-dark-default 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": false,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": true,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 2,
+  "scenario": "search-results-dark-default",
+  "searchState": "results",
+  "sidebar": "expanded",
+  "statusIslandLabel": null,
+  "statusIslandVisible": false,
+  "theme": "dark",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "default",
+  "viewportPx": {
+    "height": 920,
+    "width": 1360,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders Search results at default window size > structure:search-results-dark-default 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=expanded class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=0
+data-search-results-table: count=1
+  [0] div state= class=rounded-lg border bg-background opacity-50
+data-search-result-row: count=2
+  [0] tr state= class=border-b transition-colors data-[state=selected]:bg-muted group/row outline-none hover:bg-muted/40 focus-visible:bg-mute
+  [1] tr state= class=border-b transition-colors data-[state=selected]:bg-muted group/row outline-none hover:bg-muted/40 focus-visible:bg-mute
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: hidden"
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders Search results at minimum 1120×840 without losing chrome/controls > fingerprint:search-results-dark-minimum 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": false,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": true,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 2,
+  "scenario": "search-results-dark-minimum",
+  "searchState": "results",
+  "sidebar": "expanded",
+  "statusIslandLabel": null,
+  "statusIslandVisible": false,
+  "theme": "dark",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "minimum",
+  "viewportPx": {
+    "height": 840,
+    "width": 1120,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders Search results at minimum 1120×840 without losing chrome/controls > structure:search-results-dark-minimum 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=expanded class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=0
+data-search-results-table: count=1
+  [0] div state= class=rounded-lg border bg-background opacity-50
+data-search-result-row: count=2
+  [0] tr state= class=border-b transition-colors data-[state=selected]:bg-muted group/row outline-none hover:bg-muted/40 focus-visible:bg-mute
+  [1] tr state= class=border-b transition-colors data-[state=selected]:bg-muted group/row outline-none hover:bg-muted/40 focus-visible:bg-mute
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: hidden"
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders default 1360×920 shell with Search empty (dark) > fingerprint:search-empty-dark-default 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": true,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": false,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 0,
+  "scenario": "search-empty-dark-default",
+  "searchState": "empty",
+  "sidebar": "expanded",
+  "statusIslandLabel": null,
+  "statusIslandVisible": false,
+  "theme": "dark",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "default",
+  "viewportPx": {
+    "height": 920,
+    "width": 1360,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders default 1360×920 shell with Search empty (dark) > structure:search-empty-dark-default 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=expanded class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=1
+  [0] Search tips state= class=flex min-h-[min(48vh,22rem)] flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-mu
+data-search-results-table: count=0
+data-search-result-row: count=0
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: hidden"
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders default 1360×920 shell with Search empty (light) > fingerprint:search-empty-light-default 1`] = `
+{
+  "commandInsideSafeArea": false,
+  "customWindowControls": false,
+  "hasEmptyRegion": true,
+  "hasOverlaySafeArea": true,
+  "hasPageContainerWide": true,
+  "hasResultsTable": false,
+  "hasSearchForm": true,
+  "hasSearchQuery": true,
+  "hasSearchSubmit": true,
+  "hasTitlebar": true,
+  "hasTitlebarCommand": true,
+  "overlaySafeAreaWidth": "var(--titlebar-overlay-width)",
+  "reducedMotionPreferred": true,
+  "resultRowCount": 0,
+  "scenario": "search-empty-light-default",
+  "searchState": "empty",
+  "sidebar": "expanded",
+  "statusIslandLabel": null,
+  "statusIslandVisible": false,
+  "theme": "light",
+  "titlebarHeightClass": true,
+  "tolerance": {
+    "mode": "exact-structure",
+    "note": "jsdom has no real box layout — gates are structural (DOM order, tokens, visibility, data-state). Packaged native title-bar hover is manual checklist.",
+  },
+  "viewport": "default",
+  "viewportPx": {
+    "height": 920,
+    "width": 1360,
+  },
+}
+`;
+
+exports[`Desktop layout regression (#64) — viewports > renders default 1360×920 shell with Search empty (light) > structure:search-empty-light-default 1`] = `
+"data-titlebar: count=1
+  [0] header state= class=relative flex h-[var(--titlebar-height)] items-center bg-[var(--titlebar-bg)] text-[var(--titlebar-symbol)] pl-3
+data-titlebar-route: count=1
+  [0] span state= class=truncate text-xs font-medium tracking-tight text-[var(--titlebar-symbol)]
+data-titlebar-command: count=1
+  [0] Open command palette state= class=group/button inline-flex shrink-0 items-center justify-center border border-transparent bg-clip-padding text-sm font-med
+data-titlebar-overlay-safe-area: count=1
+  [0] div state= class=app-region-no-drag shrink-0 self-stretch
+data-slot=sidebar: count=1
+  [0] div state=expanded class=group peer hidden text-sidebar-foreground md:block
+data-slot=sidebar-inner: count=1
+  [0] div state= class=sidebar-glass flex size-full flex-col border-sidebar-border group-data-[side=left]:border-r group-data-[side=right]:bord
+data-search-empty-region: count=1
+  [0] Search tips state= class=flex min-h-[min(48vh,22rem)] flex-col items-center justify-center rounded-lg border border-dashed border-border/70 bg-mu
+data-search-results-table: count=0
+data-search-result-row: count=0
+data-page-container: count=1
+  [0] div state= class=mx-auto w-full min-w-0 max-w-6xl space-y-6
+data-search-filters: count=1
+  [0] div state= class=flex flex-wrap items-center gap-2 text-muted-foreground
+status-island: hidden"
+`;
