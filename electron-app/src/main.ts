@@ -28,6 +28,10 @@ import {
   getUpdateStatus,
   subscribeUpdateStatus,
 } from './updater';
+import {
+  DEFAULT_TITLEBAR_OVERLAY,
+  TITLEBAR_HEIGHT_PX,
+} from './titlebar';
 
 // ---------------------------------------------------------------------------
 // Never crash on a broken stdout/stderr pipe. When the app is launched from a
@@ -163,11 +167,12 @@ function createMainWindow(): BrowserWindow {
     backgroundColor: '#00000000',
     backgroundMaterial: 'mica',
     titleBarStyle: 'hidden',
+    // Native caption buttons only (issue #53). Defaults match dark title-bar
+    // tokens; renderer TitlebarSync recolors on theme change. Do not recreate
+    // min/max/close in the renderer — only Close gets Windows destructive hover.
     titleBarOverlay: {
-      color: '#1a1a2e',
-      symbolColor: '#e0e0e0',
-      // Matches the h-9 title-bar band; the renderer re-syncs color per theme.
-      height: 36,
+      ...DEFAULT_TITLEBAR_OVERLAY,
+      height: TITLEBAR_HEIGHT_PX,
     },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

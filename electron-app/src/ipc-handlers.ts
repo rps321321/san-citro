@@ -4,6 +4,7 @@ import { PythonBridge } from './python-bridge';
 import { IPC_CHANNELS } from './types';
 import { registerSimpleRelays, requireMd5 } from './python-commands';
 import { checkForUpdates, getUpdateStatus, quitAndInstall } from './updater';
+import { TITLEBAR_HEIGHT_PX } from './titlebar';
 
 /**
  * Register all IPC handlers.
@@ -94,8 +95,10 @@ export function registerIpcHandlers(
     return result.filePaths[0];
   });
 
-  // renderer -> main: recolor the OS window-controls overlay to match the title
-  // bar (theme-aware), keeping the 36px height so the buttons fill the band.
+  // renderer -> main: recolor the OS window-controls overlay from explicit
+  // light/dark title-bar tokens (issue #53). Height stays TITLEBAR_HEIGHT_PX so
+  // native buttons fill the band. We never style individual caption buttons —
+  // only Close is allowed Windows' destructive hover (OS-owned).
   let lastOverlay: { color: string; symbolColor: string } | null = null;
   ipcMain.on(
     IPC_CHANNELS.SET_TITLEBAR_OVERLAY,
@@ -104,15 +107,22 @@ export function registerIpcHandlers(
       if (!win || win.isDestroyed()) return;
       // Skip no-op repaints — Windows/Chromium can leave the caption buttons
       // stuck showing their last hover highlight after a programmatic overlay
-      // repaint, so we only touch the native overlay when the color actually
-      // changes, and nudge the window afterward to force the DWM to repaint
-      // the caption-button region cleanly.
-      if (lastOverlay && lastOverlay.color === opts.color && lastOverlay.symbolColor === opts.symbolColor) {
+      // repaint (e.g. minimize incorrectly red). Only touch the native overlay
+      // when color actually changes, then nudge size to force a clean DWM paint.
+      if (
+        lastOverlay &&
+        lastOverlay.color === opts.color &&
+        lastOverlay.symbolColor === opts.symbolColor
+      ) {
         return;
       }
-      lastOverlay = opts;
+      lastOverlay = { color: opts.color, symbolColor: opts.symbolColor };
       try {
-        win.setTitleBarOverlay({ ...opts, height: 36 });
+        win.setTitleBarOverlay({
+          color: opts.color,
+          symbolColor: opts.symbolColor,
+          height: TITLEBAR_HEIGHT_PX,
+        });
         const [w, h] = win.getSize();
         win.setSize(w, h + 1);
         win.setSize(w, h);

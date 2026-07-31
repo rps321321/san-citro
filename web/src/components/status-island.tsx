@@ -58,8 +58,9 @@ export function StatusIsland() {
 
   const visible = label !== "";
 
+  // Centered in the drag band; AppHeader reserves the overlay safe-area.
   return (
-    <div className="pointer-events-none absolute inset-y-0 left-0 right-[140px] z-50 flex items-center justify-center">
+    <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
       <AnimatePresence>
         {visible && (
           <motion.button

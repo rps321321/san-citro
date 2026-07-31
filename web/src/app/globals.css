@@ -120,6 +120,13 @@
   --glass-shadow: var(--elevation-3);
   --sidebar-glass-blur: var(--glass-blur);
   --sidebar-glass-shadow: inset -1px 0 0 oklch(0 0 0 / 0.04);
+
+  /* Title-bar tokens (issue #53) — explicit light values for Electron titleBarOverlay.
+     Keep hex in lockstep with web/src/lib/titlebar.ts and electron-app/src/titlebar.ts. */
+  --titlebar-height: 36px;
+  --titlebar-overlay-width: 138px;
+  --titlebar-bg: #ffffff;
+  --titlebar-symbol: #0a0a0a;
 }
 
 .dark {
@@ -164,6 +171,10 @@
   --glass-border: oklch(1 0 0 / 0.1);
   --glass-shadow: var(--elevation-3);
   --sidebar-glass-shadow: inset -1px 0 0 oklch(1 0 0 / 0.06);
+
+  /* Title-bar tokens (issue #53) — dark overlay matches opaque content background. */
+  --titlebar-bg: #0a0a0a;
+  --titlebar-symbol: #fafafa;
 }
 
 @layer base {
@@ -230,8 +241,11 @@
   color: var(--foreground);
 }
 
-/* Frameless window (Electron titleBarStyle: hidden): draggable title-bar regions.
-   Interactive children inside a drag region must opt back out with no-drag. */
+/* Frameless window (Electron titleBarStyle: hidden + titleBarOverlay):
+   Drag only where intended. Never put .app-region-drag under the native caption
+   strip (use --titlebar-overlay-width safe-area). Interactive children inside a
+   drag region must opt out with .app-region-no-drag (status pill, sidebar
+   trigger/logo, etc.). Minimize/maximize stay neutral; only OS Close is red. */
 .app-region-drag {
   -webkit-app-region: drag;
 }
