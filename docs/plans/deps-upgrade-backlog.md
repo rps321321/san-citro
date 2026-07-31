@@ -2,6 +2,21 @@
 
 Scored decisions from the regenerable inventory dump. **This file is the durable product.** The full trees and raw advisories live under `.cache/deps-inventory/` (gitignored).
 
+## Security decision log — #88 (2026-07-31)
+
+| Package | Old constraint | New constraint | Advisory | Min fixed |
+|---|---|---|---|---|
+| `tqdm` (prod) | `~=4.65.0` → installed 4.65.2 | `>=4.66.3,<5` | `PYSEC-2026-1976` | 4.66.3 |
+| `pytest` (dev) | `~=7.4.0` → installed 7.4.4 | `>=9.0.3,<10` | `PYSEC-2026-1845` | 9.0.3 |
+| `pytest-mock` (dev) | `~=3.12.0` | `>=3.14.0,<4` | pytest 9 compatibility | — |
+| `pytest-cov` (dev) | CI-only install | `>=6.0.0,<7` | declare what CI uses | — |
+| `setuptools` (build + dev) | `>=68.0` / env default | `>=78.1.1` | PYSEC-2025-49 and related | 78.1.1+ |
+
+- **Policy:** one authoritative `pyproject.toml`; no CI-only patched installs; no `--ignore-vuln`.
+- **Evidence:** full `pytest` suite (471) + ruff + clean-venv `pip-audit` after `pip install -e ".[dev]"` (no third-party vulns; local package not-on-PyPI is informational).
+- **Resolved versions (clean venv sample):** pytest 9.1.1 · tqdm 4.70.0 · pytest-mock 3.15.1 · pytest-cov 6.3.0.
+- **Non-goals of this change:** general modernization; Ruff/mypy/Selenium bumps.
+
 | | |
 |---|---|
 | Generated from dump | **2026-07-30T17:27:05.982256+00:00** (`meta.json` `generated_at`) |
