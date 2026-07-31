@@ -192,6 +192,29 @@ class TestRecordDownloadStart:
         assert row["filename"] == "f.pdf"
         assert row["filesize_bytes"] == 100
 
+    def test_should_not_overwrite_failed_with_cancelled(self, history_db: str) -> None:
+        """Queue-only cancel of a never-started retry must not rewrite a prior failed row."""
+        record_download_start(history_db, md5="abc123", title="Job")
+        record_download_failed(history_db, md5="abc123", error="mirror 503")
+        record_download_cancelled(history_db, md5="abc123")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT * FROM downloads WHERE md5 = 'abc123'").fetchone()
+
+        assert row["status"] == "failed"
+        assert row["error"] == "mirror 503"
+
+    def test_should_cancel_only_active_statuses(self, history_db: str) -> None:
+        """Cancel rewrites started/downloading/queued; leaves other terminals alone."""
+        record_download_start(history_db, md5="active1", title="Active")
+        record_download_cancelled(history_db, md5="active1")
+
+        with sqlite3.connect(history_db) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("SELECT status FROM downloads WHERE md5 = 'active1'").fetchone()
+        assert row["status"] == "cancelled"
+
     def test_should_skip_when_md5_is_empty(self, history_db: str) -> None:
         record_download_start(history_db, md5="", title="No MD5")
 
