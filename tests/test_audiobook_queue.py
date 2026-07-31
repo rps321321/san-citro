@@ -73,32 +73,104 @@ class TestComputePoolSize:
 
 
 # ---------------------------------------------------------------------------
-# _drive_media_type (its try/except default — no real PowerShell dependency)
+# Drive media boundary: pure parse / Windows adapter / platform facade
 # ---------------------------------------------------------------------------
-class TestDriveMediaType:
+class TestParseDriveMediaType:
+    """Pure stdout mapping — portable on Linux CI (no PowerShell, no path flavor)."""
+
+    def test_should_parse_ssd(self) -> None:
+        assert audiobook_queue._parse_drive_media_type("SSD\n") == "SSD"
+
+    def test_should_parse_hdd(self) -> None:
+        assert audiobook_queue._parse_drive_media_type("HDD\n") == "HDD"
+
+    def test_should_parse_lowercase_and_mixed_case(self) -> None:
+        assert audiobook_queue._parse_drive_media_type("  ssd  ") == "SSD"
+        assert audiobook_queue._parse_drive_media_type("HdD") == "HDD"
+
+    def test_should_prefer_ssd_token_when_both_present(self) -> None:
+        # Defensive: product PS output is a single MediaType token.
+        assert audiobook_queue._parse_drive_media_type("SSD HDD") == "SSD"
+
+    def test_should_return_unknown_for_empty_or_unspecified(self) -> None:
+        assert audiobook_queue._parse_drive_media_type("") == "UNKNOWN"
+        assert audiobook_queue._parse_drive_media_type("   ") == "UNKNOWN"
+        assert audiobook_queue._parse_drive_media_type("Unspecified\n") == "UNKNOWN"
+        assert audiobook_queue._parse_drive_media_type("SCM") == "UNKNOWN"
+
+
+class TestQueryWindowsDriveMediaType:
     def test_should_return_unknown_when_subprocess_raises(self) -> None:
         with patch("subprocess.run", side_effect=OSError("no powershell")):
-            assert audiobook_queue._drive_media_type("C:/out") == "UNKNOWN"
+            assert audiobook_queue._query_windows_drive_media_type("C") == "UNKNOWN"
 
     def test_should_return_unknown_on_nonzero_exit(self) -> None:
         result = MagicMock(returncode=1, stdout="")
         with patch("subprocess.run", return_value=result):
-            assert audiobook_queue._drive_media_type("C:/out") == "UNKNOWN"
+            assert audiobook_queue._query_windows_drive_media_type("C") == "UNKNOWN"
 
-    def test_should_parse_ssd_from_output(self) -> None:
+    def test_should_return_unknown_on_timeout(self) -> None:
+        with patch(
+            "subprocess.run",
+            side_effect=audiobook_queue.subprocess.TimeoutExpired(cmd="ps", timeout=15),
+        ):
+            assert audiobook_queue._query_windows_drive_media_type("C") == "UNKNOWN"
+
+    def test_should_parse_ssd_from_successful_stdout(self) -> None:
         result = MagicMock(returncode=0, stdout="SSD\n")
-        with patch("subprocess.run", return_value=result):
-            assert audiobook_queue._drive_media_type("C:/out") == "SSD"
+        with patch("subprocess.run", return_value=result) as run:
+            assert audiobook_queue._query_windows_drive_media_type("C") == "SSD"
+        run.assert_called_once()
+        args = run.call_args[0][0]
+        assert args[0] == "powershell"
+        assert "Get-PhysicalDisk" in args[-1]
+        assert "DriveLetter 'C'" in args[-1]
 
-    def test_should_parse_hdd_from_output(self) -> None:
+    def test_should_parse_hdd_from_successful_stdout(self) -> None:
         result = MagicMock(returncode=0, stdout="HDD\n")
         with patch("subprocess.run", return_value=result):
-            assert audiobook_queue._drive_media_type("C:/out") == "HDD"
+            assert audiobook_queue._query_windows_drive_media_type("D") == "HDD"
 
-    def test_should_return_unknown_for_unrecognized_media(self) -> None:
-        result = MagicMock(returncode=0, stdout="Unspecified\n")
-        with patch("subprocess.run", return_value=result):
+
+class TestWindowsDriveLetter:
+    def test_should_extract_letter_from_windows_style_path(self) -> None:
+        assert audiobook_queue._windows_drive_letter("C:/out") == "C"
+        assert audiobook_queue._windows_drive_letter(r"D:\library\books") == "D"
+
+    def test_should_return_none_for_unc_or_relative(self) -> None:
+        assert audiobook_queue._windows_drive_letter(r"\\server\share") is None
+        assert audiobook_queue._windows_drive_letter("relative/out") is None
+
+
+class TestDriveMediaTypeFacade:
+    def test_should_return_unknown_without_powershell_on_non_windows(self) -> None:
+        with (
+            patch.object(audiobook_queue.os, "name", "posix"),
+            patch("subprocess.run") as run,
+        ):
             assert audiobook_queue._drive_media_type("C:/out") == "UNKNOWN"
+            run.assert_not_called()
+
+    def test_should_delegate_drive_letter_on_windows(self) -> None:
+        with (
+            patch.object(audiobook_queue.os, "name", "nt"),
+            patch.object(
+                audiobook_queue,
+                "_query_windows_drive_media_type",
+                return_value="SSD",
+            ) as query,
+        ):
+            assert audiobook_queue._drive_media_type("C:/out") == "SSD"
+            query.assert_called_once_with("C")
+
+    def test_should_return_unknown_when_drive_letter_missing_on_windows(self) -> None:
+        with (
+            patch.object(audiobook_queue.os, "name", "nt"),
+            patch.object(audiobook_queue, "_windows_drive_letter", return_value=None),
+            patch.object(audiobook_queue, "_query_windows_drive_media_type") as query,
+        ):
+            assert audiobook_queue._drive_media_type("/posix/out") == "UNKNOWN"
+            query.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
