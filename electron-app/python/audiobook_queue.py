@@ -15,10 +15,12 @@ never touches the ``downloads`` row. Workers are daemon threads that NEVER die.
 
 from __future__ import annotations
 
+import ntpath
 import os
 import queue
 import subprocess
 import threading
+from typing import Literal
 
 from src import audiobook_db, audiobook_processor
 from src.download_history import get_completed_download
@@ -36,6 +38,9 @@ _pool_started = False
 _MAX_POOL = 3
 _MIN_POOL = 1
 
+# Local vocabulary for worker-pool policy only (not a product Library type).
+DriveMediaType = Literal["SSD", "HDD", "UNKNOWN"]
+
 
 def _get_send_event():  # type: ignore[no-untyped-def]
     """Lazy import to avoid a circular dependency with bridge.py."""
@@ -44,34 +49,83 @@ def _get_send_event():  # type: ignore[no-untyped-def]
     return send_event
 
 
-def _drive_media_type(out_dir: str) -> str:
-    """Return 'SSD', 'HDD', or 'UNKNOWN' for the drive backing *out_dir*.
+def _parse_drive_media_type(stdout: str) -> DriveMediaType:
+    """Map PowerShell MediaType stdout onto the pool-policy vocabulary.
 
-    Windows-only: map the drive letter -> partition -> physical disk MediaType
-    via PowerShell. Any failure (non-Windows, no PowerShell, parse error,
-    timeout) returns 'UNKNOWN' so the caller falls back to the serial pool.
+    Pure: no platform, path, or subprocess access. Keeps raw PS strings out of
+    callers so pool sizing only ever sees SSD | HDD | UNKNOWN.
     """
+    media = stdout.strip().upper()
+    if not media:
+        return "UNKNOWN"
+    if "SSD" in media:
+        return "SSD"
+    if "HDD" in media:
+        return "HDD"
+    return "UNKNOWN"
+
+
+def _query_windows_drive_media_type(drive_letter: str) -> DriveMediaType:
+    """One PowerShell Get-PhysicalDisk MediaType query for a drive letter.
+
+    Owns command construction, timeout, and non-interactive flags. Never raises
+    into worker-pool startup: any I/O or process failure degrades to UNKNOWN.
+    """
+    # Drive letter is a single token (e.g. "C"); shell-quoted in the script.
+    script = (
+        f"(Get-Partition -DriveLetter '{drive_letter}' "
+        f"| Get-Disk | Get-PhysicalDisk).MediaType"
+    )
     try:
-        drive = os.path.splitdrive(os.path.abspath(out_dir))[0].rstrip(":")
-        if not drive:
-            return "UNKNOWN"
-        script = f"(Get-Partition -DriveLetter '{drive}' | Get-Disk | Get-PhysicalDisk).MediaType"
         result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
             capture_output=True,
             text=True,
             timeout=15,
         )
-        if result.returncode != 0:
-            return "UNKNOWN"
-        media = result.stdout.strip().upper()
-        if "SSD" in media:
-            return "SSD"
-        if "HDD" in media:
-            return "HDD"
-        return "UNKNOWN"
     except (OSError, subprocess.SubprocessError, ValueError):
         return "UNKNOWN"
+    if result.returncode != 0:
+        return "UNKNOWN"
+    return _parse_drive_media_type(result.stdout)
+
+
+def _windows_drive_letter(out_dir: str) -> str | None:
+    """Extract a Windows drive letter using ntpath (not host os.path flavor).
+
+    Always applies Windows path semantics so Linux CI can unit-test the boundary
+    with ``C:/out`` without POSIX ``os.path.splitdrive`` emptying the root.
+
+    Relative paths and UNC shares have no drive letter → None (UNKNOWN upstream).
+    Drive-relative forms like ``C:foo`` are resolved with ``ntpath.abspath`` only
+    when a drive token is already present, so we never invent the host CWD drive.
+    """
+    drive_root, tail = ntpath.splitdrive(out_dir)
+    if not drive_root:
+        return None
+    # Drive-relative (C:foo) needs abspath; absolute (C:\foo or C:/foo) does not.
+    if tail and not tail.startswith(("\\", "/")):
+        drive_root = ntpath.splitdrive(ntpath.abspath(out_dir))[0]
+    letter = drive_root.rstrip(":\\/")
+    if not letter or len(letter) != 1 or not letter.isalpha():
+        return None
+    return letter.upper()
+
+
+def _drive_media_type(out_dir: str) -> DriveMediaType:
+    """Return SSD | HDD | UNKNOWN for the drive backing *out_dir*.
+
+    Sole caller-facing media-detection boundary for pool sizing:
+    - Non-Windows: UNKNOWN without invoking PowerShell.
+    - Windows: ntpath drive letter → PowerShell adapter → pure parser.
+    HDD and UNKNOWN both mean the serial pool; only SSD widens concurrency.
+    """
+    if os.name != "nt":
+        return "UNKNOWN"
+    letter = _windows_drive_letter(out_dir)
+    if letter is None:
+        return "UNKNOWN"
+    return _query_windows_drive_media_type(letter)
 
 
 def _compute_pool_size(out_dir: str) -> int:
