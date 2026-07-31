@@ -241,7 +241,8 @@ def test_scrape_raises_unsupported_for_html_without_markers() -> None:
     with (
         patch("src.scraper._make_session", return_value=(session, None, "ua")),
         patch("src.scraper.is_allowed_by_robots", return_value=True),
-        patch("src.scraper.time.sleep"),pytest.raises(SearchScrapeError) as ei
+        patch("src.scraper.time.sleep"),
+        pytest.raises(SearchScrapeError) as ei,
     ):
         scrape_annas_archive("The Pragmatic Programmer")
 
@@ -257,7 +258,8 @@ def test_scrape_raises_blocked_for_challenge_page() -> None:
     with (
         patch("src.scraper._make_session", return_value=(session, None, "ua")),
         patch("src.scraper.is_allowed_by_robots", return_value=True),
-        patch("src.scraper.time.sleep"),pytest.raises(SearchScrapeError) as ei
+        patch("src.scraper.time.sleep"),
+        pytest.raises(SearchScrapeError) as ei,
     ):
         scrape_annas_archive("book")
 
@@ -271,7 +273,8 @@ def test_scrape_raises_unavailable_on_network_error() -> None:
     with (
         patch("src.scraper._make_session", return_value=(session, None, "ua")),
         patch("src.scraper.is_allowed_by_robots", return_value=True),
-        patch("src.scraper.time.sleep"),pytest.raises(SearchScrapeError) as ei
+        patch("src.scraper.time.sleep"),
+        pytest.raises(SearchScrapeError) as ei,
     ):
         scrape_annas_archive("book")
 
@@ -289,7 +292,8 @@ def test_scrape_raises_blocked_on_http_403() -> None:
     with (
         patch("src.scraper._make_session", return_value=(session, None, "ua")),
         patch("src.scraper.is_allowed_by_robots", return_value=True),
-        patch("src.scraper.time.sleep"),pytest.raises(SearchScrapeError) as ei
+        patch("src.scraper.time.sleep"),
+        pytest.raises(SearchScrapeError) as ei,
     ):
         scrape_annas_archive("book")
 
@@ -318,10 +322,13 @@ def test_handle_search_propagates_scrape_error() -> None:
 
     import bridge_handlers
 
-    with patch.object(
-        bridge_handlers,
-        "scrape_annas_archive",
-        side_effect=SearchScrapeError("unsupported", "not parseable"),
-    ), pytest.raises(SearchScrapeError) as ei:
+    with (
+        patch.object(
+            bridge_handlers,
+            "scrape_annas_archive",
+            side_effect=SearchScrapeError("unsupported", "not parseable"),
+        ),
+        pytest.raises(SearchScrapeError) as ei,
+    ):
         bridge_handlers.handle_search({"query": "The Pragmatic Programmer"})
     assert ei.value.code == "unsupported"
