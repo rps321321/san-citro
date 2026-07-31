@@ -36,8 +36,10 @@ describe("StartupShell", () => {
     expect(root?.getAttribute("aria-busy")).toBe("true");
     expect(container.querySelector("[data-titlebar]")).toBeTruthy();
     expect(screen.getByText(/Loading library/i)).toBeTruthy();
-    // Sidebar rail present (desktop width class).
-    expect(container.querySelector("aside.sidebar-glass")).toBeTruthy();
+    // Sidebar rail present (desktop width class matches SIDEBAR_WIDTH 14rem).
+    const rail = container.querySelector("aside.sidebar-glass");
+    expect(rail).toBeTruthy();
+    expect(rail?.className ?? "").toContain("w-[14rem]");
   });
 });
 
