@@ -1,5 +1,11 @@
 # The visual language is refined Apple "Liquid Glass"
 
+> **Superseded (visual direction).** Product visual language is now defined by
+> [ADR-0016](0016-desktop-visual-language.md) — warm, precise **Windows desktop library utility**.
+> Apple / Liquid Glass as north star is retired. Mechanics that still apply (citrus accent,
+> shell translucency vs opaque content, blur budget / containing-block trap, light+dark) are
+> restated in 0016. Keep this file for historical context only.
+
 San Citro's UI adopts Apple's design philosophy (clarity · deference · depth) and the
 **Liquid Glass** material language, executed as a *refined Mac app* — not the playful,
 maximalist component-kit look first explored in [the frontend-revamp goal](../plans/frontend-revamp.md).
