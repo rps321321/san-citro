@@ -2,6 +2,19 @@
 
 Scored decisions from the regenerable inventory dump. **This file is the durable product.** The full trees and raw advisories live under `.cache/deps-inventory/` (gitignored).
 
+## Security decision log — #89 (2026-07-31)
+
+| Finding | Path | Resolution |
+|---|---|---|
+| postcss ≤8.5.17 (GHSA-qx2v-qp2m-jg93, GHSA-6g55-p6wh-862q, GHSA-r28c-9q8g-f849) | `next` nested `postcss@8.4.31` | npm `overrides.postcss = 8.5.25` |
+| sharp <0.35.0 (GHSA-f88m-g3jw-g9cj) | `next` optional `sharp@0.34.5` | npm `overrides.sharp = 0.35.3` |
+
+- **Why not Next upgrade:** Latest stable is still `16.2.12`; 16.3 only canary/preview. No smaller stable patch graph available.
+- **Why overrides (not force-fix):** `npm audit fix --force` proposes Next 9.3.3 (destructive downgrade). Overrides keep Next 16.2.12 and pin patched transitive versions.
+- **Compatibility evidence:** `next build` (static export), unit (142), component (132) green after override.
+- **Reachability:** San Citro uses hash-routed static export for Electron; PostCSS/sharp run at **build** time. Overrides still eliminate the vulnerable installed graph reported by `npm audit --omit=dev`.
+- **Expiry:** Prefer removing overrides when a stable Next release ships fixed deps; track via re-run inventory.
+
 ## Security decision log — #88 (2026-07-31)
 
 | Package | Old constraint | New constraint | Advisory | Min fixed |
