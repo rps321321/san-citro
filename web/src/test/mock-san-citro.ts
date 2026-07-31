@@ -90,6 +90,7 @@ export function createSanCitroMock(
     }),
     saveAudiobookProgress: async () => {},
     setTitlebarOverlay: () => {},
+    notifyRendererReady: () => {},
     setTelemetryContext: async () => {},
   };
 

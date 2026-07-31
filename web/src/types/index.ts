@@ -263,6 +263,12 @@ export interface SanCitroApi {
   }): Promise<void>;
   /** Theme-sync the OS window-controls overlay colors to the title bar. */
   setTitlebarOverlay(opts: { color: string; symbolColor: string }): void;
+  /**
+   * Signal that the renderer has painted a meaningful shell (issue #62).
+   * Main closes the splash and shows the BrowserWindow. Fire-and-forget; main
+   * is one-shot so duplicate calls are safe.
+   */
+  notifyRendererReady(): void;
   /** Push telemetry context (identity + Supabase creds) to the Python bridge. */
   setTelemetryContext(ctx: {
     device_id: string;
