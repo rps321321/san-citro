@@ -13,6 +13,20 @@ leaking that as a public live status.
 Terminal event (glossary): exactly one ``download_analytics`` fact is built
 at a terminal state and delivered through the optional ``on_terminal_fact``
 sink. CLI passes no sink (no-op); the bridge wires it to the telemetry emitter.
+
+Terminal history / telemetry ownership
+--------------------------------------
+:func:`run_download` is the **sole** writer of durable terminal history
+(``completed`` / ``failed`` / ``cancelled``) and the sole builder of Terminal
+event facts for every job that enters this module.
+
+**Queue-only cancel exception (desktop manager only):** a job cancelled while
+still ``queued`` and **guaranteed never to call** :func:`run_download` may
+record cancelled history and emit one Terminal fact in the download manager.
+That path is bound to the exact ``DownloadEntry`` attempt (identity +
+``finished`` gate). Once a worker enters :func:`run_download`, the manager
+must not write terminal history or Terminal facts for that job — lifecycle
+owns both end-to-end (including mid-flight cancel).
 """
 
 from __future__ import annotations

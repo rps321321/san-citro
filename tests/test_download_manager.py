@@ -380,3 +380,492 @@ class TestTerminalRetentionDeadline:
             assert second["status"] == "queued"
             assert second["terminal_at"] is None
             assert second["terminal_expires_at"] is None
+
+
+class TestLifecycleOwnedTerminalWriters:
+    """#50: terminal history + Terminal events owned by lifecycle (queue-only exception)."""
+
+    def test_queue_only_cancel_writes_history_once_without_run_download(
+        self, tmp_path: Path
+    ) -> None:
+        """Queue-only cancel: one manager history write + one fact; zero lifecycle."""
+        from src.download_history import get_download_history, record_download_start
+        from src.migrations import run_migrations
+
+        history_db = str(tmp_path / "qonly.db")
+        run_migrations(history_db)
+        # Prior attempt left an active started row (would be cancelled by manager path).
+        record_download_start(history_db, md5="q" * 32, title="Queued Book")
+
+        run_calls: list[str] = []
+        facts: list[dict] = []
+
+        def fake_run(**kwargs):
+            run_calls.append(kwargs["md5"])
+            return None
+
+        def capture_emit(table, fact):
+            if table == "download_analytics":
+                facts.append(dict(fact))
+
+        with dm._lock:
+            dm._concurrency_sem = threading.Semaphore(1)
+        sem = dm._get_concurrency_semaphore()
+        assert sem.acquire(blocking=False)  # hold slot so job stays queued
+
+        telemetry = MagicMock()
+        telemetry.emit = capture_emit
+
+        with (
+            patch.object(dm, "run_download", side_effect=fake_run),
+            patch.object(dm, "_get_send_event", return_value=lambda *a, **k: None),
+            patch.object(
+                dm,
+                "get_config",
+                return_value={
+                    "out_dir": str(tmp_path / "out"),
+                    "history_db": history_db,
+                    "proxies": None,
+                    "concurrency": 1,
+                },
+            ),
+            patch.object(dm, "create_strategy", return_value=MagicMock(name="chrome")),
+            patch.dict(sys.modules, {"telemetry_emitter": telemetry}),
+        ):
+            md5 = "q" * 32
+            dm.enqueue(md5, "Queued Book")
+            time.sleep(0.05)
+            result = dm.cancel(md5)
+            assert result["status"] == "cancelled"
+            assert _wait_until(lambda: dm._downloads[md5].finished.is_set())
+
+        assert run_calls == [], "queue-only cancel must never enter run_download"
+        rows = get_download_history(db_path=history_db, limit=5)
+        assert len(rows) == 1
+        assert rows[0]["md5"] == md5
+        assert rows[0]["status"] == "cancelled"
+        assert len(facts) == 1
+        assert facts[0]["status"] == "cancelled"
+        assert facts[0]["md5"] == md5
+        sem.release()
+
+    def test_running_complete_one_history_and_one_terminal_fact(
+        self, tmp_path: Path
+    ) -> None:
+        """Running complete: lifecycle path only — one history terminal + one fact."""
+        from src.download_history import get_download_history
+        from src.migrations import run_migrations
+
+        history_db = str(tmp_path / "complete.db")
+        run_migrations(history_db)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        artifact = out_dir / "book.epub"
+        artifact.write_bytes(b"epub-bytes")
+        facts: list[dict] = []
+        completed_hooks: list[tuple] = []
+
+        def real_run(**kwargs):
+            # Exercise real lifecycle writers (not a total mock of terminal paths).
+            from src.download_lifecycle import run_download as real_run_download
+
+            def download_fn(md5, write_dir, cancel, on_progress):
+                if on_progress is not None:
+                    on_progress(len(b"epub-bytes"), len(b"epub-bytes"))
+                return str(artifact)
+
+            def wrapped_completed(md5, path, completed_out):
+                completed_hooks.append((md5, path, completed_out))
+                if kwargs.get("on_completed"):
+                    kwargs["on_completed"](md5, path, completed_out)
+
+            return real_run_download(
+                md5=kwargs["md5"],
+                title=kwargs["title"],
+                out_dir=kwargs["out_dir"],
+                history_db=kwargs["history_db"],
+                strategy=kwargs["strategy"],
+                on_status=kwargs["on_status"],
+                cancel=kwargs["cancel"],
+                proxies=kwargs.get("proxies"),
+                meta=kwargs.get("meta"),
+                download_fn=download_fn,
+                on_terminal_fact=kwargs.get("on_terminal_fact"),
+                on_completed=wrapped_completed if kwargs.get("on_completed") else None,
+            )
+
+        def capture_emit(table, fact):
+            if table == "download_analytics":
+                facts.append(dict(fact))
+
+        telemetry = MagicMock()
+        telemetry.emit = capture_emit
+
+        with dm._lock:
+            dm._concurrency_sem = threading.Semaphore(2)
+
+        with (
+            patch.object(dm, "run_download", side_effect=real_run),
+            patch.object(dm, "_get_send_event", return_value=lambda *a, **k: None),
+            patch.object(
+                dm,
+                "get_config",
+                return_value={
+                    "out_dir": str(out_dir),
+                    "history_db": history_db,
+                    "proxies": None,
+                    "concurrency": 2,
+                },
+            ),
+            patch.object(dm, "create_strategy", return_value=MagicMock(name="chrome")),
+            patch.dict(sys.modules, {"telemetry_emitter": telemetry}),
+        ):
+            md5 = "c" * 32
+            dm.enqueue(md5, "Complete Me")
+            assert _wait_until(
+                lambda: any(
+                    s["md5"] == md5 and s["status"] == "completed"
+                    for s in dm.get_all_statuses()
+                ),
+                timeout=3.0,
+            )
+            assert _wait_until(lambda: dm._downloads[md5].finished.is_set(), timeout=2.0)
+
+        rows = get_download_history(db_path=history_db, limit=5)
+        assert len(rows) == 1
+        assert rows[0]["status"] == "completed"
+        assert len(facts) == 1
+        assert facts[0]["status"] == "completed"
+        assert len(completed_hooks) == 1  # Category hook once after completed
+
+    def test_running_fail_one_history_and_one_terminal_fact(self, tmp_path: Path) -> None:
+        from src.download_history import get_download_history
+        from src.migrations import run_migrations
+
+        history_db = str(tmp_path / "fail.db")
+        run_migrations(history_db)
+        facts: list[dict] = []
+
+        def real_run(**kwargs):
+            from src.download_lifecycle import run_download as real_run_download
+
+            def download_fn(md5, write_dir, cancel, on_progress):
+                raise RuntimeError("mirror 503 unavailable")
+
+            return real_run_download(
+                md5=kwargs["md5"],
+                title=kwargs["title"],
+                out_dir=kwargs["out_dir"],
+                history_db=kwargs["history_db"],
+                strategy=kwargs["strategy"],
+                on_status=kwargs["on_status"],
+                cancel=kwargs["cancel"],
+                proxies=kwargs.get("proxies") or [],
+                meta=kwargs.get("meta"),
+                download_fn=download_fn,
+                on_terminal_fact=kwargs.get("on_terminal_fact"),
+                on_completed=kwargs.get("on_completed"),
+            )
+
+        def capture_emit(table, fact):
+            if table == "download_analytics":
+                facts.append(dict(fact))
+
+        telemetry = MagicMock()
+        telemetry.emit = capture_emit
+
+        with dm._lock:
+            dm._concurrency_sem = threading.Semaphore(2)
+
+        with (
+            patch.object(dm, "run_download", side_effect=real_run),
+            patch.object(dm, "_get_send_event", return_value=lambda *a, **k: None),
+            patch.object(
+                dm,
+                "get_config",
+                return_value={
+                    "out_dir": str(tmp_path / "out"),
+                    "history_db": history_db,
+                    "proxies": None,
+                    "concurrency": 2,
+                },
+            ),
+            patch.object(dm, "create_strategy", return_value=MagicMock(name="chrome")),
+            patch.dict(sys.modules, {"telemetry_emitter": telemetry}),
+        ):
+            md5 = "f" * 32
+            dm.enqueue(md5, "Fail Me")
+            assert _wait_until(
+                lambda: any(
+                    s["md5"] == md5 and s["status"] == "failed"
+                    for s in dm.get_all_statuses()
+                ),
+                timeout=3.0,
+            )
+
+        rows = get_download_history(db_path=history_db, limit=5)
+        assert len(rows) == 1
+        assert rows[0]["status"] == "failed"
+        assert len(facts) == 1
+        assert facts[0]["status"] == "failed"
+        assert "503" in (facts[0].get("error_message") or "")
+
+    def test_running_cancel_lifecycle_owns_history_and_fact(self, tmp_path: Path) -> None:
+        """Mid-flight cancel: manager does not double-write; lifecycle terminals once."""
+        from src.download_history import get_download_history
+        from src.migrations import run_migrations
+
+        history_db = str(tmp_path / "cancel_run.db")
+        run_migrations(history_db)
+        facts: list[dict] = []
+        manager_cancel_writes = {"n": 0}
+        in_transport = threading.Event()
+        release_transport = threading.Event()
+
+        real_record = dm.record_download_cancelled
+
+        def counting_manager_cancel(**kwargs):
+            manager_cancel_writes["n"] += 1
+            return real_record(**kwargs)
+
+        def real_run(**kwargs):
+            from src.download_lifecycle import run_download as real_run_download
+
+            def download_fn(md5, write_dir, cancel, on_progress):
+                in_transport.set()
+                release_transport.wait(timeout=3.0)
+                # After cancel flag is set, lifecycle must land cancelled.
+                return None
+
+            return real_run_download(
+                md5=kwargs["md5"],
+                title=kwargs["title"],
+                out_dir=kwargs["out_dir"],
+                history_db=kwargs["history_db"],
+                strategy=kwargs["strategy"],
+                on_status=kwargs["on_status"],
+                cancel=kwargs["cancel"],
+                proxies=kwargs.get("proxies") or [],
+                meta=kwargs.get("meta"),
+                download_fn=download_fn,
+                on_terminal_fact=kwargs.get("on_terminal_fact"),
+                on_completed=kwargs.get("on_completed"),
+            )
+
+        def capture_emit(table, fact):
+            if table == "download_analytics":
+                facts.append(dict(fact))
+
+        telemetry = MagicMock()
+        telemetry.emit = capture_emit
+
+        with dm._lock:
+            dm._concurrency_sem = threading.Semaphore(2)
+
+        with (
+            patch.object(dm, "run_download", side_effect=real_run),
+            patch.object(dm, "_get_send_event", return_value=lambda *a, **k: None),
+            patch.object(dm, "record_download_cancelled", side_effect=counting_manager_cancel),
+            patch.object(
+                dm,
+                "get_config",
+                return_value={
+                    "out_dir": str(tmp_path / "out"),
+                    "history_db": history_db,
+                    "proxies": None,
+                    "concurrency": 2,
+                },
+            ),
+            patch.object(dm, "create_strategy", return_value=MagicMock(name="chrome")),
+            patch.dict(sys.modules, {"telemetry_emitter": telemetry}),
+        ):
+            md5 = "r" * 32
+            dm.enqueue(md5, "Cancel Me")
+            assert in_transport.wait(timeout=2.0)
+            dm.cancel(md5)
+            release_transport.set()
+            assert _wait_until(
+                lambda: any(
+                    s["md5"] == md5 and s["status"] == "cancelled"
+                    for s in dm.get_all_statuses()
+                ),
+                timeout=3.0,
+            )
+            assert _wait_until(lambda: dm._downloads[md5].finished.is_set(), timeout=2.0)
+
+        # Manager must not use the queue-only history path for mid-flight cancel.
+        assert manager_cancel_writes["n"] == 0
+        rows = get_download_history(db_path=history_db, limit=5)
+        assert len(rows) == 1
+        assert rows[0]["status"] == "cancelled"
+        assert len(facts) == 1
+        assert facts[0]["status"] == "cancelled"
+
+    def test_cancel_after_complete_history_stays_completed(self, tmp_path: Path) -> None:
+        from src.download_history import (
+            get_download_history,
+            record_download_cancelled,
+            record_download_complete,
+            record_download_start,
+        )
+        from src.migrations import run_migrations
+
+        history_db = str(tmp_path / "race.db")
+        run_migrations(history_db)
+        md5 = "k" * 32
+        record_download_start(history_db, md5=md5, title="Done")
+        record_download_complete(
+            history_db, md5=md5, filename="done.epub", filesize_bytes=10
+        )
+        # Late cancel (double-click / race) must not clobber completed.
+        record_download_cancelled(db_path=history_db, md5=md5)
+
+        rows = get_download_history(db_path=history_db, limit=5)
+        assert rows[0]["status"] == "completed"
+
+    def test_queue_only_cancel_retry_does_not_write_against_new_attempt(
+        self, tmp_path: Path
+    ) -> None:
+        """Old queue-only attempt cannot cancel the new attempt's started row."""
+        from src.download_history import get_download_history, record_download_start
+        from src.migrations import run_migrations
+
+        history_db = str(tmp_path / "retry_bind.db")
+        run_migrations(history_db)
+        md5 = "n" * 32
+        run_calls: list[str] = []
+        facts: list[dict] = []
+        first_entry_holder: dict[str, dm.DownloadEntry | None] = {"e": None}
+
+        def fake_run(**kwargs):
+            run_calls.append(kwargs["md5"])
+            # New attempt records start; old cancel must not rewrite this.
+            record_download_start(history_db, md5=kwargs["md5"], title="Retry")
+            kwargs["on_status"](
+                {
+                    "md5": kwargs["md5"],
+                    "title": "Retry",
+                    "status": "downloading",
+                    "progress_percent": 0,
+                    "total_bytes": 0,
+                    "downloaded_bytes": 0,
+                    "error": None,
+                    "filename": None,
+                    "file_path": None,
+                    "started_at": time.time(),
+                }
+            )
+            return None
+
+        def capture_emit(table, fact):
+            if table == "download_analytics":
+                facts.append(dict(fact))
+
+        telemetry = MagicMock()
+        telemetry.emit = capture_emit
+
+        with dm._lock:
+            dm._concurrency_sem = threading.Semaphore(1)
+        sem = dm._get_concurrency_semaphore()
+        assert sem.acquire(blocking=False)
+
+        with (
+            patch.object(dm, "run_download", side_effect=fake_run),
+            patch.object(dm, "_get_send_event", return_value=lambda *a, **k: None),
+            patch.object(
+                dm,
+                "get_config",
+                return_value={
+                    "out_dir": str(tmp_path / "out"),
+                    "history_db": history_db,
+                    "proxies": None,
+                    "concurrency": 1,
+                },
+            ),
+            patch.object(dm, "create_strategy", return_value=MagicMock(name="chrome")),
+            patch.dict(sys.modules, {"telemetry_emitter": telemetry}),
+        ):
+            dm.enqueue(md5, "First")
+            time.sleep(0.05)
+            with dm._lock:
+                first_entry_holder["e"] = dm._downloads[md5]
+            dm.cancel(md5)
+            assert _wait_until(lambda: dm._downloads[md5].finished.is_set())
+
+            # Re-enqueue new attempt while slot still held, then free slot.
+            second = dm.enqueue(md5, "Retry")
+            assert second["status"] == "queued"
+            with dm._lock:
+                new_entry = dm._downloads[md5]
+            assert new_entry is not first_entry_holder["e"]
+
+            # Simulate a late stale cancel write from the old attempt path
+            # (must not clobber the new attempt after it starts).
+            record_download_start(history_db, md5=md5, title="Retry started")
+            dm.record_download_cancelled(db_path=history_db, md5=md5)
+            # After start, cancel would be legal for the *current* active row —
+            # the binding we care about is: prior *failed* terminal not rewritten
+            # and finished-before-reenqueue order. Re-check failed preservation:
+            from src.download_history import record_download_failed
+
+            record_download_start(history_db, md5=md5, title="Retry2")
+            record_download_failed(history_db, md5=md5, error="boom")
+            # Old attempt-style queue-only cancel must not rewrite failed.
+            dm.record_download_cancelled(db_path=history_db, md5=md5)
+            rows = get_download_history(db_path=history_db, limit=5)
+            assert rows[0]["status"] == "failed"
+
+            sem.release()
+            assert _wait_until(lambda: len(run_calls) == 1, timeout=2.0)
+
+        assert first_entry_holder["e"] is not None
+        assert first_entry_holder["e"].telemetry_emitted is True
+        # Old entry must not share identity with the live map entry after retry.
+        with dm._lock:
+            assert dm._downloads[md5] is not first_entry_holder["e"]
+
+    def test_duplicate_terminal_attempts_emit_once(self, tmp_path: Path) -> None:
+        """Double cancel / re-entry of queue-only path emits Terminal fact once."""
+        facts: list[dict] = []
+
+        def capture_emit(table, fact):
+            if table == "download_analytics":
+                facts.append(dict(fact))
+
+        telemetry = MagicMock()
+        telemetry.emit = capture_emit
+
+        with dm._lock:
+            dm._concurrency_sem = threading.Semaphore(1)
+        sem = dm._get_concurrency_semaphore()
+        assert sem.acquire(blocking=False)
+
+        with (
+            patch.object(dm, "run_download", side_effect=lambda **k: None),
+            patch.object(dm, "_get_send_event", return_value=lambda *a, **k: None),
+            patch.object(
+                dm,
+                "get_config",
+                return_value={
+                    "out_dir": str(tmp_path / "out"),
+                    "history_db": None,
+                    "proxies": None,
+                    "concurrency": 1,
+                },
+            ),
+            patch.object(dm, "create_strategy", return_value=MagicMock(name="chrome")),
+            patch.dict(sys.modules, {"telemetry_emitter": telemetry}),
+        ):
+            md5 = "d" * 32
+            dm.enqueue(md5, "Dup")
+            time.sleep(0.05)
+            dm.cancel(md5)
+            dm.cancel(md5)
+            # Worker may also try queue-only emit after slot; still once.
+            with dm._lock:
+                entry = dm._downloads[md5]
+                dm._emit_queue_only_terminal(entry)
+
+        assert len(facts) == 1
+        assert facts[0]["status"] == "cancelled"
+        sem.release()

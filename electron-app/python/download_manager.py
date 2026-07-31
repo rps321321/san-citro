@@ -238,14 +238,19 @@ def cancel(md5: str) -> dict[str, Any]:
     """Set the cancel flag for an active download.
 
     Lifecycle is the sole history writer once the worker is running
-    (``downloading``). Queue-only cancel (never entered the worker body) may
-    record cancel history here so the row is not left open.
+    (``downloading`` / entered ``run_download``). Queue-only cancel (still
+    ``queued``, never entered the worker body) may record cancel history here
+    so an in-flight history row is not left open — see the queue-only exception
+    documented on ``src.download_lifecycle``.
 
     Terminal event: lifecycle owns facts for jobs that enter ``run_download``.
-    Queue-only cancel may still emit once here (lifecycle never runs).
+    Queue-only cancel may still emit once here (lifecycle never runs). Bound
+    to this ``DownloadEntry``: history is written before ``finished`` so a
+    re-enqueue cannot race a late cancel onto the next attempt.
     """
     was_queued_only = False
     was_active = False
+    entry: DownloadEntry | None = None
     with _lock:
         entry = _downloads.get(md5)
         if entry is None:
@@ -261,16 +266,18 @@ def cancel(md5: str) -> dict[str, Any]:
             was_queued_only = prior_status == "queued"
             if was_queued_only:
                 # Worker never entered transport (may still be blocked on the
-                # concurrency slot). Mark finished so a retry can re-enqueue
-                # immediately; the stale worker no-ops via entry-identity check.
-                entry.finished.set()
+                # concurrency slot). Emit Terminal fact now; defer finished until
+                # after history so retry cannot race this attempt's cancel write.
                 _emit_queue_only_terminal(entry)
         result = entry.to_dict()
 
-    if was_queued_only:
+    if was_queued_only and entry is not None:
         config = get_config()
         history_db = config.get("history_db")
         record_download_cancelled(db_path=history_db, md5=md5)
+        # Attempt bound: only after durable write may a re-enqueue replace the map.
+        with _lock:
+            entry.finished.set()
 
     if was_active:
         send_event = _get_send_event()
