@@ -11,6 +11,10 @@ import { InPagePlayer } from "@/components/in-page-player";
 import { CommandPalette } from "@/components/command-palette";
 import { PlayerProvider, usePlayer } from "@/contexts/player-context";
 import { ActiveDownloadsProvider } from "@/contexts/active-downloads-context";
+import {
+  ShellScrollProvider,
+  useShellScroll,
+} from "@/contexts/shell-scroll-context";
 
 // The persistent SPA shell: sidebar + title bar + routed <Outlet /> + the
 // in-page audiobook player (ADR-0013). The player lives inside SidebarInset (the
@@ -18,8 +22,11 @@ import { ActiveDownloadsProvider } from "@/contexts/active-downloads-context";
 // — the bounding the retired WebContentsView used to do via content-rect IPC.
 // ActiveDownloadsProvider owns the sole getDownloads + onDownloadProgress session
 // subscription; Island / Downloads / Search are views over that store.
+// ShellScrollProvider exposes the main overflow scroller so routes do not call
+// window.scrollTo (the window is not the scrolling element).
 function ShellInner() {
   const { active } = usePlayer();
+  const { mainRef } = useShellScroll();
   return (
     <SidebarProvider>
       <TitlebarSync />
@@ -36,6 +43,9 @@ function ShellInner() {
         <AppHeader />
         <main
           id="main-content"
+          ref={(node) => {
+            mainRef.current = node;
+          }}
           className="surface-content flex-1 overflow-auto p-4 md:p-6"
           style={active ? { paddingBottom: 72 } : undefined}
         >
@@ -52,7 +62,9 @@ export default function AppShell() {
   return (
     <PlayerProvider>
       <ActiveDownloadsProvider>
-        <ShellInner />
+        <ShellScrollProvider>
+          <ShellInner />
+        </ShellScrollProvider>
       </ActiveDownloadsProvider>
     </PlayerProvider>
   );

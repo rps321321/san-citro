@@ -1,14 +1,19 @@
 /**
  * Ticket #58 — Search route public behavior locked after decomposition.
+ * Ticket #59 — Shell scroller (not window) after successful search/pagination.
  *
- * Covers empty state, stale-response race rejection, pagination, and download
- * handoff at the SearchPage boundary (not private module structure).
+ * Covers empty state, stale-response race rejection, pagination, download
+ * handoff, and shell-main scroll targeting at the SearchPage boundary.
  */
 import { describe, it, expect, afterEach, vi, beforeEach } from "vitest";
 import { cleanup, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SearchPage from "@/routes/search";
 import { ActiveDownloadsProvider } from "@/contexts/active-downloads-context";
+import {
+  ShellScrollProvider,
+  useShellScroll,
+} from "@/contexts/shell-scroll-context";
 import {
   installSanCitroMock,
   uninstallSanCitroMock,
@@ -55,6 +60,42 @@ function renderSearch() {
   );
 }
 
+/** Full shell scroll contract: real provider + mocked main.scrollTo target. */
+function renderSearchWithShellScroller() {
+  const mainScrollTo = vi.fn();
+
+  function ShellMainProbe() {
+    const { mainRef } = useShellScroll();
+    return (
+      <main
+        id="main-content"
+        data-testid="shell-main"
+        ref={(node) => {
+          mainRef.current = node;
+          if (node) {
+            // jsdom may lack Element.scrollTo; force a spyable implementation.
+            Object.defineProperty(node, "scrollTo", {
+              configurable: true,
+              value: mainScrollTo,
+            });
+          }
+        }}
+      />
+    );
+  }
+
+  render(
+    <ShellScrollProvider>
+      <ShellMainProbe />
+      <ActiveDownloadsProvider>
+        <SearchPage />
+      </ActiveDownloadsProvider>
+    </ShellScrollProvider>
+  );
+
+  return { mainScrollTo };
+}
+
 afterEach(() => {
   cleanup();
   uninstallSanCitroMock();
@@ -62,6 +103,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  // Guard: Search must not rely on window as the scroller (#59).
   window.scrollTo = vi.fn();
 });
 
@@ -265,6 +307,89 @@ describe("Search route public behavior (#58)", () => {
       ).toBeInTheDocument();
     });
     // Prior results remain visible.
+    expect(screen.getByText("Book page 1")).toBeInTheDocument();
+  });
+});
+
+describe("Search shell scroller (#59)", () => {
+  it("scrolls the shell main scroller after a successful search, not window", async () => {
+    const searchMock = vi.fn(async () => pageResults(1, true, false));
+    installSanCitroMock({ search: searchMock });
+    const user = userEvent.setup();
+    const { mainScrollTo } = renderSearchWithShellScroller();
+
+    await user.type(screen.getByLabelText("Search query"), "habits");
+    await user.click(screen.getByRole("button", { name: /^Search$/i }));
+    await screen.findByText("Book page 1");
+
+    await waitFor(() => {
+      expect(mainScrollTo).toHaveBeenCalled();
+    });
+    expect(mainScrollTo).toHaveBeenCalledWith(
+      expect.objectContaining({ top: 0, behavior: "auto" })
+    );
+    expect(window.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("scrolls shell main and focuses results summary after pagination", async () => {
+    const searchMock = vi.fn(async (params: SearchCallParams) => {
+      const page = params.page ?? 1;
+      return pageResults(page, page === 1, page > 1);
+    });
+    installSanCitroMock({ search: searchMock });
+    const user = userEvent.setup();
+    const { mainScrollTo } = renderSearchWithShellScroller();
+
+    await user.type(screen.getByLabelText("Search query"), "habits");
+    await user.click(screen.getByRole("button", { name: /^Search$/i }));
+    await screen.findByText("Book page 1");
+    mainScrollTo.mockClear();
+
+    await user.click(screen.getByLabelText(/go to next page/i));
+    await screen.findByText("Book page 2");
+
+    await waitFor(() => {
+      expect(mainScrollTo).toHaveBeenCalledWith(
+        expect.objectContaining({ top: 0, behavior: "auto" })
+      );
+    });
+    expect(window.scrollTo).not.toHaveBeenCalled();
+
+    // Keyboard handoff: results summary is focused after a successful page change.
+    const summary = screen.getByText(/Showing 1 on this page · page 2/i);
+    expect(summary).toHaveFocus();
+  });
+
+  it("does not scroll when a re-search fails and stale results remain", async () => {
+    let call = 0;
+    const searchMock = vi.fn(async () => {
+      call += 1;
+      if (call === 1) return pageResults(1, false, false);
+      throw new Error("network down");
+    });
+    installSanCitroMock({ search: searchMock });
+    const user = userEvent.setup();
+    const { mainScrollTo } = renderSearchWithShellScroller();
+
+    await user.type(screen.getByLabelText("Search query"), "habits");
+    await user.click(screen.getByRole("button", { name: /^Search$/i }));
+    await screen.findByText("Book page 1");
+
+    await waitFor(() => expect(mainScrollTo).toHaveBeenCalledTimes(1));
+    mainScrollTo.mockClear();
+    (window.scrollTo as ReturnType<typeof vi.fn>).mockClear();
+
+    await user.click(screen.getByLabelText("Filter by file extension"));
+    await user.click(await screen.findByRole("option", { name: "epub" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Showing previous results — the latest search failed/i)
+      ).toBeInTheDocument();
+    });
+
+    expect(mainScrollTo).not.toHaveBeenCalled();
+    expect(window.scrollTo).not.toHaveBeenCalled();
     expect(screen.getByText("Book page 1")).toBeInTheDocument();
   });
 });

@@ -131,14 +131,20 @@ function SearchContent() {
     [activeDownloads, completedThisSession, downloadingMd5s]
   );
 
+  // Focus results summary only after a successful page load so a failed re-search
+  // that keeps stale results does not jump the shell scroller (#59).
   const goPrev = () => {
     if (!data?.has_prev) return;
-    void doSearch(data.page - 1).then(() => resultsHeadingRef.current?.focus());
+    void doSearch(data.page - 1).then((ok) => {
+      if (ok) resultsHeadingRef.current?.focus();
+    });
   };
 
   const goNext = () => {
     if (!data?.has_next) return;
-    void doSearch(data.page + 1).then(() => resultsHeadingRef.current?.focus());
+    void doSearch(data.page + 1).then((ok) => {
+      if (ok) resultsHeadingRef.current?.focus();
+    });
   };
 
   return (
