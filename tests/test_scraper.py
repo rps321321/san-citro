@@ -89,3 +89,57 @@ def test_detect_content_type_maps_card_token(card_text, expected):
 
 def test_scrape_page_size_tracks_current_site_page_size():
     assert SCRAPE_PAGE_SIZE == 50
+
+
+def test_scrape_forwards_sort_and_filters_in_request_url():
+    """Global sort/filters are AA URL params — not client-side reordering."""
+    html = """
+    <html><body>
+      <div class="border-b">
+        <a href="/md5/cccccccccccccccccccccccccccccccc">Sorted Book</a>
+        <div>Author</div>
+        <div>English [en]</div>
+        <div>EPUB</div>
+      </div>
+    </body></html>
+    """
+    session = MagicMock()
+    session.get.return_value = _response(html)
+
+    with (
+        patch("src.scraper._make_session", return_value=(session, None, "ua")),
+        patch("src.scraper.is_allowed_by_robots", return_value=True),
+        patch("src.scraper.time.sleep"),
+    ):
+        scrape_annas_archive(
+            "habits",
+            ext="epub",
+            lang="English",
+            sort="newest",
+            page=2,
+            base_url="https://annas-archive.example",
+        )
+
+    url = session.get.call_args.args[0]
+    assert "q=habits" in url
+    assert "ext=epub" in url
+    assert "lang=English" in url
+    assert "sort=newest" in url
+    assert "page=2" in url
+
+
+def test_scrape_omits_sort_param_for_relevance_default():
+    session = MagicMock()
+    session.get.return_value = _response("<html><body></body></html>")
+
+    with (
+        patch("src.scraper._make_session", return_value=(session, None, "ua")),
+        patch("src.scraper.is_allowed_by_robots", return_value=True),
+        patch("src.scraper.time.sleep"),
+    ):
+        scrape_annas_archive("habits", sort=None)
+        scrape_annas_archive("habits", sort="")
+
+    for call in session.get.call_args_list:
+        url = call.args[0]
+        assert "sort=" not in url

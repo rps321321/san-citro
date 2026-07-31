@@ -13,58 +13,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-export const SEARCH_EXTENSIONS = [
-  "",
-  "pdf",
-  "epub",
-  "djvu",
-  "mobi",
-  "azw3",
-  "fb2",
-  "txt",
-  "cbr",
-  "cbz",
-];
-export const SEARCH_LANGUAGES = [
-  "",
-  "English",
-  "Russian",
-  "German",
-  "French",
-  "Spanish",
-  "Italian",
-  "Chinese",
-  "Japanese",
-  "Portuguese",
-];
+import type { SearchCapabilityOption } from "@/types";
 
 export interface SearchToolbarProps {
   query: string;
   onQueryChange: (value: string) => void;
   extension: string;
   language: string;
+  /** AA sort value; empty string = relevance. */
+  sort: string;
+  extensions: SearchCapabilityOption[];
+  languages: SearchCapabilityOption[];
+  sorts: SearchCapabilityOption[];
   isLoading: boolean;
   activeFilterCount: number;
   searchInputRef: RefObject<HTMLInputElement | null>;
   onSubmit: (e: React.FormEvent) => void;
   onExtensionChange: (val: string | null) => void;
   onLanguageChange: (val: string | null) => void;
+  onSortChange: (val: string | null) => void;
   onClearFilters: () => void;
 }
 
-/** Search input, submit, format/language filters, clear. No bridge calls. */
+/** Search input, submit, sort + format/language filters, clear. No bridge calls. */
 export function SearchToolbar({
   query,
   onQueryChange,
   extension,
   language,
+  sort,
+  extensions,
+  languages,
+  sorts,
   isLoading,
   activeFilterCount,
   searchInputRef,
   onSubmit,
   onExtensionChange,
   onLanguageChange,
+  onSortChange,
   onClearFilters,
 }: SearchToolbarProps) {
   const canSubmit = query.trim().length > 0;
@@ -126,6 +113,38 @@ export function SearchToolbar({
         className="flex flex-wrap items-center gap-2 text-muted-foreground"
         data-search-filters=""
       >
+        <div className="w-40">
+          <Select
+            value={sort || "__relevance"}
+            onValueChange={onSortChange}
+          >
+            <SelectTrigger
+              className="w-full border-border/60 bg-transparent text-sm text-foreground shadow-none"
+              aria-label="Sort results"
+              size="default"
+            >
+              <SelectValue>
+                {(value) => {
+                  if (typeof value !== "string" || value === "__relevance") {
+                    return "Relevance";
+                  }
+                  return sorts.find((s) => s.value === value)?.label ?? value;
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {sorts.map((opt) => (
+                <SelectItem
+                  key={opt.value || "__relevance"}
+                  value={opt.value || "__relevance"}
+                >
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="w-36">
           <Select value={extension || "__all"} onValueChange={onExtensionChange}>
             <SelectTrigger
@@ -134,17 +153,22 @@ export function SearchToolbar({
               size="default"
             >
               <SelectValue>
-                {(value) =>
-                  typeof value === "string" && value !== "__all"
-                    ? value.toUpperCase()
-                    : "All formats"
-                }
+                {(value) => {
+                  if (typeof value !== "string" || value === "__all") {
+                    return "All formats";
+                  }
+                  return (
+                    extensions.find((e) => e.value === value)?.label ??
+                    value.toUpperCase()
+                  );
+                }}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {SEARCH_EXTENSIONS.map((ext) => (
-                <SelectItem key={ext || "__all"} value={ext || "__all"}>
-                  {ext || "All formats"}
+              <SelectItem value="__all">All formats</SelectItem>
+              {extensions.map((ext) => (
+                <SelectItem key={ext.value} value={ext.value}>
+                  {ext.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -159,15 +183,19 @@ export function SearchToolbar({
               size="default"
             >
               <SelectValue>
-                {(value) =>
-                  typeof value === "string" && value !== "__all" ? value : "All languages"
-                }
+                {(value) => {
+                  if (typeof value !== "string" || value === "__all") {
+                    return "All languages";
+                  }
+                  return languages.find((l) => l.value === value)?.label ?? value;
+                }}
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              {SEARCH_LANGUAGES.map((lang) => (
-                <SelectItem key={lang || "__all"} value={lang || "__all"}>
-                  {lang || "All languages"}
+              <SelectItem value="__all">All languages</SelectItem>
+              {languages.map((lang) => (
+                <SelectItem key={lang.value} value={lang.value}>
+                  {lang.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -192,4 +220,3 @@ export function SearchToolbar({
     </form>
   );
 }
-

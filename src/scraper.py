@@ -213,6 +213,7 @@ def scrape_annas_archive(
     *,
     ext: str | None = None,
     lang: str | None = None,
+    sort: str | None = None,
     page: int = 1,
     base_url: str = _DEFAULT_BASE_URL,
     seen_md5s: set[str] | None = None,
@@ -229,6 +230,10 @@ def scrape_annas_archive(
         Optional file-extension filter (e.g. ``"epub"``).
     lang:
         Optional language-code filter (e.g. ``"en"``).
+    sort:
+        Optional AA global sort (e.g. ``"newest"``, ``"largest"``).
+        Empty/None = most relevant (AA default). Ordering is owned by
+        upstream — never fabricated client-side across pages.
     page:
         1-based page number.
     base_url:
@@ -277,6 +282,9 @@ def scrape_annas_archive(
         params += f"&ext={quote_plus(ext)}"
     if lang:
         params += f"&lang={quote_plus(lang)}"
+    # AA: empty sort = most relevant. Only emit non-empty values.
+    if sort:
+        params += f"&sort={quote_plus(sort)}"
     if page > 1:
         params += f"&page={page}"
 

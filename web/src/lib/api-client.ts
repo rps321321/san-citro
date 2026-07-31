@@ -42,6 +42,8 @@ export interface SearchParams {
   page?: number;
   extension?: string;
   language?: string;
+  /** AA global sort; omit or "" for relevance (default). */
+  sort?: string;
 }
 
 export async function search(params: SearchParams): Promise<SearchResponse> {
@@ -50,6 +52,7 @@ export async function search(params: SearchParams): Promise<SearchResponse> {
     extension: params.extension,
     language: params.language,
     page: params.page,
+    sort: params.sort,
   }));
 }
 

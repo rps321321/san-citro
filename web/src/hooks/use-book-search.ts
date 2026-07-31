@@ -4,7 +4,8 @@ import { useState, useCallback, useRef } from "react";
 
 import { search } from "@/lib/api-client";
 import type { SearchParams } from "@/lib/api-client";
-import type { SearchResponse } from "@/types";
+import { BOOTSTRAP_SEARCH_CAPABILITIES } from "@/lib/search-capabilities";
+import type { SearchCapabilities, SearchResponse } from "@/types";
 import {
   trackSearch,
   trackInteraction,
@@ -17,19 +18,28 @@ import { useShellScrollOptional } from "@/contexts/shell-scroll-context";
 export type SearchFilterOverrides = {
   extension?: string;
   language?: string;
+  sort?: string;
   /** Immediate query (e.g. example chips) so the call does not wait on setState. */
   query?: string;
 };
 
 /**
- * Owns Search query/filter/page state, request invocation, and stale-response
+ * Owns Search query/filter/page/sort state, request invocation, and stale-response
  * rejection (request-id race). Presentational Search UI reads this only.
+ *
+ * Sort is authoritative at the Search boundary (#61): the selected value is sent
+ * on every scrape (including pagination). Client-side column reordering is gone.
  */
 export function useBookSearch() {
   const [query, setQuery] = useState("");
   const [extension, setExtension] = useState("");
   const [language, setLanguage] = useState("");
+  /** Empty string = AA relevance default. */
+  const [sort, setSort] = useState("");
   const [data, setData] = useState<SearchResponse | null>(null);
+  const [capabilities, setCapabilities] = useState<SearchCapabilities>(
+    BOOTSTRAP_SEARCH_CAPABILITIES
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Set to true when a re-search fails so previously shown results are dimmed/labelled.
@@ -66,6 +76,8 @@ export function useBookSearch() {
         overrides && "extension" in overrides ? (overrides.extension ?? "") : extension;
       const resolvedLanguage =
         overrides && "language" in overrides ? (overrides.language ?? "") : language;
+      const resolvedSort =
+        overrides && "sort" in overrides ? (overrides.sort ?? "") : sort;
 
       const params: SearchParams = {
         query: resolvedQuery,
@@ -73,6 +85,9 @@ export function useBookSearch() {
       };
       if (resolvedExtension) params.extension = resolvedExtension;
       if (resolvedLanguage) params.language = resolvedLanguage;
+      // Always send sort so pagination preserves the authoritative order (#61).
+      // Empty string = relevance; bridge omits the AA param for that case.
+      if (resolvedSort) params.sort = resolvedSort;
 
       try {
         const t0 = Date.now();
@@ -80,6 +95,9 @@ export function useBookSearch() {
         const elapsed = Date.now() - t0;
         if (currentRequestId !== requestIdRef.current) return false;
         setData(result);
+        if (result.capabilities) {
+          setCapabilities(result.capabilities);
+        }
         setResultsStale(false);
         // Instant shell scroll only on success — not on retained stale results.
         shellScroll?.scrollToTop({ behavior: "auto" });
@@ -112,7 +130,7 @@ export function useBookSearch() {
         }
       }
     },
-    [query, extension, language, shellScroll]
+    [query, extension, language, sort, shellScroll]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -122,7 +140,8 @@ export function useBookSearch() {
 
   // When a filter changes and results are already shown, re-run from page 1 with
   // the *new* filter values passed explicitly (avoids stale doSearch closure).
-  const activeFilterCount = (extension ? 1 : 0) + (language ? 1 : 0);
+  const activeFilterCount =
+    (extension ? 1 : 0) + (language ? 1 : 0) + (sort ? 1 : 0);
 
   const handleExtensionChange = (val: string | null) => {
     const next = !val || val === "__all" ? "" : val;
@@ -136,11 +155,20 @@ export function useBookSearch() {
     if (data) void doSearch(1, { language: next });
   };
 
+  const handleSortChange = (val: string | null) => {
+    // Select uses "__relevance" for empty AA default (Radix dislikes empty values).
+    const next = !val || val === "__relevance" ? "" : val;
+    setSort(next);
+    trackInteraction("sort", "search", { sort: next || "relevance" });
+    if (data) void doSearch(1, { sort: next });
+  };
+
   const handleClearFilters = () => {
     setExtension("");
     setLanguage("");
+    setSort("");
     trackInteraction("clear_filters", "search");
-    if (data) void doSearch(1, { extension: "", language: "" });
+    if (data) void doSearch(1, { extension: "", language: "", sort: "" });
   };
 
   const dismissError = () => setError(null);
@@ -150,6 +178,8 @@ export function useBookSearch() {
     setQuery,
     extension,
     language,
+    sort,
+    capabilities,
     data,
     isLoading,
     error,
@@ -160,6 +190,7 @@ export function useBookSearch() {
     handleSubmit,
     handleExtensionChange,
     handleLanguageChange,
+    handleSortChange,
     handleClearFilters,
     dismissError,
   };

@@ -30,6 +30,8 @@ function SearchContent() {
     setQuery,
     extension,
     language,
+    sort,
+    capabilities,
     data,
     isLoading,
     error,
@@ -40,6 +42,7 @@ function SearchContent() {
     handleSubmit,
     handleExtensionChange,
     handleLanguageChange,
+    handleSortChange,
     handleClearFilters,
     dismissError,
   } = useBookSearch();
@@ -200,12 +203,17 @@ function SearchContent() {
         onQueryChange={setQuery}
         extension={extension}
         language={language}
+        sort={sort}
+        extensions={capabilities.extensions}
+        languages={capabilities.languages}
+        sorts={capabilities.sorts}
         isLoading={isLoading}
         activeFilterCount={activeFilterCount}
         searchInputRef={searchInputRef}
         onSubmit={handleSubmit}
         onExtensionChange={handleExtensionChange}
         onLanguageChange={handleLanguageChange}
+        onSortChange={handleSortChange}
         onClearFilters={handleClearFilters}
       />
 

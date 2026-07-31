@@ -20,6 +20,7 @@ type SearchCallParams = {
   page?: number;
   extension?: string;
   language?: string;
+  sort?: string;
 };
 
 const SAMPLE_RESULTS: SearchResponse = {
@@ -92,7 +93,7 @@ describe("Search filters re-scrape with committed values (#27)", () => {
     const callsAfterInitial = searchMock.mock.calls.length;
 
     await user.click(screen.getByLabelText("Filter by file extension"));
-    await user.click(await screen.findByRole("option", { name: "epub" }));
+    await user.click(await screen.findByRole("option", { name: "EPUB" }));
 
     await waitFor(() => {
       expect(searchMock.mock.calls.length).toBeGreaterThan(callsAfterInitial);
@@ -136,7 +137,7 @@ describe("Search filters re-scrape with committed values (#27)", () => {
 
     // Apply a format filter first so Clear is available and a filtered call is recorded.
     await user.click(screen.getByLabelText("Filter by file extension"));
-    await user.click(await screen.findByRole("option", { name: "epub" }));
+    await user.click(await screen.findByRole("option", { name: "EPUB" }));
     await waitFor(() => {
       expect(lastSearchParams(searchMock).extension).toBe("epub");
     });

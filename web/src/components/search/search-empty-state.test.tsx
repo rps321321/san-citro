@@ -1,6 +1,6 @@
 /**
  * Ticket #57 — Pre-search empty state: guidance, example chips, local shortcuts,
- * format hints from SEARCH_EXTENSIONS, keyboard/SR affordances.
+ * format hints from search capabilities, keyboard/SR affordances.
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -10,7 +10,7 @@ import {
   SEARCH_EXAMPLE_QUERIES,
   SEARCH_FORMAT_HINTS,
 } from "@/components/search/search-empty-state";
-import { SEARCH_EXTENSIONS } from "@/components/search/search-toolbar";
+import { BOOTSTRAP_SEARCH_CAPABILITIES } from "@/lib/search-capabilities";
 
 afterEach(() => {
   cleanup();
@@ -41,12 +41,12 @@ describe("SearchEmptyState (#57)", () => {
     expect(onExampleQuery).toHaveBeenCalledTimes(SEARCH_EXAMPLE_QUERIES.length);
   });
 
-  it("derives format hints from SEARCH_EXTENSIONS (same source as filters)", () => {
+  it("derives format hints from bootstrap search capabilities (same as filters)", () => {
     render(<SearchEmptyState onExampleQuery={vi.fn()} />);
     const hint = document.querySelector("[data-search-format-hint]");
     expect(hint).not.toBeNull();
 
-    const expected = SEARCH_EXTENSIONS.filter((e) => e.length > 0);
+    const expected = BOOTSTRAP_SEARCH_CAPABILITIES.extensions.map((e) => e.value);
     expect(SEARCH_FORMAT_HINTS).toEqual(expected);
     for (const ext of expected) {
       expect(hint?.textContent).toMatch(new RegExp(ext, "i"));

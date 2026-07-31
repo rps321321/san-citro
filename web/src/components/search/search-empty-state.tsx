@@ -3,7 +3,7 @@
 import { BookOpenIcon, DownloadIcon, SearchIcon } from "lucide-react";
 
 import { Button, buttonVariants } from "@/components/ui/button";
-import { SEARCH_EXTENSIONS } from "@/components/search/search-toolbar";
+import { BOOTSTRAP_SEARCH_CAPABILITIES } from "@/lib/search-capabilities";
 import { cn } from "@/lib/utils";
 
 /** Example queries shown as one-action chips. Kept local (no remote personalization). */
@@ -14,9 +14,9 @@ export const SEARCH_EXAMPLE_QUERIES = [
   { label: "Meditations", query: "Meditations" },
 ] as const;
 
-/** Non-empty extensions from the same source as Search format filters. */
-export const SEARCH_FORMAT_HINTS = SEARCH_EXTENSIONS.filter(
-  (ext): ext is string => ext.length > 0
+/** Format values from bootstrap capabilities (mirrors Search format filters). */
+export const SEARCH_FORMAT_HINTS = BOOTSTRAP_SEARCH_CAPABILITIES.extensions.map(
+  (ext) => ext.value
 );
 
 export interface SearchEmptyStateProps {

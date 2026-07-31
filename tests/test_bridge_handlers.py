@@ -34,6 +34,58 @@ def test_search_has_next_uses_scraper_page_size():
     assert result["has_next"] is False
 
 
+def test_search_returns_capabilities_and_default_relevance_sort():
+    rows = [{"md5": "a" * 32}]
+
+    with (
+        patch.object(bridge_handlers, "get_config", return_value={"proxies": [], "history_db": None}),
+        patch.object(bridge_handlers, "scrape_annas_archive", return_value=rows) as scrape,
+        patch.object(bridge_handlers, "get_completed_md5s", return_value=set()),
+    ):
+        result = bridge_handlers.handle_search({"query": "python"})
+
+    scrape.assert_called_once()
+    assert scrape.call_args.kwargs.get("sort") is None
+    assert result["sort"] == ""
+    caps = result["capabilities"]
+    assert any(s["value"] == "" and s["label"] == "Relevance" for s in caps["sorts"])
+    assert any(s["value"] == "newest" for s in caps["sorts"])
+    assert any(e["value"] == "epub" for e in caps["extensions"])
+    assert any(lang["value"] == "English" for lang in caps["languages"])
+    # Product omits unstable random sort.
+    assert all(s["value"] != "random" for s in caps["sorts"])
+
+
+def test_search_forwards_alternate_sort_to_scraper():
+    rows = [{"md5": "b" * 32}]
+
+    with (
+        patch.object(bridge_handlers, "get_config", return_value={"proxies": [], "history_db": None}),
+        patch.object(bridge_handlers, "scrape_annas_archive", return_value=rows) as scrape,
+        patch.object(bridge_handlers, "get_completed_md5s", return_value=set()),
+    ):
+        result = bridge_handlers.handle_search({"query": "python", "sort": "largest", "page": 3})
+
+    assert result["sort"] == "largest"
+    assert result["page"] == 3
+    assert scrape.call_args.kwargs.get("sort") == "largest"
+    assert scrape.call_args.kwargs.get("page") == 3
+
+
+def test_search_unknown_sort_falls_back_to_relevance():
+    rows = [{"md5": "c" * 32}]
+
+    with (
+        patch.object(bridge_handlers, "get_config", return_value={"proxies": [], "history_db": None}),
+        patch.object(bridge_handlers, "scrape_annas_archive", return_value=rows) as scrape,
+        patch.object(bridge_handlers, "get_completed_md5s", return_value=set()),
+    ):
+        result = bridge_handlers.handle_search({"query": "python", "sort": "title_asc"})
+
+    assert result["sort"] == ""
+    assert scrape.call_args.kwargs.get("sort") is None
+
+
 def test_handle_list_library_returns_query_result():
     fake_result = {
         "items": [

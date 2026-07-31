@@ -26,6 +26,7 @@ type SearchCallParams = {
   page?: number;
   extension?: string;
   language?: string;
+  sort?: string;
 };
 
 const BOOK_MD5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -202,7 +203,7 @@ describe("Search route public behavior (#58)", () => {
 
     // First overlapping re-search: format filter.
     await user.click(screen.getByLabelText("Filter by file extension"));
-    await user.click(await screen.findByRole("option", { name: "epub" }));
+    await user.click(await screen.findByRole("option", { name: "EPUB" }));
     await waitFor(() => expect(searchMock).toHaveBeenCalledTimes(2));
 
     // Second overlapping re-search: language filter (does not wait for loading).
@@ -350,7 +351,7 @@ describe("Search route public behavior (#58)", () => {
 
     // Trigger re-search via format filter with results already shown.
     await user.click(screen.getByLabelText("Filter by file extension"));
-    await user.click(await screen.findByRole("option", { name: "epub" }));
+    await user.click(await screen.findByRole("option", { name: "EPUB" }));
 
     await waitFor(() => {
       expect(
@@ -431,7 +432,7 @@ describe("Search shell scroller (#59)", () => {
     (window.scrollTo as ReturnType<typeof vi.fn>).mockClear();
 
     await user.click(screen.getByLabelText("Filter by file extension"));
-    await user.click(await screen.findByRole("option", { name: "epub" }));
+    await user.click(await screen.findByRole("option", { name: "EPUB" }));
 
     await waitFor(() => {
       expect(
