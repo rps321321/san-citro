@@ -37,12 +37,20 @@ class DownloadEntry:
     cancel_flag: threading.Event = field(default_factory=threading.Event)
     file_path: str | None = None
     started_at: float | None = None  # unix timestamp
+    # Set once when status first becomes completed|failed|cancelled (live retention clock).
+    terminal_at: float | None = None
     telemetry_emitted: bool = False  # guard: download_analytics row sent once
     meta: dict[str, Any] = field(default_factory=dict)  # search-result metadata; not serialised
     # Set when the worker thread fully exits (including after queue-only cancel).
     # Prevents re-enqueue from spawning a second writer for the same md5 while an
     # older worker is still waiting on the concurrency slot or winding down.
     finished: threading.Event = field(default_factory=threading.Event)
+
+    def terminal_expires_at(self) -> float | None:
+        """Backend-owned Active-downloads eviction deadline (unix seconds)."""
+        if self.terminal_at is None:
+            return None
+        return self.terminal_at + TERMINAL_RETENTION_S
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -56,6 +64,8 @@ class DownloadEntry:
             "filename": os.path.basename(self.file_path) if self.file_path else None,
             "file_path": self.file_path,
             "started_at": self.started_at,
+            "terminal_at": self.terminal_at,
+            "terminal_expires_at": self.terminal_expires_at(),
         }
 
 
@@ -93,11 +103,30 @@ def _get_send_event():
     return send_event
 
 
-_TERMINAL_RETENTION_S = TERMINAL_RETENTION_S  # Auto-prune terminal entries after 5 minutes
+_TERMINAL_RETENTION_S = TERMINAL_RETENTION_S  # Auto-prune terminal entries after retention
+
+
+def _mark_terminal(entry: DownloadEntry, now: float | None = None) -> None:
+    """Stamp terminal_at once when a live entry first becomes terminal.
+
+    Must be called with _lock held. Retries create a new entry (or clear via
+    ``_clear_terminal``) so the deadline is never reused across jobs.
+    """
+    if entry.terminal_at is None:
+        entry.terminal_at = time.time() if now is None else now
+
+
+def _clear_terminal(entry: DownloadEntry) -> None:
+    """Drop terminal retention deadline (non-terminal / retry path)."""
+    entry.terminal_at = None
 
 
 def _prune_terminal() -> None:
-    """Remove completed/failed/cancelled entries older than retention period.
+    """Remove completed/failed/cancelled entries past their terminal deadline.
+
+    Uses ``terminal_at`` (when status first became terminal), never
+    ``started_at`` — a long download must remain visible for the full retention
+    window after completion.
 
     Must be called with _lock held.
     """
@@ -106,8 +135,8 @@ def _prune_terminal() -> None:
         md5
         for md5, e in _downloads.items()
         if e.status in ("completed", "failed", "cancelled")
-        and e.started_at is not None
-        and (now - e.started_at) > _TERMINAL_RETENTION_S
+        and e.terminal_at is not None
+        and now >= (e.terminal_at + _TERMINAL_RETENTION_S)
     ]
     for md5 in stale:
         del _downloads[md5]
@@ -226,6 +255,7 @@ def cancel(md5: str) -> dict[str, Any]:
         if entry.status in ("queued", "downloading"):
             # Snappy UI: reflect cancel immediately in the live map.
             entry.status = "cancelled"
+            _mark_terminal(entry)
             was_active = True
             # History + queue-only terminal: only when lifecycle will not also run.
             was_queued_only = prior_status == "queued"
@@ -305,12 +335,14 @@ def _download_worker_inner(md5: str, entry: DownloadEntry, send_event) -> None:
         # Check if cancelled while waiting in queue
         if entry.cancel_flag.is_set():
             entry.status = "cancelled"
+            _mark_terminal(entry)
             # cancel() may already have emitted; guard keeps terminal-once.
             _emit_queue_only_terminal(entry)
             send_event("download_progress", entry.to_dict())
             return
         entry.status = "downloading"
         entry.started_at = time.time()
+        _clear_terminal(entry)
 
     send_event("download_progress", entry.to_dict())
 
@@ -330,9 +362,19 @@ def _download_worker_inner(md5: str, entry: DownloadEntry, send_event) -> None:
             if payload.get("downloaded_bytes") is not None:
                 entry.downloaded_bytes = payload["downloaded_bytes"]
             entry.progress_percent = payload.get("progress_percent", entry.progress_percent)
+            # Retention clock starts when status first becomes terminal.
+            if entry.status in _TERMINAL_STATES:
+                _mark_terminal(entry)
+            else:
+                _clear_terminal(entry)
+            # Enrich progress payload with backend-owned eviction deadline so the
+            # renderer does not dual-maintain a retention constant.
+            out = dict(payload)
+            out["terminal_at"] = entry.terminal_at
+            out["terminal_expires_at"] = entry.terminal_expires_at()
             # Lifecycle owns Terminal event emission via on_terminal_fact.
             # Category-after-Artifact is wired through on_completed (not here).
-        send_event("download_progress", payload)
+        send_event("download_progress", out)
 
     def on_terminal_fact(fact: dict[str, Any]) -> None:
         """Bridge sink: mark entry and forward to Python-bridge telemetry emitter."""
