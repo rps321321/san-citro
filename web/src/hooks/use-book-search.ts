@@ -12,6 +12,7 @@ import {
   trackFunnelStep,
   incrementEngagement,
 } from "@/lib/telemetry";
+import { useShellScrollOptional } from "@/contexts/shell-scroll-context";
 
 export type SearchFilterOverrides = {
   extension?: string;
@@ -34,13 +35,18 @@ export function useBookSearch() {
 
   const requestIdRef = useRef(0);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // Shell `#main-content` is the overflow scroller — never window (#59).
+  const shellScroll = useShellScrollOptional();
 
   // Optional filter overrides let filter onChange handlers pass the *committed*
   // values immediately. Calling doSearch after setState without overrides closes
   // over the previous render's extension/language (stale re-scrape bug #27).
   const doSearch = useCallback(
-    async (pageNum: number = 1, overrides?: SearchFilterOverrides) => {
-      if (!query.trim()) return;
+    async (
+      pageNum: number = 1,
+      overrides?: SearchFilterOverrides
+    ): Promise<boolean> => {
+      if (!query.trim()) return false;
 
       // NOTE: Do NOT use router.replace() here — in Electron's custom protocol
       // (san-citro://), it triggers a full page reload causing flicker/black screen.
@@ -66,10 +72,11 @@ export function useBookSearch() {
         const t0 = Date.now();
         const result = await search(params);
         const elapsed = Date.now() - t0;
-        if (currentRequestId !== requestIdRef.current) return;
+        if (currentRequestId !== requestIdRef.current) return false;
         setData(result);
         setResultsStale(false);
-        window.scrollTo({ top: 0 });
+        // Instant shell scroll only on success — not on retained stale results.
+        shellScroll?.scrollToTop({ behavior: "auto" });
         incrementEngagement("searchCount");
         trackFunnelStep("search_to_download", "search_performed", 1, {
           query: params.query,
@@ -83,20 +90,23 @@ export function useBookSearch() {
           responseTimeMs: elapsed,
           page: pageNum,
         });
+        return true;
       } catch (err) {
-        if (currentRequestId !== requestIdRef.current) return;
+        if (currentRequestId !== requestIdRef.current) return false;
         const message = err instanceof Error ? err.message : "Search failed";
         setError(message);
         // Don't present old results as current — mark them stale (dimmed + labelled).
+        // Do not scroll: user should stay put with the previous results (#59).
         setResultsStale(true);
         trackError("search_error", message, { component: "search_page" });
+        return false;
       } finally {
         if (currentRequestId === requestIdRef.current) {
           setIsLoading(false);
         }
       }
     },
-    [query, extension, language]
+    [query, extension, language, shellScroll]
   );
 
   const handleSubmit = (e: React.FormEvent) => {
