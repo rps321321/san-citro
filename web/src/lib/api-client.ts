@@ -81,6 +81,7 @@ export async function startDownload(md5: string, title?: string, meta?: Download
   return timed("start_download", () => ipc().startDownload({ md5, title, ...meta }));
 }
 
+/** @expected-unused IPC client surface for live download list (context owns polling today). */
 export async function getActiveDownloads(): Promise<DownloadStatus[]> {
   return timed("get_downloads", () => ipc().getDownloads());
 }
@@ -107,6 +108,7 @@ export async function listLibrary(
 // --------------- Audiobooks ---------------
 // Collection browsing is Library-only (listLibrary). listAudiobooks product IPC retired (#47).
 
+/** @expected-unused IPC client surface for single-audiobook detail (#47 library path is primary). */
 export async function getAudiobookDetail(md5: string): Promise<AudiobookDetail> {
   assertValidMd5(md5);
   return timed("get_audiobook_detail", () => ipc().getAudiobookDetail(md5));
@@ -170,6 +172,7 @@ export async function getAppVersion(): Promise<string> {
   return ipc().getAppVersion();
 }
 
+/** @expected-unused IPC client surface for shell.openExternal (routes use window.sanCitro today). */
 export async function openExternal(url: string): Promise<void> {
   return ipc().openExternal(url);
 }

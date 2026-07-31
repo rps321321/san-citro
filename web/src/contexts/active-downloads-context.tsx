@@ -148,13 +148,6 @@ export function useActiveDownloads(): {
   };
 }
 
-/** Selector: live status for one md5, if still in the live list. */
-export function useDownloadByMd5(md5: string | undefined): DownloadStatus | undefined {
-  const { downloads } = useActiveDownloads();
-  if (!md5) return undefined;
-  return downloads.get(md5);
-}
-
 /** Count of non-terminal live transfers (island badge). */
 export function useActiveDownloadCount(): number {
   const { downloads } = useActiveDownloads();

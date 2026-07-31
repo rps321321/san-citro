@@ -57,7 +57,7 @@ export function isLiveActiveStatus(status: string): boolean {
 }
 
 /** Coerce inbound IPC payloads onto public live statuses. */
-export function normalizeLiveDownload(item: DownloadStatus): DownloadStatus {
+function normalizeLiveDownload(item: DownloadStatus): DownloadStatus {
   const status = normalizeDownloadStatus(item.status) as LiveDownloadStatus;
   if (status === item.status) return item;
   return { ...item, status };

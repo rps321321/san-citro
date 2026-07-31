@@ -1,0 +1,14 @@
+{
+  "clone_groups": [
+    "electron-app/src/preload.ts:15-45|electron-app/src/types.ts:37-71",
+    "electron-app/src/titlebar.ts:21-40|web/src/lib/titlebar.ts:13-39",
+    "web/src/components/ui/flight-status-card.tsx:198-218|web/src/components/ui/flight-status-card.tsx:296-316",
+    "web/src/components/ui/flight-status-card.tsx:235-240|web/src/components/ui/flight-status-card.tsx:333-338",
+    "web/src/components/ui/scroll-island-base.tsx:1-87|web/src/components/ui/scroll-island.tsx:1-87",
+    "web/src/components/ui/scroll-island-base.tsx:155-166|web/src/components/ui/scroll-island.tsx:160-171",
+    "web/src/components/ui/scroll-island-base.tsx:157-184|web/src/components/ui/scroll-island.tsx:162-189",
+    "web/src/components/ui/skiper-ui/skiper106.tsx:170-177|web/src/components/ui/skiper-ui/skiper106.tsx:180-187",
+    "web/src/routes/library.tsx:325-335|web/src/routes/library.tsx:341-351",
+    "web/src/test/desktop-fixtures.ts:86-104|web/src/test/mock-san-citro.ts:26-38"
+  ]
+}

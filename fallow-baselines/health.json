@@ -1,0 +1,249 @@
+{
+  "finding_counts": {
+    "electron-app/scripts/package-smoke.mjs": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 2
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "electron-app/src/ipc-handlers.ts": {
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "electron-app/src/main.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "electron-app/src/media-protocol.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "electron-app/src/python-bridge.ts": {
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "electron-app/src/python-commands.contract.test.ts": {
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "electron-app/src/python-commands.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "electron-app/src/splash-handoff.ts": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "electron-app/src/tray.ts": {
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "electron-app/src/update-status-owner.ts": {
+      "crap_moderate": {
+        "count": 4
+      }
+    },
+    "electron-app/src/update-status.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/in-page-player.tsx": {
+      "complexity_high": {
+        "count": 1
+      }
+    },
+    "web/src/components/search/search-toolbar.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/components/ui/scroll-island-base.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/ui/scroll-island.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/components/ui/skiper-ui/skiper106.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/components/ui/skiper-ui/skiper99.tsx": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/contexts/active-downloads-context.tsx": {
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/hooks/use-book-search.ts": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      }
+    },
+    "web/src/lib/active-downloads.test.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/lib/active-downloads.ts": {
+      "complexity_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/lib/heatmap.ts": {
+      "crap_high": {
+        "count": 2
+      },
+      "crap_moderate": {
+        "count": 3
+      }
+    },
+    "web/src/lib/playback-policy.test.ts": {
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/lib/session-recorder.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/lib/status.test.ts": {
+      "crap_moderate": {
+        "count": 2
+      }
+    },
+    "web/src/routes/downloads.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      }
+    },
+    "web/src/routes/history.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/routes/library.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/routes/reader.tsx": {
+      "complexity_high": {
+        "count": 1
+      },
+      "crap_high": {
+        "count": 2
+      }
+    },
+    "web/src/routes/search.tsx": {
+      "complexity_moderate": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 1
+      }
+    },
+    "web/src/routes/settings.tsx": {
+      "complexity_critical": {
+        "count": 1
+      },
+      "crap_critical": {
+        "count": 1
+      },
+      "crap_moderate": {
+        "count": 2
+      }
+    }
+  },
+  "runtime_coverage_findings": [],
+  "target_keys": [
+    "web/src/routes/downloads.tsx:complexity",
+    "web/src/components/ui/skiper-ui/skiper106.tsx:dead code",
+    "web/src/components/ui/flight-status-card.tsx:dead code",
+    "web/src/routes/reader.tsx:complexity",
+    "web/src/routes/library.tsx:complexity",
+    "web/src/routes/settings.tsx:complexity"
+  ]
+}
