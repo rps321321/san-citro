@@ -184,9 +184,7 @@ class TestCanonicalShape:
         with sqlite3.connect(db_path) as conn:
             conn.execute("CREATE TABLE records (md5 TEXT PRIMARY KEY, title TEXT)")
             conn.execute("INSERT INTO records (md5, title) VALUES ('abc', 'Keep Me')")
-            conn.execute(
-                "CREATE TABLE ingest_metadata (filename TEXT PRIMARY KEY, file_size INTEGER)"
-            )
+            conn.execute("CREATE TABLE ingest_metadata (filename TEXT PRIMARY KEY, file_size INTEGER)")
             conn.execute("INSERT INTO ingest_metadata (filename, file_size) VALUES ('x.jsonl', 10)")
             conn.commit()
 
@@ -196,9 +194,7 @@ class TestCanonicalShape:
         assert _table_exists(db_path, "ingest_metadata")
         with sqlite3.connect(db_path) as conn:
             title = conn.execute("SELECT title FROM records WHERE md5 = 'abc'").fetchone()[0]
-            size = conn.execute(
-                "SELECT file_size FROM ingest_metadata WHERE filename = 'x.jsonl'"
-            ).fetchone()[0]
+            size = conn.execute("SELECT file_size FROM ingest_metadata WHERE filename = 'x.jsonl'").fetchone()[0]
         assert title == "Keep Me"
         assert size == 10
         # Must not invent bulk-metadata columns/indexes — leave untouched.
@@ -229,9 +225,7 @@ class TestUnversionedAdoption:
                 )
                 """
             )
-            conn.execute(
-                "INSERT INTO downloads (md5, title, status) VALUES ('legacy1', 'Old Book', 'completed')"
-            )
+            conn.execute("INSERT INTO downloads (md5, title, status) VALUES ('legacy1', 'Old Book', 'completed')")
             conn.commit()
 
         applied = run_migrations(db_path)
@@ -244,9 +238,7 @@ class TestUnversionedAdoption:
             assert _table_exists(db_path, name)
 
         with sqlite3.connect(db_path) as conn:
-            row = conn.execute(
-                "SELECT title, status, author FROM downloads WHERE md5 = 'legacy1'"
-            ).fetchone()
+            row = conn.execute("SELECT title, status, author FROM downloads WHERE md5 = 'legacy1'").fetchone()
         assert row[0] == "Old Book"
         assert row[1] == "completed"
         assert row[2] is None
@@ -332,16 +324,12 @@ class TestUnversionedAdoption:
                 (md5,),
             )
             conn.execute(
-                "INSERT INTO audiobook_chapters (md5, chapter_index, rel_path, title) "
-                "VALUES (?, 0, '00.mp3', 'Intro')",
+                "INSERT INTO audiobook_chapters (md5, chapter_index, rel_path, title) VALUES (?, 0, '00.mp3', 'Intro')",
                 (md5,),
             )
-            chapter_id = conn.execute(
-                "SELECT chapter_id FROM audiobook_chapters WHERE md5 = ?", (md5,)
-            ).fetchone()[0]
+            chapter_id = conn.execute("SELECT chapter_id FROM audiobook_chapters WHERE md5 = ?", (md5,)).fetchone()[0]
             conn.execute(
-                "INSERT INTO audiobook_progress (md5, chapter_id, file_position_seconds) "
-                "VALUES (?, ?, 12.5)",
+                "INSERT INTO audiobook_progress (md5, chapter_id, file_position_seconds) VALUES (?, ?, 12.5)",
                 (md5, chapter_id),
             )
             conn.execute(
@@ -357,13 +345,11 @@ class TestUnversionedAdoption:
             conn.execute("PRAGMA foreign_keys = ON")
             assert conn.execute("SELECT status FROM audiobooks WHERE md5 = ?", (md5,)).fetchone()[0] == "ready"
             assert conn.execute("SELECT COUNT(*) FROM audiobook_chapters WHERE md5 = ?", (md5,)).fetchone()[0] == 1
-            pos = conn.execute(
-                "SELECT file_position_seconds FROM audiobook_progress WHERE md5 = ?", (md5,)
-            ).fetchone()[0]
+            pos = conn.execute("SELECT file_position_seconds FROM audiobook_progress WHERE md5 = ?", (md5,)).fetchone()[
+                0
+            ]
             assert pos == 12.5
-            label = conn.execute(
-                "SELECT label FROM audiobook_bookmarks WHERE md5 = ?", (md5,)
-            ).fetchone()[0]
+            label = conn.execute("SELECT label FROM audiobook_bookmarks WHERE md5 = ?", (md5,)).fetchone()[0]
             assert label == "mark"
 
             # FK cascade still works after adoption.
@@ -376,9 +362,7 @@ class TestUnversionedAdoption:
     def test_should_add_missing_columns_idempotently_on_partial_schema(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "partial_cols.db")
         with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "CREATE TABLE downloads (md5 TEXT PRIMARY KEY, title TEXT, status TEXT, author TEXT)"
-            )
+            conn.execute("CREATE TABLE downloads (md5 TEXT PRIMARY KEY, title TEXT, status TEXT, author TEXT)")
             conn.execute(
                 "INSERT INTO downloads (md5, title, status, author) VALUES ('p1', 'Partial', 'completed', 'A')"
             )
@@ -554,29 +538,32 @@ class TestProductionWiring:
             call_order.append(f"migrate:{path}")
             return 0
 
-        def _cleanup(**kwargs) -> int:  # noqa: ANN003
+        def _cleanup(**kwargs) -> int:
             call_order.append("cleanup")
             return 0
 
+        # bridge_handlers is imported inside main — patch both import sites.
         with (
             patch.object(bridge, "bridge_handlers", create=True),
             patch("bridge_handlers.register_handlers"),
-            patch("src.config_manager.get_config", return_value={"history_db": history, "out_dir": str(tmp_path)}),
+            patch(
+                "src.config_manager.get_config",
+                return_value={"history_db": history, "out_dir": str(tmp_path)},
+            ),
             patch("src.config_manager.get_default_history_db_path", return_value=history),
             patch("src.migrations.run_migrations", side_effect=_mig) as mock_mig,
             patch("src.download_history.cleanup_orphaned_downloads", side_effect=_cleanup),
             patch("audiobook_queue.resweep", create=True),
             patch.object(sys, "stdin", MagicMock(buffer=empty_stdin)),
-        ):
-            # bridge_handlers is imported inside main — patch both import sites.
-            with patch.dict(
+            patch.dict(
                 "sys.modules",
                 {
                     "bridge_handlers": MagicMock(register_handlers=MagicMock()),
                     "audiobook_queue": MagicMock(resweep=MagicMock()),
                 },
-            ):
-                bridge.main()
+            ),
+        ):
+            bridge.main()
 
         mock_mig.assert_called_once_with(history)
         assert call_order[0].startswith("migrate:")

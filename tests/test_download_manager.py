@@ -199,9 +199,7 @@ class TestTerminalRetentionDeadline:
         entry.terminal_at = now
         d = entry.to_dict()
         assert d["terminal_at"] == now
-        assert d["terminal_expires_at"] == pytest.approx(
-            now + dm.TERMINAL_RETENTION_S, abs=0.01
-        )
+        assert d["terminal_expires_at"] == pytest.approx(now + dm.TERMINAL_RETENTION_S, abs=0.01)
         assert d["started_at"] == entry.started_at
 
     def test_to_dict_null_deadline_while_active(self) -> None:
@@ -366,8 +364,7 @@ class TestTerminalRetentionDeadline:
             release.set()
             assert _wait_until(
                 lambda: any(
-                    s["md5"] == md5 and s["status"] == "failed" and s.get("terminal_at")
-                    for s in dm.get_all_statuses()
+                    s["md5"] == md5 and s["status"] == "failed" and s.get("terminal_at") for s in dm.get_all_statuses()
                 ),
                 timeout=2.0,
             )
@@ -385,9 +382,7 @@ class TestTerminalRetentionDeadline:
 class TestLifecycleOwnedTerminalWriters:
     """#50: terminal history + Terminal events owned by lifecycle (queue-only exception)."""
 
-    def test_queue_only_cancel_writes_history_once_without_run_download(
-        self, tmp_path: Path
-    ) -> None:
+    def test_queue_only_cancel_writes_history_once_without_run_download(self, tmp_path: Path) -> None:
         """Queue-only cancel: one manager history write + one fact; zero lifecycle."""
         from src.download_history import get_download_history, record_download_start
         from src.migrations import run_migrations
@@ -449,9 +444,7 @@ class TestLifecycleOwnedTerminalWriters:
         assert facts[0]["md5"] == md5
         sem.release()
 
-    def test_running_complete_one_history_and_one_terminal_fact(
-        self, tmp_path: Path
-    ) -> None:
+    def test_running_complete_one_history_and_one_terminal_fact(self, tmp_path: Path) -> None:
         """Running complete: lifecycle path only — one history terminal + one fact."""
         from src.download_history import get_download_history
         from src.migrations import run_migrations
@@ -523,10 +516,7 @@ class TestLifecycleOwnedTerminalWriters:
             md5 = "c" * 32
             dm.enqueue(md5, "Complete Me")
             assert _wait_until(
-                lambda: any(
-                    s["md5"] == md5 and s["status"] == "completed"
-                    for s in dm.get_all_statuses()
-                ),
+                lambda: any(s["md5"] == md5 and s["status"] == "completed" for s in dm.get_all_statuses()),
                 timeout=3.0,
             )
             assert _wait_until(lambda: dm._downloads[md5].finished.is_set(), timeout=2.0)
@@ -596,10 +586,7 @@ class TestLifecycleOwnedTerminalWriters:
             md5 = "f" * 32
             dm.enqueue(md5, "Fail Me")
             assert _wait_until(
-                lambda: any(
-                    s["md5"] == md5 and s["status"] == "failed"
-                    for s in dm.get_all_statuses()
-                ),
+                lambda: any(s["md5"] == md5 and s["status"] == "failed" for s in dm.get_all_statuses()),
                 timeout=3.0,
             )
 
@@ -685,10 +672,7 @@ class TestLifecycleOwnedTerminalWriters:
             dm.cancel(md5)
             release_transport.set()
             assert _wait_until(
-                lambda: any(
-                    s["md5"] == md5 and s["status"] == "cancelled"
-                    for s in dm.get_all_statuses()
-                ),
+                lambda: any(s["md5"] == md5 and s["status"] == "cancelled" for s in dm.get_all_statuses()),
                 timeout=3.0,
             )
             assert _wait_until(lambda: dm._downloads[md5].finished.is_set(), timeout=2.0)
@@ -714,18 +698,14 @@ class TestLifecycleOwnedTerminalWriters:
         run_migrations(history_db)
         md5 = "k" * 32
         record_download_start(history_db, md5=md5, title="Done")
-        record_download_complete(
-            history_db, md5=md5, filename="done.epub", filesize_bytes=10
-        )
+        record_download_complete(history_db, md5=md5, filename="done.epub", filesize_bytes=10)
         # Late cancel (double-click / race) must not clobber completed.
         record_download_cancelled(db_path=history_db, md5=md5)
 
         rows = get_download_history(db_path=history_db, limit=5)
         assert rows[0]["status"] == "completed"
 
-    def test_queue_only_cancel_retry_does_not_write_against_new_attempt(
-        self, tmp_path: Path
-    ) -> None:
+    def test_queue_only_cancel_retry_does_not_write_against_new_attempt(self, tmp_path: Path) -> None:
         """Old queue-only attempt cannot cancel the new attempt's started row."""
         from src.download_history import get_download_history, record_download_start
         from src.migrations import run_migrations

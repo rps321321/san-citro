@@ -131,9 +131,7 @@ class TestNormalizeDownloadStatus:
             assert normalize_download_status(status) == status
 
     def test_public_alphabet_is_exactly_five(self) -> None:
-        assert PUBLIC_STATUSES == frozenset(
-            {"queued", "downloading", "completed", "failed", "cancelled"}
-        )
+        assert PUBLIC_STATUSES == frozenset({"queued", "downloading", "completed", "failed", "cancelled"})
 
     def test_started_is_not_public(self) -> None:
         assert "started" not in PUBLIC_STATUSES
@@ -145,9 +143,7 @@ class TestNormalizeDownloadStatus:
 
 
 class TestCancelBeforeStart:
-    def test_cancel_before_start_emits_cancelled_once_and_no_completed(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_cancel_before_start_emits_cancelled_once_and_no_completed(self, history_db: str, out_dir: str) -> None:
         cancel = threading.Event()
         cancel.set()
 
@@ -213,9 +209,7 @@ class TestCancelDuring:
 
 
 class TestCompletedWithMetaSpine:
-    def test_completed_records_history_and_persists_meta(
-        self, history_db: str, out_dir: str, tmp_path: Path
-    ) -> None:
+    def test_completed_records_history_and_persists_meta(self, history_db: str, out_dir: str, tmp_path: Path) -> None:
         artifact = Path(out_dir) / "Great Gatsby - F Scott Fitzgerald.epub"
         content = b"epub-bytes-here"
         artifact.write_bytes(content)
@@ -276,9 +270,7 @@ class TestCompletedWithMetaSpine:
 
 
 class TestFailed:
-    def test_failed_transport_returns_none_with_error(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_failed_transport_returns_none_with_error(self, history_db: str, out_dir: str) -> None:
         def download_fn(md5, out, cancel_ev, on_progress):
             raise RuntimeError("mirror 503 unavailable")
 
@@ -315,9 +307,7 @@ class TestFailed:
 
 
 class TestProgressSink:
-    def test_progress_sink_receives_byte_updates(
-        self, history_db: str, out_dir: str, tmp_path: Path
-    ) -> None:
+    def test_progress_sink_receives_byte_updates(self, history_db: str, out_dir: str, tmp_path: Path) -> None:
         artifact = Path(out_dir) / "book.pdf"
         artifact.write_bytes(b"x" * 100)
         progress_calls: list[tuple[int, int]] = []
@@ -349,9 +339,7 @@ class TestProgressSink:
 
 
 class TestNoStartedInStatuses:
-    def test_public_stream_never_emits_started(
-        self, history_db: str, out_dir: str, tmp_path: Path
-    ) -> None:
+    def test_public_stream_never_emits_started(self, history_db: str, out_dir: str, tmp_path: Path) -> None:
         artifact = Path(out_dir) / "ok.epub"
         artifact.write_bytes(b"ok")
 
@@ -386,9 +374,7 @@ class TestRetentionConstant:
 class TestTerminalEvent:
     """Terminal event fact built once inside lifecycle; delivered via sink."""
 
-    def test_completed_emits_one_fact_with_outcome_fields(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_completed_emits_one_fact_with_outcome_fields(self, history_db: str, out_dir: str) -> None:
         artifact = Path(out_dir) / "Gatsby.epub"
         content = b"x" * 200
         artifact.write_bytes(content)
@@ -427,9 +413,7 @@ class TestTerminalEvent:
         assert fact["mirror_domain"] is None  # not yet surfaced by transport
         assert fact["proxy_used"] is False
 
-    def test_failed_emits_one_fact_with_error(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_failed_emits_one_fact_with_error(self, history_db: str, out_dir: str) -> None:
         def download_fn(md5, out, cancel_ev, on_progress):
             raise RuntimeError("mirror 503 unavailable")
 
@@ -451,9 +435,7 @@ class TestTerminalEvent:
         assert fact["proxy_used"] is True
         assert fact["file_size_bytes"] is None
 
-    def test_cancelled_before_start_emits_one_fact(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_cancelled_before_start_emits_one_fact(self, history_db: str, out_dir: str) -> None:
         cancel = threading.Event()
         cancel.set()
 
@@ -474,9 +456,7 @@ class TestTerminalEvent:
         assert facts[0]["strategy"] == "chrome"
         assert facts[0]["error_message"] is None
 
-    def test_cancelled_during_emits_one_fact(
-        self, history_db: str, out_dir: str, tmp_path: Path
-    ) -> None:
+    def test_cancelled_during_emits_one_fact(self, history_db: str, out_dir: str, tmp_path: Path) -> None:
         cancel = threading.Event()
         artifact = tmp_path / "partial.epub"
         artifact.write_bytes(b"partial")
@@ -501,9 +481,7 @@ class TestTerminalEvent:
         assert facts[0]["status"] == "cancelled"
         assert "completed" not in {f["status"] for f in facts}
 
-    def test_terminal_once_despite_progress_updates(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_terminal_once_despite_progress_updates(self, history_db: str, out_dir: str) -> None:
         artifact = Path(out_dir) / "once.pdf"
         artifact.write_bytes(b"x" * 50)
 
@@ -545,9 +523,7 @@ class TestTerminalEvent:
         assert _statuses(events)[-1] == "completed"
         assert facts == []
 
-    def test_sink_exception_does_not_break_download(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_sink_exception_does_not_break_download(self, history_db: str, out_dir: str) -> None:
         artifact = Path(out_dir) / "ok.epub"
         artifact.write_bytes(b"ok")
 
@@ -605,9 +581,7 @@ class TestTerminalEvent:
 class TestOnCompletedHook:
     """Injectible on_completed: Category-after-Artifact seam entry from lifecycle."""
 
-    def test_completed_invokes_on_completed_once_after_terminal(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_completed_invokes_on_completed_once_after_terminal(self, history_db: str, out_dir: str) -> None:
         artifact = Path(out_dir) / "track.m4b"
         artifact.write_bytes(b"audio-bytes")
         completed_calls: list[tuple[str, str, str]] = []
@@ -648,18 +622,14 @@ class TestOnCompletedHook:
         assert len(completed_calls) == 1
         call_md5, call_path, call_out = completed_calls[0]
         assert call_md5 == "e" * 32
-        assert Path(call_path) == Path(artifact).resolve() or call_path == str(
-            Path(artifact).resolve()
-        )
+        assert Path(call_path) == Path(artifact).resolve() or call_path == str(Path(artifact).resolve())
         assert call_out == out_dir
         # Download terminal (bytes done) before Category hook.
         assert "status_completed" in order
         assert order.index("status_completed") < order.index("on_completed")
         assert _statuses(events)[-1] == "completed"
 
-    def test_on_completed_not_called_on_failed(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_on_completed_not_called_on_failed(self, history_db: str, out_dir: str) -> None:
         calls: list[object] = []
 
         def download_fn(md5, out, cancel_ev, on_progress):
@@ -678,9 +648,7 @@ class TestOnCompletedHook:
         assert _statuses(events)[-1] == "failed"
         assert calls == []
 
-    def test_on_completed_not_called_on_cancelled(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_on_completed_not_called_on_cancelled(self, history_db: str, out_dir: str) -> None:
         calls: list[object] = []
         cancel = threading.Event()
         cancel.set()
@@ -702,9 +670,7 @@ class TestOnCompletedHook:
         assert _statuses(events)[-1] == "cancelled"
         assert calls == []
 
-    def test_on_completed_exception_does_not_uncomplete(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_on_completed_exception_does_not_uncomplete(self, history_db: str, out_dir: str) -> None:
         artifact = Path(out_dir) / "ok.epub"
         artifact.write_bytes(b"ok")
 
@@ -725,9 +691,7 @@ class TestOnCompletedHook:
         assert _statuses(events)[-1] == "completed"
         with sqlite3.connect(history_db) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT status FROM downloads WHERE md5 = ?", ("f" * 32,)
-            ).fetchone()
+            row = conn.execute("SELECT status FROM downloads WHERE md5 = ?", ("f" * 32,)).fetchone()
         assert row["status"] == "completed"
 
 
@@ -738,9 +702,7 @@ class TestCategoryAfterArtifactSeam:
     archive without audio → Book no enqueue; never “not zip ⇒ Book” for audio files.
     """
 
-    def test_single_file_audio_stamps_audiobook_and_enqueues(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_single_file_audio_stamps_audiobook_and_enqueues(self, history_db: str, out_dir: str) -> None:
         from src.audiobook_processor import apply_category_after_artifact
 
         artifact = Path(out_dir) / "Novel.m4b"
@@ -774,9 +736,7 @@ class TestCategoryAfterArtifactSeam:
         assert enqueued[0][0] == "1" * 32
         with sqlite3.connect(history_db) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT status, media_type FROM downloads WHERE md5 = ?", ("1" * 32,)
-            ).fetchone()
+            row = conn.execute("SELECT status, media_type FROM downloads WHERE md5 = ?", ("1" * 32,)).fetchone()
         assert row["status"] == "completed"
         assert row["media_type"] == "audiobook"
 
@@ -824,14 +784,10 @@ class TestCategoryAfterArtifactSeam:
         assert len(enqueued) == 1
         with sqlite3.connect(history_db) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT media_type FROM downloads WHERE md5 = ?", ("2" * 32,)
-            ).fetchone()
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = ?", ("2" * 32,)).fetchone()
         assert row["media_type"] == "audiobook"
 
-    def test_archive_without_audio_stamps_book_no_enqueue(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_archive_without_audio_stamps_book_no_enqueue(self, history_db: str, out_dir: str) -> None:
         import zipfile
 
         from src.audiobook_processor import apply_category_after_artifact
@@ -873,14 +829,10 @@ class TestCategoryAfterArtifactSeam:
         assert enqueued == []
         with sqlite3.connect(history_db) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT media_type FROM downloads WHERE md5 = ?", ("3" * 32,)
-            ).fetchone()
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = ?", ("3" * 32,)).fetchone()
         assert row["media_type"] == "book"
 
-    def test_plain_epub_stamps_book_not_because_not_zip(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_plain_epub_stamps_book_not_because_not_zip(self, history_db: str, out_dir: str) -> None:
         """Book single-file is book; contrast with single-file audio (not “not zip ⇒ book”)."""
         from src.audiobook_processor import apply_category_after_artifact
 
@@ -900,7 +852,7 @@ class TestCategoryAfterArtifactSeam:
                 enqueue_fn=lambda m, p, o: enqueued.append((m, p, o)),
             )
 
-        path, events, _facts = _run(
+        path, _events, _facts = _run(
             md5="4" * 32,
             out_dir=out_dir,
             history_db=history_db,
@@ -912,14 +864,10 @@ class TestCategoryAfterArtifactSeam:
         assert enqueued == []
         with sqlite3.connect(history_db) as conn:
             conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                "SELECT media_type FROM downloads WHERE md5 = ?", ("4" * 32,)
-            ).fetchone()
+            row = conn.execute("SELECT media_type FROM downloads WHERE md5 = ?", ("4" * 32,)).fetchone()
         assert row["media_type"] == "book"
 
-    def test_category_failure_leaves_completed_row_intact(
-        self, history_db: str, out_dir: str
-    ) -> None:
+    def test_category_failure_leaves_completed_row_intact(self, history_db: str, out_dir: str) -> None:
         from unittest.mock import patch
 
         from src.audiobook_processor import apply_category_after_artifact

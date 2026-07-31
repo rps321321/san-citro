@@ -34,6 +34,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 from .annas_archive_tool import AnnasArchiveTool
@@ -59,9 +60,7 @@ TERMINAL_RETENTION_S: float = 300.0
 TERMINAL_STATES: frozenset[str] = frozenset({"completed", "failed", "cancelled", "interrupted"})
 
 # Public live statuses only (no ``started``).
-PUBLIC_STATUSES: frozenset[str] = frozenset(
-    {"queued", "downloading", "completed", "failed", "cancelled"}
-)
+PUBLIC_STATUSES: frozenset[str] = frozenset({"queued", "downloading", "completed", "failed", "cancelled"})
 
 # Durable / history-only values → public Download lifecycle alphabet.
 # Sole backend coercion table; keep in sync with web/src/lib/status.ts.
@@ -248,11 +247,9 @@ def run_download(
             mirror_domain=None,  # transport does not surface mirror yet
             proxy_used=proxy_used,
         )
-        try:
+        # Terminal sink must never break the download (telemetry is best-effort).
+        with suppress(Exception):
             on_terminal_fact(fact)
-        except Exception:
-            # Terminal sink must never break the download (telemetry is best-effort).
-            pass
 
     def report_progress(downloaded: int, total: int) -> None:
         """Transport progress → status fields + optional external sink."""
@@ -290,9 +287,7 @@ def run_download(
                 strategy=strategy,
                 on_progress=report_progress,
             ) as tool:
-                result_path = tool.automated_slow_download(
-                    md5=md5, output_dir=write_dir, cancel=cancel
-                )
+                result_path = tool.automated_slow_download(md5=md5, output_dir=write_dir, cancel=cancel)
     except Exception as exc:
         if cancel.is_set():
             record_download_cancelled(db_path=history_db, md5=md5)
@@ -326,11 +321,9 @@ def run_download(
         # Terminal download first (bytes done). Category/processing is separate.
         deliver_terminal("completed")
         if on_completed is not None:
-            try:
+            # Categorization/enqueue is best-effort and may not un-complete durable bytes.
+            with suppress(Exception):
                 on_completed(md5, abs_path, out_dir)
-            except Exception:
-                # Category/enqueue must never un-complete a successful download.
-                pass
         return abs_path
 
     status["error"] = "Download returned no file (strategies exhausted or MD5 mismatch)"

@@ -172,7 +172,7 @@ class TestDirectHTTPStrategyGetDownloadUrl:
         result = strategy.get_download_url(SLOW_URL, VALID_MD5, session, BASE_URL)
 
         assert result is not None
-        url, cookies, headers = result
+        url, _cookies, headers = result
         assert url == "https://cdn.example.com/d3/y/1774443509/g4/libgens/file.pdf"
         assert "User-Agent" in headers
         # Should have waited for countdown

@@ -5,6 +5,7 @@ import random
 import re
 import threading
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -431,7 +432,7 @@ class AnnasArchiveTool:
         if strategy_result is None:
             fallback = self._get_fallback_strategy()
             if fallback is not None:
-                logger.info(f"[{md5[:6]}] Primary strategy failed, " f"falling back to {type(fallback).__name__}")
+                logger.info(f"[{md5[:6]}] Primary strategy failed, falling back to {type(fallback).__name__}")
                 strategy_result = fallback.get_download_url(slow_link, md5, self.session, self.base_url)
 
         if strategy_result is None:
@@ -576,7 +577,7 @@ class AnnasArchiveTool:
                         return None
                     time.sleep(1)
             elif last_error is not None:
-                logger.error(f"[{md5[:6]}] Download failed after {DOWNLOAD_MAX_RETRIES} " f"attempts: {last_error}")
+                logger.error(f"[{md5[:6]}] Download failed after {DOWNLOAD_MAX_RETRIES} attempts: {last_error}")
         return None
 
     def _attempt_download(
@@ -627,9 +628,7 @@ class AnnasArchiveTool:
                     initial_bytes = existing_size
                 else:
                     if existing_size and res.status_code == 200:
-                        logger.info(
-                            f"[{md5[:6]}] Server ignored Range — restarting download from byte 0"
-                        )
+                        logger.info(f"[{md5[:6]}] Server ignored Range — restarting download from byte 0")
                     write_mode = "wb"
                     total = int(res.headers.get("content-length", 0))
                     initial_bytes = 0
@@ -660,20 +659,16 @@ class AnnasArchiveTool:
                     for chunk in res.iter_content(chunk_size=16384):
                         if _is_cancelled(cancel):
                             cancelled = True
-                            logger.info(
-                                f"[{md5[:6]}] Download interrupted — " f".part file kept for resume ({part_path})"
-                            )
+                            logger.info(f"[{md5[:6]}] Download interrupted — .part file kept for resume ({part_path})")
                             break
                         if chunk:
                             written = f.write(chunk)
                             bar.update(written)
                             downloaded_so_far += written
                             if progress_cb is not None:
-                                try:
+                                # Observer failure must never abort the primary download.
+                                with suppress(Exception):
                                     progress_cb(downloaded_so_far, total)
-                                except Exception:
-                                    # Progress must never break a download.
-                                    pass
 
                 if cancelled:
                     return None

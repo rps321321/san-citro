@@ -172,9 +172,7 @@ class ResponseCheck:
         self.message = message
 
     def __repr__(self) -> str:
-        return (
-            f"ResponseCheck(is_blocked={self.is_blocked}, " f"block_type={self.block_type!r}, message={self.message!r})"
-        )
+        return f"ResponseCheck(is_blocked={self.is_blocked}, block_type={self.block_type!r}, message={self.message!r})"
 
 
 def check_response_for_blocks(response: "requests.Response") -> ResponseCheck:
@@ -278,9 +276,9 @@ def format_filesize(size_bytes: int | None) -> str:
     if not size_bytes:
         return "N/A"
     if size_bytes >= 1024**3:
-        return f"{size_bytes / (1024 ** 3):.2f} GB"
+        return f"{size_bytes / (1024**3):.2f} GB"
     if size_bytes >= 1024**2:
-        return f"{size_bytes / (1024 ** 2):.1f} MB"
+        return f"{size_bytes / (1024**2):.1f} MB"
     if size_bytes >= 1024:
         return f"{size_bytes / 1024:.1f} KB"
     return f"{size_bytes} B"
@@ -351,8 +349,7 @@ def validate_proxy_url(url: str) -> tuple[bool, str]:
     if parsed.scheme not in _SUPPORTED_PROXY_SCHEMES:
         return (
             False,
-            f"Unsupported scheme '{parsed.scheme}' -- expected one of: "
-            f"{', '.join(sorted(_SUPPORTED_PROXY_SCHEMES))}",
+            f"Unsupported scheme '{parsed.scheme}' -- expected one of: {', '.join(sorted(_SUPPORTED_PROXY_SCHEMES))}",
         )
     if not parsed.hostname:
         return False, "Missing hostname"

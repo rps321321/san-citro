@@ -80,7 +80,7 @@ def find_7z() -> str:
             return path
 
     raise FileNotFoundError(
-        "7z/7za binary not found. " f"Set {_ENV_7Z} env var or install 7-Zip to C:\\Program Files\\7-Zip\\."
+        f"7z/7za binary not found. Set {_ENV_7Z} env var or install 7-Zip to C:\\Program Files\\7-Zip\\."
     )
 
 
@@ -120,7 +120,7 @@ def find_ffprobe() -> str:
             return path
 
     raise FileNotFoundError(
-        "ffprobe binary not found. " f"Set {_ENV_FFPROBE} env var or install ffmpeg and add it to PATH."
+        f"ffprobe binary not found. Set {_ENV_FFPROBE} env var or install ffmpeg and add it to PATH."
     )
 
 

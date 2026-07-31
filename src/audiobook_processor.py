@@ -427,9 +427,7 @@ def process_audiobook(md5: str, file_path: str, out_dir: str) -> str:
         # re-enqueue must NOT re-classify a now-missing file and flip ready -> error.
         # Honor both San Citro and legacy pack dirs (no forced mass-move).
         existing = audiobook_db.get_audiobook(md5=md5)
-        if existing and existing.get("status") == "ready" and (
-            os.path.isdir(final) or os.path.isdir(legacy_final)
-        ):
+        if existing and existing.get("status") == "ready" and (os.path.isdir(final) or os.path.isdir(legacy_final)):
             return "ready"
 
         if classify(file_path) != "audiobook":

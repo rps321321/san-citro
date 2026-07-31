@@ -31,9 +31,7 @@ def test_capabilities_payload_shape():
     caps = search_capabilities()
     assert {s["value"] for s in caps["sorts"]} == {s["value"] for s in SEARCH_SORTS}
     assert {e["value"] for e in caps["extensions"]} == {e["value"] for e in SEARCH_EXTENSIONS}
-    assert {lang["value"] for lang in caps["languages"]} == {
-        lang["value"] for lang in SEARCH_LANGUAGES
-    }
+    assert {lang["value"] for lang in caps["languages"]} == {lang["value"] for lang in SEARCH_LANGUAGES}
     # Mutable copies — callers cannot mutate the module tuples via the payload.
     caps["extensions"].append({"value": "xyz", "label": "XYZ"})
     assert all(e["value"] != "xyz" for e in SEARCH_EXTENSIONS)

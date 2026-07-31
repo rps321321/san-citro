@@ -213,7 +213,7 @@ class ChromeStrategy(DownloadStrategy):
             for attempt in range(max_polls):
                 time.sleep(poll_interval)
                 if attempt > 0 and attempt % 6 == 0:
-                    logger.info(f"[{short}] Waiting for countdown... " f"({attempt * poll_interval}s elapsed)")
+                    logger.info(f"[{short}] Waiting for countdown... ({attempt * poll_interval}s elapsed)")
                 try:
                     for a in driver.find_elements("tag name", "a"):
                         text = (a.text or "").lower().strip()
@@ -222,7 +222,7 @@ class ChromeStrategy(DownloadStrategy):
                         is_real_url = href.startswith("http") and not href.endswith("#")
                         if has_keyword and is_real_url and _is_plausible_download_url(href, base_url):
                             download_url = href
-                            logger.info(f"[{short}] Found download link after " f"{attempt * poll_interval}s")
+                            logger.info(f"[{short}] Found download link after {attempt * poll_interval}s")
                             break
                 except Exception as e:
                     logger.debug(f"Selenium poll error (retrying): {e}")
@@ -230,7 +230,7 @@ class ChromeStrategy(DownloadStrategy):
                     break
 
             if not download_url:
-                logger.warning(f"[{short}] No download link found after " f"{max_polls * poll_interval}s")
+                logger.warning(f"[{short}] No download link found after {max_polls * poll_interval}s")
                 return None
 
             cookies = {c["name"]: c["value"] for c in driver.get_cookies()}

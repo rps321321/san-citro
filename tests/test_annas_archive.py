@@ -136,7 +136,7 @@ class TestResumeWhenServerIgnoresRange:
         prefix = payload[:12]
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self):
                 # Always ignore Range — classic CDN misbehaviour.
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(payload)))
@@ -144,7 +144,7 @@ class TestResumeWhenServerIgnoresRange:
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, format, *args):  # noqa: A003
+            def log_message(self, format, *args):
                 return
 
         httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)
@@ -188,7 +188,7 @@ class TestResumeWhenServerIgnoresRange:
         progress_events: list[tuple[int, int]] = []
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self):
                 rng = self.headers.get("Range", "")
                 if rng.startswith("bytes="):
                     start = int(rng.split("=")[1].split("-")[0])
@@ -207,7 +207,7 @@ class TestResumeWhenServerIgnoresRange:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def log_message(self, format, *args):  # noqa: A003
+            def log_message(self, format, *args):
                 return
 
         httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)
@@ -263,14 +263,14 @@ class TestResumeWhenServerIgnoresRange:
         progress_events: list[tuple[int, int]] = []
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self):
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(payload)))
                 self.send_header("Content-Type", "application/octet-stream")
                 self.end_headers()
                 self.wfile.write(payload)
 
-            def log_message(self, format, *args):  # noqa: A003
+            def log_message(self, format, *args):
                 return
 
         httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)
@@ -323,13 +323,13 @@ class TestResumeWhenServerIgnoresRange:
         md5 = hashlib.md5(payload).hexdigest()
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
+            def do_GET(self):
                 # Server refuses further range — partial is already the full object.
                 self.send_response(416)
                 self.send_header("Content-Range", f"bytes */{len(payload)}")
                 self.end_headers()
 
-            def log_message(self, format, *args):  # noqa: A003
+            def log_message(self, format, *args):
                 return
 
         httpd = socketserver.TCPServer(("127.0.0.1", 0), Handler)

@@ -89,25 +89,19 @@ class TestSchemaViaMigrations:
 
 
 class TestQueryPathDoesNotLazyMigrate:
-    def test_get_download_history_fails_without_schema_and_does_not_create_it(
-        self, tmp_path: Path
-    ) -> None:
+    def test_get_download_history_fails_without_schema_and_does_not_create_it(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "bare.db")
-        with patch("src.migrations.run_migrations") as mock_mig:
-            with pytest.raises(sqlite3.OperationalError):
-                get_download_history(db_path)
+        with patch("src.migrations.run_migrations") as mock_mig, pytest.raises(sqlite3.OperationalError):
+            get_download_history(db_path)
         mock_mig.assert_not_called()
         with sqlite3.connect(db_path) as conn:
-            tables = {
-                row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            }
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert "downloads" not in tables
 
     def test_record_download_start_does_not_call_run_migrations(self, tmp_path: Path) -> None:
         db_path = str(tmp_path / "bare_write.db")
-        with patch("src.migrations.run_migrations") as mock_mig:
-            with pytest.raises(sqlite3.OperationalError):
-                record_download_start(db_path, md5="abc", title="T")
+        with patch("src.migrations.run_migrations") as mock_mig, pytest.raises(sqlite3.OperationalError):
+            record_download_start(db_path, md5="abc", title="T")
         mock_mig.assert_not_called()
 
 

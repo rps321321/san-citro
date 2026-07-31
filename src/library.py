@@ -43,19 +43,14 @@ VARIANT_AUDIOBOOK = "audiobook"
 def _normalize_media_kind(media_kind: str | None) -> str:
     kind = (media_kind or MEDIA_KIND_ALL).strip().lower()
     if kind not in _VALID_MEDIA_KINDS:
-        raise ValueError(
-            f"Invalid media_kind {media_kind!r}; expected one of "
-            f"{sorted(_VALID_MEDIA_KINDS)}"
-        )
+        raise ValueError(f"Invalid media_kind {media_kind!r}; expected one of {sorted(_VALID_MEDIA_KINDS)}")
     return kind
 
 
 def _normalize_sort(sort: str | None) -> str:
     key = (sort or SORT_RECENT).strip().lower()
     if key not in _VALID_SORTS:
-        raise ValueError(
-            f"Invalid sort {sort!r}; expected one of {sorted(_VALID_SORTS)}"
-        )
+        raise ValueError(f"Invalid sort {sort!r}; expected one of {sorted(_VALID_SORTS)}")
     return key
 
 
@@ -181,16 +176,13 @@ def _matches_filters(
     extension: str | None,
     language: str | None,
 ) -> bool:
-    if content_type is not None:
-        if (item.get("content_type") or "") != content_type:
-            return False
-    if extension is not None:
-        if (item.get("extension") or "") != extension:
-            return False
-    if language is not None:
-        if (item.get("language") or "") != language:
-            return False
-    return True
+    if content_type is not None and (item.get("content_type") or "") != content_type:
+        return False
+    if extension is not None and (item.get("extension") or "") != extension:
+        return False
+    if language is None:
+        return True
+    return (item.get("language") or "") == language
 
 
 def query_library(
