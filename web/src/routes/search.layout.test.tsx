@@ -77,10 +77,11 @@ describe("Search layout (#51)", () => {
 
     const region = document.querySelector("[data-search-empty-region]");
     expect(region).not.toBeNull();
-    expect(region).toHaveAttribute("role", "status");
+    expect(region).toHaveAttribute("role", "region");
+    expect(region).toHaveAttribute("aria-label", "Search tips");
     expect(region?.className).toMatch(/min-h-/);
     expect(region?.className).toMatch(/justify-center/);
-    expect(region).toHaveTextContent("Enter a search query to get started");
+    expect(region).toHaveTextContent(/title, author, ISBN, or identifier/i);
     expect(
       screen.getByRole("button", { name: /The Pragmatic Programmer/i })
     ).toBeInTheDocument();
