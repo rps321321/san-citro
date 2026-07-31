@@ -363,6 +363,27 @@ describe("Search route public behavior (#58)", () => {
     // Prior results remain visible.
     expect(screen.getByText("Book page 1")).toBeInTheDocument();
   });
+
+  it("shows a typed search error instead of empty 'No results found' (#105)", async () => {
+    const searchMock = vi.fn(async () => {
+      throw new Error(
+        "Anna's Archive returned a search page that could not be parsed."
+      );
+    });
+    installSanCitroMock({ search: searchMock });
+    const user = userEvent.setup();
+    renderSearch();
+
+    await user.type(screen.getByLabelText("Search query"), "The Pragmatic Programmer");
+    await user.click(screen.getByRole("button", { name: /^Search$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/could not be parsed/i)
+      ).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/No results found/i)).not.toBeInTheDocument();
+  });
 });
 
 describe("Search shell scroller (#59)", () => {

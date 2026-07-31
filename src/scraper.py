@@ -5,6 +5,14 @@ and the Electron bridge handlers can reuse it without copy-pasting.
 
 Returns plain dicts (no Pydantic dependency) so callers can convert to
 whatever model they need.
+
+Upstream page validation owns four outcomes (never silent):
+
+* valid results page → list of book dicts (may be non-empty)
+* valid empty page → empty list
+* unavailable / blocked / unsupported markup → typed ``SearchScrapeError``
+
+Callers (CLI, bridge) must not re-implement AA markup knowledge.
 """
 
 from __future__ import annotations
@@ -13,7 +21,7 @@ import logging
 import random
 import re
 import time
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import quote_plus, urlparse
 
 import requests
@@ -27,6 +35,25 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "https://annas-archive.gl"
+
+# Page-level classification owned by this module.
+SearchPageKind = Literal["results", "empty", "blocked", "unsupported"]
+
+# Why a scrape failed — stable codes for telemetry / tests / UI messages.
+SearchFailureCode = Literal["unavailable", "blocked", "unsupported"]
+
+
+class SearchScrapeError(RuntimeError):
+    """Typed failure from the search scraper (not a genuine empty result set).
+
+    ``code`` is one of ``unavailable`` | ``blocked`` | ``unsupported``.
+    The message is safe to surface to the desktop Search error banner.
+    """
+
+    def __init__(self, code: SearchFailureCode, message: str) -> None:
+        self.code: SearchFailureCode = code
+        super().__init__(message)
+
 
 # Rotate through a small pool of realistic User-Agent strings to reduce
 # fingerprinting.  Each request picks one at random (Gap 4).
@@ -100,12 +127,15 @@ def _make_session(proxies: list[str]) -> tuple[requests.Session, str | None, str
     session = requests.Session()
 
     user_agent = random.choice(_USER_AGENTS)
+    # Do not advertise brotli (`br`): some AA edges return HTTP 200 bodies that
+    # decode without result markers when `br` is listed (observed ~76KB empty
+    # shell vs ~840KB results with gzip/deflate only). requests handles gzip.
     session.headers.update(
         {
             "User-Agent": user_agent,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Encoding": "gzip, deflate",
             "DNT": "1",
             "Upgrade-Insecure-Requests": "1",
         }
@@ -122,18 +152,77 @@ def _make_session(proxies: list[str]) -> tuple[requests.Session, str | None, str
 
 
 # ---------------------------------------------------------------------------
-# Gap 8: Static-vs-dynamic detection
+# Upstream page classification (sole owner of AA HTML contract)
 # ---------------------------------------------------------------------------
+
+_CHALLENGE_MARKERS: tuple[str, ...] = (
+    "cf-browser-verification",
+    "just a moment",
+    "attention required",
+    "access denied",
+    "enable javascript",
+    "enable js",
+    "captcha",
+    "cloudflare",
+    "challenge-platform",
+)
+
+_EMPTY_RESULT_HINTS: tuple[str, ...] = (
+    "no files found",
+    "no results found",
+    "0 results",
+    "nothing found",
+    "no books found",
+)
 
 
 def _verify_response_has_results(html: str) -> bool:
-    """Check if the HTML actually contains search result elements.
-
-    Returns ``True`` when the page contains known result markers
-    (``href="/md5/"`` links or ``js-aarecord`` classes).  A ``False``
-    return suggests the site may have switched to client-side rendering.
-    """
+    """True when the HTML contains known AA result-record markers."""
     return 'href="/md5/' in html or "js-aarecord" in html
+
+
+def classify_search_html(html: str, *, content_type: str | None = None) -> SearchPageKind:
+    """Classify a search HTTP body without performing network I/O.
+
+    Order matters: challenge/block beats result markers so a challenge page
+    that mentions ``md5`` in scripts is still ``blocked``.
+    """
+    if content_type is not None:
+        ct = content_type.split(";")[0].strip().lower()
+        if ct and "html" not in ct and "text/plain" not in ct:
+            return "unsupported"
+
+    text = html or ""
+    if not text.strip():
+        return "unsupported"
+
+    low = text.lower()
+    if any(m in low for m in _CHALLENGE_MARKERS):
+        return "blocked"
+    if _verify_response_has_results(text):
+        return "results"
+    if any(h in low for h in _EMPTY_RESULT_HINTS):
+        return "empty"
+    # HTTP 200 with neither records nor empty-page hints is not a trustworthy
+    # zero-result page (e.g. incomplete decode / changed markup / soft block).
+    return "unsupported"
+
+
+def _raise_for_page_kind(kind: SearchPageKind) -> None:
+    """Convert non-success page kinds into typed scraper failures."""
+    if kind == "results" or kind == "empty":
+        return
+    if kind == "blocked":
+        raise SearchScrapeError(
+            "blocked",
+            "Anna's Archive blocked or challenged this search request. "
+            "Try again later or configure a proxy in Settings.",
+        )
+    raise SearchScrapeError(
+        "unsupported",
+        "Anna's Archive returned a search page that could not be parsed. "
+        "The site may have changed or returned an incomplete response.",
+    )
 
 
 def parse_filesize(text: str) -> int | None:
@@ -262,8 +351,9 @@ def scrape_annas_archive(
 
     Raises
     ------
-    RuntimeError
-        When the HTTP request to Anna's Archive fails.
+    SearchScrapeError
+        When the HTTP layer fails, the page is blocked/challenged, or the
+        HTML is not a recognized results/empty search page.
     """
     if seen_md5s is None:
         seen_md5s = set()
@@ -277,6 +367,19 @@ def scrape_annas_archive(
         except Exception:
             proxies = []
 
+    # Prefer explicit config pin when caller left the module default.
+    # Do not probe live domains here — that belongs to diagnostics/download tool.
+    effective_base = base_url
+    if base_url == _DEFAULT_BASE_URL:
+        try:
+            from .config_manager import get_config
+
+            configured = get_config().get("base_url")
+            if configured:
+                effective_base = str(configured).rstrip("/")
+        except Exception:
+            effective_base = base_url
+
     params = f"q={quote_plus(query)}"
     if ext:
         params += f"&ext={quote_plus(ext)}"
@@ -288,7 +391,7 @@ def scrape_annas_archive(
     if page > 1:
         params += f"&page={page}"
 
-    url = f"{base_url.rstrip('/')}/search?{params}"
+    url = f"{effective_base.rstrip('/')}/search?{params}"
 
     # Gap 14: robots.txt awareness (warn-only, does not block)
     is_allowed_by_robots(url, user_agent=_USER_AGENTS[0])
@@ -299,7 +402,7 @@ def scrape_annas_archive(
     time.sleep(delay)
 
     session, proxy_used, user_agent = _make_session(proxies)
-    domain = urlparse(base_url).netloc
+    domain = urlparse(effective_base).netloc
 
     def _emit_health(health: dict[str, Any]) -> None:
         if on_health is None:
@@ -314,40 +417,53 @@ def scrape_annas_archive(
         resp.raise_for_status()
     except requests.RequestException as exc:
         status_code = getattr(exc.response, "status_code", None)
+        blocked = status_code in (403, 429)
         _emit_health(
             {
                 "domain": domain,
                 "status_code": status_code,
                 "response_time_ms": None,
                 "success": False,
-                "blocked": status_code in (403, 429),
+                "blocked": blocked,
                 "proxy_used": proxy_used,
                 "user_agent": user_agent,
                 "error_message": str(exc)[:500],
             }
         )
         logger.error("Failed to reach Anna's Archive: %s", exc)
-        raise RuntimeError(f"Failed to reach Anna's Archive: {exc}") from exc
+        if blocked:
+            raise SearchScrapeError(
+                "blocked",
+                "Anna's Archive blocked or rate-limited this search request "
+                f"(HTTP {status_code}). Try again later or configure a proxy.",
+            ) from exc
+        raise SearchScrapeError(
+            "unavailable",
+            "Could not reach Anna's Archive. Check your connection, then try again.",
+        ) from exc
 
+    page_kind = classify_search_html(
+        resp.text,
+        content_type=resp.headers.get("Content-Type"),
+    )
     _emit_health(
         {
             "domain": domain,
             "status_code": resp.status_code,
             "response_time_ms": int(resp.elapsed.total_seconds() * 1000),
-            "success": True,
-            "blocked": not _verify_response_has_results(resp.text),
+            "success": page_kind in ("results", "empty"),
+            "blocked": page_kind == "blocked",
             "proxy_used": proxy_used,
             "user_agent": user_agent,
-            "error_message": None,
+            "error_message": None if page_kind in ("results", "empty") else page_kind,
+            "page_kind": page_kind,
         }
     )
 
-    # Gap 8: verify the response contains expected result markers
-    if not _verify_response_has_results(resp.text):
-        logger.warning(
-            "Response HTML does not contain expected search result markers "
-            "-- site may have switched to client-side rendering"
-        )
+    if page_kind != "results":
+        # empty → []; blocked/unsupported → typed error (never silent [])
+        _raise_for_page_kind(page_kind)
+        return []
 
     soup = BeautifulSoup(resp.text, "html.parser")
     results: list[dict[str, Any]] = []

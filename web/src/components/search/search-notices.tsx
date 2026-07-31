@@ -26,15 +26,14 @@ export function SearchNotices({
     <>
       {error && (
         <Banner variant="error" onDismiss={onDismissError}>
-          Could not complete the search. Check your connection, then{" "}
+          <span className="block">{error}</span>
           <button
             type="button"
-            className="font-medium underline underline-offset-2"
+            className="mt-1 font-medium underline underline-offset-2"
             onClick={onRetrySearch}
           >
-            try again
+            Try again
           </button>
-          .
         </Banner>
       )}
 
