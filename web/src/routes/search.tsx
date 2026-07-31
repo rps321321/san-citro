@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 
+import { PageContainer } from "@/components/page-container";
 import { SearchToolbar } from "@/components/search/search-toolbar";
 import { SearchNotices } from "@/components/search/search-notices";
 import { SearchEmptyState } from "@/components/search/search-empty-state";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/telemetry";
 import { useActiveDownloads } from "@/contexts/active-downloads-context";
 import { isLiveActiveStatus } from "@/lib/active-downloads";
+
 
 function SearchContent() {
   const {
@@ -148,7 +150,14 @@ function SearchContent() {
   };
 
   return (
-    <div className="space-y-6">
+    <PageContainer size="wide" className="space-y-6">
+      <header className="space-y-1">
+        <h1 className="type-page-title">Search</h1>
+        <p className="type-meta">
+          Find books by title, author, ISBN, or identifier.
+        </p>
+      </header>
+
       <SearchToolbar
         query={query}
         onQueryChange={setQuery}
@@ -197,7 +206,7 @@ function SearchContent() {
       {!data && !isLoading && !error && (
         <SearchEmptyState onExampleQuery={setQuery} />
       )}
-    </div>
+    </PageContainer>
   );
 }
 

@@ -68,9 +68,10 @@ export function SearchToolbar({
   onClearFilters,
 }: SearchToolbarProps) {
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="flex gap-2">
-        <div className="relative flex-1 rounded-lg transition-shadow duration-200 ease-out focus-within:ring-[3px] focus-within:ring-ring/30">
+    <form onSubmit={onSubmit} className="space-y-3" aria-label="Search controls">
+      {/* Primary: query + action */}
+      <div className="flex min-w-0 gap-2">
+        <div className="relative min-w-0 flex-1 rounded-lg transition-shadow duration-200 ease-out focus-within:ring-[3px] focus-within:ring-ring/30">
           <SearchIcon className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground transition-colors group-focus-within:text-foreground" />
           <Input
             ref={searchInputRef}
@@ -82,7 +83,12 @@ export function SearchToolbar({
             title="Press / to focus search"
           />
         </div>
-        <Button type="submit" disabled={isLoading || !query.trim()} aria-busy={isLoading}>
+        <Button
+          type="submit"
+          className="shrink-0"
+          disabled={isLoading || !query.trim()}
+          aria-busy={isLoading}
+        >
           {isLoading ? (
             <LoaderIcon className="size-4 animate-spin" aria-hidden="true" />
           ) : (
@@ -92,10 +98,17 @@ export function SearchToolbar({
         </Button>
       </div>
 
-      <div className="flex flex-wrap gap-3">
-        <div className="w-40">
+      {/* Secondary: quieter filter row */}
+      <div
+        className="flex flex-wrap items-center gap-2 text-muted-foreground"
+        data-search-filters=""
+      >
+        <div className="w-36">
           <Select value={extension || "__all"} onValueChange={onExtensionChange}>
-            <SelectTrigger className="w-full" aria-label="Filter by file extension">
+            <SelectTrigger
+              className="w-full border-border/80 bg-transparent text-foreground shadow-none"
+              aria-label="Filter by file extension"
+            >
               <SelectValue>
                 {(value) =>
                   typeof value === "string" && value !== "__all"
@@ -114,9 +127,12 @@ export function SearchToolbar({
           </Select>
         </div>
 
-        <div className="w-40">
+        <div className="w-36">
           <Select value={language || "__all"} onValueChange={onLanguageChange}>
-            <SelectTrigger className="w-full" aria-label="Filter by language">
+            <SelectTrigger
+              className="w-full border-border/80 bg-transparent text-foreground shadow-none"
+              aria-label="Filter by language"
+            >
               <SelectValue>
                 {(value) =>
                   typeof value === "string" && value !== "__all" ? value : "All languages"
@@ -151,3 +167,4 @@ export function SearchToolbar({
     </form>
   );
 }
+
