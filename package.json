@@ -12,6 +12,6 @@
     "fallow:baselines": "node ./scripts/save-fallow-baselines.mjs"
   },
   "devDependencies": {
-    "fallow": "^3.10.0"
+    "fallow": "^3.34.0"
   }
 }
